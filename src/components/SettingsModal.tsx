@@ -2257,6 +2257,71 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                                     </div>
                                 </div>
 
+                                {/* Engine Mode */}  
+                                    <div className="mt-4 space-y-2">
+                                        <div id="settings-engine-mode-label" className="text-[var(--ui-text-muted)] block text-sm">Engine Mode</div>
+                                        <div
+                                            id="settings-engine-mode"
+                                            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                                            role="radiogroup"
+                                            aria-labelledby="settings-engine-mode-label"
+                                            data-settings-search-id="settings-engine-mode"
+                                        >
+                                            {[
+                                                { value: 'local' as const, label: 'Browser (Local)', icon: <FaMicrochip aria-hidden="true" />, description: 'Run KataGo in your browser (WebGPU/WASM).' },
+                                                { value: 'remote' as const, label: 'Remote Server', icon: <FaGlobe aria-hidden="true" />, description: 'Connect to a remote KataGo server via WebSocket.' },
+                                            ].map((option) => {
+                                                const active = settings.engineMode === option.value;
+                                                return (
+                                                    <button
+                                                        key={option.value}
+                                                        type="button"
+                                                        className={backendCardClass(active, true)}
+                                                        role="radio"
+                                                        aria-checked={active}
+                                                        tabIndex={active ? 0 : -1}
+                                                        onClick={() => updateSettings({ engineMode: option.value })}
+                                                    >
+                                                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface-2)] text-[var(--ui-accent)]" aria-hidden="true">
+                                                            {option.icon}
+                                                        </span>
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                                                <span className="truncate text-sm font-semibold">{option.label}</span>
+                                                            </span>
+                                                            <span className="mt-1 block text-xs ui-text-muted">
+                                                                {option.description}
+                                                            </span>
+                                                        </span>
+                                                        {active ? (
+                                                            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--ui-accent)] text-[0.625rem] text-[var(--ui-accent-contrast)]">
+                                                                <FaCheck aria-hidden="true" />
+                                                            </span>
+                                                        ) : null}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Remote URL (only when remote mode is selected) */}
+                                    {settings.engineMode === 'remote' ? (
+                                        <div className="mt-4 space-y-2">
+                                            <label htmlFor="settings-remote-engine-url" className="text-[var(--ui-text-muted)] block">Remote Engine URL</label>
+                                            <input
+                                                id="settings-remote-engine-url"
+                                                type="text"
+                                                value={settings.remoteEngineUrl}
+                                                onChange={(e) => updateSettings({ remoteEngineUrl: e.target.value })}
+                                                className={`${inputClass} text-xs`}
+                                                placeholder="ws://hostname:port/katago or /katago-proxy"
+                                            />
+                                            <p className={subtextClass}>
+                                                WebSocket URL of a remote KataGo analysis engine. Use <code>ws://</code> or <code>wss://</code> for direct connections, or a path like <code>/katago-proxy</code> for same-origin proxy connections.
+                                            </p>
+                                        </div>
+                                    ) : null}
+
                                 {/* KataGo Section */}  
                                 <div className={sectionClass}>  
                                     <h3 className={sectionTitleClass}>KataGo</h3>

@@ -1,4 +1,4 @@
-import { getKataGoEngineClient } from '../engine/katago/client';
+import { getEngineClient } from '../engine/client';
 import type { GameNode, GameSettings } from '../types';
 import { komiWithHandicapBonus } from './handicap';
 
@@ -38,7 +38,7 @@ function rootBoardOf(node: GameNode): GameNode['gameState']['board'] {
 
 export async function evaluateNode(node: GameNode, settings: GameSettings): Promise<PositionEval> {
   const modelUrl = resolveModelUrl(settings.katagoModelUrl);
-  const res = await getKataGoEngineClient().evaluate({
+  const res = await getEngineClient(settings).evaluate({
     modelUrl,
     backend: settings.katagoBackend,
     board: node.gameState.board,

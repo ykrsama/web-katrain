@@ -116,6 +116,15 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
+    proxy: {
+      // Proxy WebSocket connections to the remote KataGo engine.
+      // This avoids COEP/CORS issues by making the WebSocket same-origin.
+      '/katago-proxy': {
+        target: process.env.VITE_KATAGO_WS_URL || 'ws://127.0.0.1:8000',
+        ws: true,
+        rewrite: () => '/katago',
+      },
+    },
   },
   preview: {
     headers: {

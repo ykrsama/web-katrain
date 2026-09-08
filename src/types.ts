@@ -212,6 +212,8 @@ export interface GameSettings {
   analysisShowPolicy: boolean; // R
   analysisPolicyMetric: 'policy' | 'delta_score' | 'delta_winrate';
   analysisShowOwnership: boolean; // T
+  engineMode: 'local' | 'remote';
+  remoteEngineUrl: string;
   katagoModelUrl: string;
   katagoBackend: KataGoBackendPreference;
   katagoVisits: number;

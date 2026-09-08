@@ -103,6 +103,8 @@ export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   { id: 'settings-katago-root-policy-temperature', tab: 'ai', label: 'Root Policy Temperature' },
   { id: 'settings-katago-model-url', tab: 'ai', label: "Model URL" },
   { id: 'settings-katago-backend', tab: 'ai', label: "Backend" },
+  { id: 'settings-engine-mode', tab: 'ai', label: "Engine Mode" },
+  { id: 'settings-remote-engine-url', tab: 'ai', label: "Remote Engine URL" },
   { id: 'settings-katago-visits', tab: 'ai', label: "Visits" },
   { id: 'settings-katago-fast-review-depth', tab: 'ai', label: "Fast review depth" },
   { id: 'settings-katago-max-time', tab: 'ai', label: "Max Time (ms)" },

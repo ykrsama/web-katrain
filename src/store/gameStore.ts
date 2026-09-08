@@ -4,7 +4,8 @@ import { findMistakeNavigationTarget } from '../utils/mistakeNavigation';
 import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLiberties, getLegalMoves, isEye, isValidMove } from '../utils/gameLogic';
 import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } from '../utils/sound';
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
-import { getKataGoEngineClient, isKataGoCanceledError } from '../engine/katago/client';
+import { isKataGoCanceledError } from '../engine/katago/client';
+import { getEngineClient } from '../engine/client';
 import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
@@ -1092,6 +1093,8 @@ const defaultSettings: GameSettings = {
   analysisShowPolicy: false,
   analysisPolicyMetric: 'policy',
   analysisShowOwnership: true,
+  engineMode: 'local' as const,
+  remoteEngineUrl: '/katago-proxy',
   katagoModelUrl: publicUrl(KATAGO_SMALL_MODEL_PATH),
   katagoBackend: 'webgpu',
   katagoVisits: DEFAULT_KATAGO_VISITS,
@@ -1288,7 +1291,7 @@ const analyzeForPlayout = (
       s.settings.katagoConservativePass,
       wideRootNoise
     ),
-    run: () => getKataGoEngineClient().analyze({
+    run: () => getEngineClient(s.settings).analyze({
       positionId: node.id,
       parentPositionId: node.parent?.id,
       positionKey: nodeAnalysisPositionKey(node, rules),
@@ -1699,7 +1702,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         staleKey: 'tenuki-analysis',
         cacheKey: analysisCacheKey('tenuki', positionKey, modelUrl, state.settings.katagoBackend, visits),
         run: () =>
-          getKataGoEngineClient().analyze({
+          getEngineClient(get().settings).analyze({
             // A distinct position id, and `reuseTree` off: the worker keeps a
             // search tree per position, and letting it re-root the live tree
             // onto a position the player never entered would slow or skew the
@@ -2684,7 +2687,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 conservativePass,
                 toEval.map((n) => nodeAnalysisPositionKey(n, rules))
               ),
-              run: () => getKataGoEngineClient().evaluateBatch({
+              run: () => getEngineClient(get().settings).evaluateBatch({
               modelUrl,
               backend: s.settings.katagoBackend,
               positions: toEval.map((n) => ({
@@ -2703,7 +2706,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             if (!get().isGameAnalysisRunning) return;
             if (get().gameAnalysisType !== 'quick') return;
             if (!metaSynced) {
-              const engineInfo = getKataGoEngineClient().getEngineInfo();
+              const engineInfo = getEngineClient(get().settings).getEngineInfo();
               set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
               metaSynced = true;
             }
@@ -2856,7 +2859,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 s.settings.katagoNnRandomize,
                 s.settings.katagoConservativePass
               ),
-              run: () => getKataGoEngineClient().analyze({
+              run: () => getEngineClient(get().settings).analyze({
               positionId: node.id,
               parentPositionId: node.parent?.id,
               positionKey: nodeAnalysisPositionKey(node, rules),
@@ -2891,7 +2894,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             if (!get().isGameAnalysisRunning) return;
             if (get().gameAnalysisType !== 'fast') return;
             if (!metaSynced) {
-              const engineInfo = getKataGoEngineClient().getEngineInfo();
+              const engineInfo = getEngineClient(get().settings).getEngineInfo();
               set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
               metaSynced = true;
             }
@@ -3054,7 +3057,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 s.settings.humanSlEnabled ? s.settings.humanSlProfile : '',
                 s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : ''
               ),
-              run: () => getKataGoEngineClient().analyze({
+              run: () => getEngineClient(get().settings).analyze({
               positionId: node.id,
               parentPositionId: node.parent?.id,
               positionKey: nodeAnalysisPositionKey(node, rules),
@@ -3092,7 +3095,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             if (get().gameAnalysisType !== 'full') return;
 
             if (!metaSynced) {
-              const engineInfo = getKataGoEngineClient().getEngineInfo();
+              const engineInfo = getEngineClient(get().settings).getEngineInfo();
               set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
               metaSynced = true;
             }
@@ -3303,7 +3306,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
             if (!isCurrent && !isFinal && !shouldBumpTree) return;
 
-            const engineInfo = isFinal ? getKataGoEngineClient().getEngineInfo() : null;
+            const engineInfo = isFinal ? getEngineClient(get().settings).getEngineInfo() : null;
             set((s) => {
               const next: Partial<GameStore> = {};
               if (isCurrent) next.analysisData = analysisWithTerritory;
@@ -3382,7 +3385,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           cacheKey: interactiveCacheKey,
           bypassCache: opts?.force === true,
           preempt: true,
-          run: (ctx) => getKataGoEngineClient().analyze({
+          run: (ctx) => getEngineClient(get().settings).analyze({
 	          positionId: node.id,
 	          parentPositionId: node.parent?.id,
             positionKey: nodeAnalysisPositionKey(node, rules),
@@ -3509,6 +3512,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const nextSettings: GameSettings = { ...state.settings, ...newSettings };
       saveStoredSettings(nextSettings);
       const engineKeys: Array<keyof GameSettings> = [
+        'engineMode',
+        'remoteEngineUrl',
         'katagoModelUrl',
         'katagoBackend',
         'katagoVisits',
@@ -4002,7 +4007,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             handicapPda
           ),
           preempt: true,
-          run: () => getKataGoEngineClient().analyze({
+          run: () => getEngineClient(get().settings).analyze({
 	          positionId: nodeId,
 	          parentPositionId: node.parent?.id,
             positionKey,
@@ -4042,7 +4047,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }),
         })
         .then((analysis) => {
-          const engineInfo = getKataGoEngineClient().getEngineInfo();
+          const engineInfo = getEngineClient(get().settings).getEngineInfo();
           set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
 
           const latest = get();
