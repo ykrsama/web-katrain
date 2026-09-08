@@ -48,6 +48,22 @@ const CURATED: Record<string, { name: string; source: string }> = {
     name: 'Shin Jinseo vs Kang Yootaek - 2015 Korean League (2015-09-20)',
     source: 'go4go.com',
   },
+  '2017人机大战第二局 AlphaGo vs 柯洁': {
+    name: 'AlphaGo vs 柯洁 - 2017人机大战第二局',
+    source: '19x19.com',
+  },
+  '第6届嵊州杯中国王中王争霸赛总决赛 柯洁 vs 党毅飞': {
+    name: '柯洁 vs 党毅飞 - 第6届嵊州杯中国王中王争霸赛总决赛',
+    source: '19x19.com',
+  },
+  '第6届嵊州杯中国王中王争霸赛胜者组4强 柯洁 vs 王星昊': {
+    name: '柯洁 vs 王星昊 - 第6届嵊州杯中国王中王争霸赛胜者组4强',
+    source: '19x19.com',
+  },
+  '第6届嵊州杯中国王中王争霸赛胜者组决赛 李轩豪 vs 柯洁': {
+    name: '李轩豪 vs 柯洁 - 第6届嵊州杯中国王中王争霸赛胜者组决赛',
+    source: '19x19.com',
+  },
 };
 
 const readProp = (sgf: string, key: string): string | undefined => {

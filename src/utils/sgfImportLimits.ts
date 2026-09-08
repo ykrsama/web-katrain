@@ -1,5 +1,5 @@
-export const MAX_SGF_IMPORT_BYTES = 5 * 1024 * 1024;
-export const MAX_SGF_IMPORT_LABEL = '5 MB';
+export const MAX_SGF_IMPORT_BYTES = 500 * 1024 * 1024;
+export const MAX_SGF_IMPORT_LABEL = '500 MB';
 
 const TOO_LARGE_MESSAGE = `SGF files are limited to ${MAX_SGF_IMPORT_LABEL}.`;
 
