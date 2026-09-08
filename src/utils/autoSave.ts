@@ -11,8 +11,8 @@ export type AutoSaveWriteResult = 'saved' | 'too-large' | 'failed';
 type AutoSaveStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 export const AUTO_SAVED_GAME_KEY = 'web-katrain:auto_saved_game:v1';
-export const AUTO_SAVE_MAX_BYTES = 5 * 1024 * 1024;
-export const AUTO_SAVE_MAX_LABEL = '5 MB';
+export const AUTO_SAVE_MAX_BYTES = 500 * 1024 * 1024;
+export const AUTO_SAVE_MAX_LABEL = '500 MB';
 
 const getDefaultStorage = (): AutoSaveStorage | null => {
   return getLocalStorage();
