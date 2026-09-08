@@ -5,7 +5,7 @@
  * See katrain/core/remote_engine.py for the Python reference implementation.
  */
 
-import type { FloatArray, GameRules, Move, Player } from '../../types';
+import type { BoardState, FloatArray, GameRules, Move, Player } from '../../types';
 
 // ─── Query (what we send) ────────────────────────────────────────────────
 
@@ -102,8 +102,9 @@ export interface RemoteResponse {
 
 const GTP_COLS = 'ABCDEFGHJKLMNOPQRST';
 
-/** Convert 0-indexed board coordinates to a GTP string (e.g. "Q4"). */
+/** Convert 0-indexed board coordinates to a GTP string (e.g. "Q4"), or "pass" for (-1,-1). */
 export function coordToGtp(x: number, y: number, boardSize: number): string {
+  if (x === -1 && y === -1) return 'pass';
   return GTP_COLS[x] + String(boardSize - y);
 }
 
@@ -124,12 +125,44 @@ export function gtpToCoord(s: string, boardSize: number): { x: number; y: number
 /**
  * Build the GTP move list from a move history for a remote query.
  * KataGo expects: [["B", "Q4"], ["W", "D16"], ...]
+ *
+ * Handicap stones are setup stones (SGF AB) — they exist on the board but
+ * are not in the move history.  KataGo needs them as initial Black moves,
+ * so we compute them from the board state and prepend them.
  */
-export function buildMoveList(moveHistory: Move[]): Array<[string, string]> {
-  return moveHistory.map((m) => {
+export function buildMoveList(
+  moveHistory: Move[],
+  board: BoardState,
+  boardSize: number,
+): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+
+  // Compute handicap stones: Black stones on the board that are not in the
+  // move history.  We track which positions are covered by moves so we can
+  // subtract them from the board state.
+  const movePositions = new Set<string>();
+  for (const m of moveHistory) {
+    if (m.x >= 0 && m.y >= 0) {
+      movePositions.add(`${m.x},${m.y}`);
+    }
+  }
+
+  // Find Black stones on the board that no move accounts for → handicap.
+  for (let y = 0; y < boardSize; y++) {
+    for (let x = 0; x < boardSize; x++) {
+      if (board[y]?.[x] === 'black' && !movePositions.has(`${x},${y}`)) {
+        out.push(['B', coordToGtp(x, y, boardSize)]);
+      }
+    }
+  }
+
+  // Append the actual move history.
+  for (const m of moveHistory) {
     const player = m.player === 'black' ? 'B' : 'W';
-    return [player, coordToGtp(m.x, m.y, 19)] as [string, string];
-  });
+    out.push([player, coordToGtp(m.x, m.y, boardSize)]);
+  }
+
+  return out;
 }
 
 /**

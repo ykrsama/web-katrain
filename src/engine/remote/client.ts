@@ -100,6 +100,7 @@ class RemoteEngineClient {
   private pending = new Map<string, PendingQuery>();
   private pendingEval = new Map<string, PendingEval>();
   private pendingEvalBatch = new Map<string, PendingEvalBatch>();
+  private _queryBoardSizes = new Map<string, number>();
   private _closing = false;
   private _reconnecting = false;
   private _reportedDead = false;
@@ -260,7 +261,7 @@ class RemoteEngineClient {
 
     const query: Record<string, unknown> = {
       id,
-      moves: buildMoveList(args.moveHistory),
+      moves: buildMoveList(args.moveHistory, args.board, boardSize),
       rules: rulesToKataGoString(rules),
       komi,
       boardXSize: boardSize,
@@ -322,6 +323,7 @@ class RemoteEngineClient {
 
     const promise = new Promise<KataGoAnalysisPayload>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress: args.onProgress });
+      this._queryBoardSizes.set(id, boardSize);
     });
 
     try {
@@ -591,6 +593,7 @@ class RemoteEngineClient {
       const err = new Error(resp.error);
       if (pending) {
         this.pending.delete(queryId);
+        this._queryBoardSizes.delete(queryId);
         pending.reject(err);
       }
       if (pendingEval) {
@@ -609,7 +612,8 @@ class RemoteEngineClient {
     }
 
     // Convert remote response to KataGoAnalysisPayload
-    const analysis = this._convertResponse(resp);
+    const boardSize = this._queryBoardSizes.get(queryId) ?? DEFAULT_BOARD_SIZE;
+    const analysis = this._convertResponse(resp, boardSize);
 
     if (resp.isDuringSearch) {
       // Progress update
@@ -620,6 +624,7 @@ class RemoteEngineClient {
     // Final result
     if (pending) {
       this.pending.delete(queryId);
+      this._queryBoardSizes.delete(queryId);
       pending.resolve(analysis);
     }
     if (pendingEval) {
@@ -634,8 +639,7 @@ class RemoteEngineClient {
 
   // ─── Response conversion ──────────────────────────────────────────────
 
-  private _convertResponse(resp: RemoteResponse): KataGoAnalysisPayload {
-    const boardSize = DEFAULT_BOARD_SIZE; // TODO: extract from query context
+  private _convertResponse(resp: RemoteResponse, boardSize: number): KataGoAnalysisPayload {
     const ri = resp.rootInfo;
     const mi = resp.moveInfos;
 
@@ -711,6 +715,7 @@ class RemoteEngineClient {
   private _failAllPending(error: Error): void {
     for (const [, pending] of this.pending) pending.reject(error);
     this.pending.clear();
+    this._queryBoardSizes.clear();
     for (const [, pending] of this.pendingEval) pending.reject(error);
     this.pendingEval.clear();
     for (const [, pending] of this.pendingEvalBatch) pending.reject(error);
