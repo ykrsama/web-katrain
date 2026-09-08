@@ -698,6 +698,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       return ctx;
     },
     [boardHeight, boardWidth, canvasThemeVersion]

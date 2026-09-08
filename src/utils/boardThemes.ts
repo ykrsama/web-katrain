@@ -190,6 +190,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         shadowOffsetX: '0.106em',
         shadowOffsetY: '0.106em',
         shadowBlur: '0.06em',
+        size: '96%',
       },
       white: {
         image: 'stone-white.png',
@@ -199,6 +200,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         shadowOffsetX: '0.106em',
         shadowOffsetY: '0.106em',
         shadowBlur: '0.06em',
+        size: '96%',
       },
     },
     // Opaque: 0.7 alpha left Yunzi at 4.13:1 and Shell & Slate with no margin.

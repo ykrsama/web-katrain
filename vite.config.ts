@@ -125,6 +125,9 @@ export default defineConfig({
         rewrite: () => '/katago',
       },
     },
+    host: '0.0.0.0',
+    allowedHosts: true,
+    cors: true,
   },
   preview: {
     headers: {
