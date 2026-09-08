@@ -226,7 +226,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         shadowOffsetX: '0.08em',
         shadowOffsetY: '0.1em',
         shadowBlur: '0.12em',
-        size: '108%',
+        size: '92%',
       },
       white: {
         image: 'stone-white.png',
@@ -236,7 +236,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         shadowOffsetX: '0.08em',
         shadowOffsetY: '0.1em',
         shadowBlur: '0.12em',
-        size: '108%',
+        size: '92%',
       },
     },
     // Darkened from rgba(107,66,1,.59): even fully opaque that hue only reached
