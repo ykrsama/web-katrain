@@ -219,7 +219,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
     },
     stones: {
       black: {
-        image: 'stone-black.png',
+        image: 'stone-black.svg',
         backgroundColor: '#1a1a1a',
         foregroundColor: '#d87700',
         // Shadow values mirror shudan's `.shudan-stone::before`:
@@ -228,17 +228,17 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         shadowOffsetX: '0em',
         shadowOffsetY: '0.1em',
         shadowBlur: '0.2em',
-        size: '92%',
+        size: '140%',
       },
       white: {
-        image: 'stone-white.png',
+        image: 'stone-white.svg',
         backgroundColor: '#ffffff',
         foregroundColor: '#fb8a00',
         shadowColor: 'rgba(23, 10, 2, 0.4)',
         shadowOffsetX: '0em',
         shadowOffsetY: '0.1em',
         shadowBlur: '0.2em',
-        size: '92%',
+        size: '140%',
       },
     },
     // Darkened from rgba(107,66,1,.59): even fully opaque that hue only reached
