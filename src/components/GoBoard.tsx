@@ -2820,35 +2820,40 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
     const blackImages = stoneImagesRef.current.black;
     const whiteImages = stoneImagesRef.current.white;
-    const stoneRadius = cellSize * STONE_SIZE;
-    const size = 2 * stoneRadius + 1;
+    const baseStoneRadius = cellSize * STONE_SIZE;
+    const baseStoneDiameter = 2 * baseStoneRadius;
     const fontSize = cellSize / 1.45;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     setCanvasFont(ctx, `bold ${fontSize}px sans-serif`);
 
     for (const m of pvMoves) {
-      const left = originX + m.x * cellSize - stoneRadius - 1;
-      const top = originY + m.y * cellSize - stoneRadius;
+      const stoneConfig = m.player === 'black' ? boardTheme.stones.black : boardTheme.stones.white;
+      const scale = parsePercent(stoneConfig.size, 1);
+      const diameter = baseStoneDiameter * scale;
+      const radius = diameter / 2;
+      const left = originX + m.x * cellSize - radius - 1;
+      const top = originY + m.y * cellSize - radius;
       const imageList = m.player === 'black' ? blackImages : whiteImages;
       const img = imageList[0];
       if (img && img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, left, top, size, size);
+        ctx.drawImage(img, left, top, diameter, diameter);
       } else {
         ctx.beginPath();
         ctx.fillStyle = rgba(m.player === 'black' ? STONE_COLORS.black : STONE_COLORS.white);
-        ctx.arc(left + size / 2, top + size / 2, stoneRadius, 0, Math.PI * 2);
+        ctx.arc(left + radius, top + radius, radius, 0, Math.PI * 2);
         ctx.fill();
       }
 
       ctx.fillStyle = m.player === 'black' ? 'white' : 'black';
-      ctx.fillText(String(m.idx), left + size / 2, top + size / 2);
+      ctx.fillText(String(m.idx), left + radius, top + radius);
     }
     if (container) {
       container.dataset.pvRendered = String(Date.now());
       container.dataset.pvCount = String(pvMoves.length);
     }
   }, [
+    boardTheme,
     releaseOverlayCanvas,
     cellSize,
     pvOverlayEnabled,
