@@ -1,12 +1,17 @@
-let audioCtx: AudioContext | null = null;
 type SoundEffectKey = 'stone' | 'capture' | 'pass' | 'new-game';
 
 const MIN_SOUND_INTERVAL_MS = 50;
+const HAPPY_STONES_SOUND_BASE_PATH = '/themes/happy-stones/';
+const STONE_SOUND_COUNT = 5;
+const CAPTURE_SOUND_COUNT = 5;
+
 const lastSoundTimeByKey = new Map<SoundEffectKey, number>();
+let nextStoneSoundIndex = 0;
+let nextCaptureSoundIndex = 0;
 
 export interface SoundInitError {
     message: string;
-    backend: 'web-audio';
+    backend: 'html-audio';
     platform: string;
 }
 
@@ -40,7 +45,7 @@ const reportSoundError = (message: string): void => {
     soundFailureReported = true;
     onSoundInitError({
         message,
-        backend: 'web-audio',
+        backend: 'html-audio',
         platform: getPlatformLabel(),
     });
 };
@@ -61,185 +66,75 @@ const shouldSkipRepeatedSound = (key: SoundEffectKey): boolean => {
     return false;
 };
 
-const getAudioContextConstructor = (): typeof AudioContext | null => {
+const getAudioConstructor = (): typeof Audio | null => {
     if (typeof window === 'undefined') return null; // Handle SSR/Test environment
     try {
-        const audioWindow = window as unknown as {
-            AudioContext?: typeof AudioContext;
-            webkitAudioContext?: typeof AudioContext;
-        };
-        return audioWindow.AudioContext || audioWindow.webkitAudioContext || null;
+        const audioWindow = window as unknown as { Audio?: typeof Audio };
+        return audioWindow.Audio || null;
     } catch (error) {
         reportSoundError(`Browser audio API is blocked: ${formatSoundError(error)}`);
         return null;
     }
 };
 
-const getAudioContext = () => {
-    if (audioCtx) return audioCtx;
+const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
+    if (shouldSkipRepeatedSound(key)) return;
 
-    const AudioContextCtor = getAudioContextConstructor();
-    if (!AudioContextCtor) {
+    const AudioCtor = getAudioConstructor();
+    if (!AudioCtor) {
         if (typeof window !== 'undefined') {
             reportSoundError('Browser audio API is not available.');
         }
-        return null;
-    }
-
-    try {
-        audioCtx = new AudioContextCtor();
-        return audioCtx;
-    } catch (error) {
-        audioCtx = null;
-        reportSoundError(`Could not initialize browser audio: ${formatSoundError(error)}`);
-        return null;
-    }
-};
-
-const playWithSoundErrorHandling = (play: (ctx: AudioContext) => void, ctx: AudioContext): void => {
-    try {
-        play(ctx);
-    } catch (error) {
-        reportSoundError(`Could not play browser audio: ${formatSoundError(error)}`);
-        // Audio is optional; never let a browser audio failure interrupt play.
-    }
-};
-
-// Ensure context is running (needed for some browsers that suspend it)
-const resumeContext = (): { ctx: AudioContext; resumePromise?: Promise<void> } | null => {
-    const ctx = getAudioContext();
-    let state: AudioContextState | null = null;
-    try {
-        state = ctx?.state ?? null;
-    } catch (error) {
-        reportSoundError(`Could not read browser audio state: ${formatSoundError(error)}`);
-        return null;
-    }
-    if (ctx && state === 'suspended') {
-        try {
-            const resumePromise = ctx.resume();
-            void resumePromise.catch((error: unknown) => {
-                reportSoundError(`Could not resume browser audio: ${formatSoundError(error)}`);
-            });
-            return { ctx, resumePromise };
-        } catch (error) {
-            reportSoundError(`Could not resume browser audio: ${formatSoundError(error)}`);
-            return null;
-        }
-    }
-    return ctx ? { ctx } : null;
-};
-
-const runSound = (key: SoundEffectKey, play: (ctx: AudioContext) => void) => {
-    if (shouldSkipRepeatedSound(key)) return;
-    const audio = resumeContext();
-    if (!audio) return;
-    if (audio.resumePromise) {
-        void audio.resumePromise
-            .then(() => playWithSoundErrorHandling(play, audio.ctx))
-            .catch(() => undefined);
         return;
     }
-    playWithSoundErrorHandling(play, audio.ctx);
+
+    try {
+        const audio = new AudioCtor(`${HAPPY_STONES_SOUND_BASE_PATH}${fileName}`);
+        audio.preload = 'auto';
+        audio.currentTime = 0;
+        const playResult = audio.play();
+        if (playResult && typeof playResult.catch === 'function') {
+            void playResult.catch((error: unknown) => {
+                reportSoundError(`Could not play audio file ${fileName}: ${formatSoundError(error)}`);
+            });
+        }
+    } catch (error) {
+        reportSoundError(`Could not initialize audio file ${fileName}: ${formatSoundError(error)}`);
+    }
+};
+
+const getNextStoneSoundFileName = (): string => {
+    const fileName = `${nextStoneSoundIndex}.mp3`;
+    nextStoneSoundIndex = (nextStoneSoundIndex + 1) % STONE_SOUND_COUNT;
+    return fileName;
+};
+
+const getNextCaptureSoundFileName = (): string => {
+    const fileName = `capture${nextCaptureSoundIndex}.mp3`;
+    nextCaptureSoundIndex = (nextCaptureSoundIndex + 1) % CAPTURE_SOUND_COUNT;
+    return fileName;
 };
 
 export const playStoneSound = () => {
-    runSound('stone', (ctx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        // Stone placement: sharp attack, quick decay, woody.
-        // Triangle wave pitched down quickly.
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(800, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.1);
-
-        gain.gain.setValueAtTime(0.5, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-
-        osc.start();
-        osc.stop(ctx.currentTime + 0.1);
-    });
+    playAudioFile('stone', getNextStoneSoundFileName());
 };
 
-export const playCaptureSound = (count: number) => {
-    runSound('capture', (ctx) => {
-        // Capture: rattling stones. Multiple short clicks.
-        // We play 'count' clicks with slight random delay.
-        const clicks = Math.min(count, 5); // Limit to 5 clicks to avoid chaos
-
-        const now = ctx.currentTime;
-
-        for (let i = 0; i < clicks; i++) {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            const startTime = now + (Math.random() * 0.1) + (i * 0.05);
-
-            osc.type = 'square'; // harsher sound for stone collision
-            osc.frequency.setValueAtTime(1200 + Math.random() * 500, startTime);
-            osc.frequency.exponentialRampToValueAtTime(100, startTime + 0.05);
-
-            gain.gain.setValueAtTime(0.3, startTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.05);
-
-            osc.start(startTime);
-            osc.stop(startTime + 0.05);
-        }
-    });
+export const playCaptureSound = (_count: number) => {
+    playAudioFile('capture', getNextCaptureSoundFileName());
 };
 
 export const playPassSound = () => {
-    runSound('pass', (ctx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        // Pass: Soft bell or ding
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime); // A4
-        osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.5);
-
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-    });
+    playAudioFile('pass', 'pass.mp3');
 };
 
 export const playNewGameSound = () => {
-    runSound('new-game', (ctx) => {
-        // Upward chime
-        const now = ctx.currentTime;
-        [440, 554, 659].forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            const startTime = now + i * 0.1;
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, startTime);
-
-            gain.gain.setValueAtTime(0.2, startTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.3);
-
-            osc.start(startTime);
-            osc.stop(startTime + 0.3);
-        });
-    });
+    playAudioFile('new-game', 'newgame.mp3');
 };
 
 export const resetAudioContextForTests = (): void => {
-    audioCtx = null;
     onSoundInitError = null;
-    resetSoundFailureReport();
+    soundFailureReported = false;
+    lastSoundTimeByKey.clear();
+    nextStoneSoundIndex = 0;
+    nextCaptureSoundIndex = 0;
 };

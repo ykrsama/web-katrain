@@ -35,32 +35,118 @@ describe('sound helpers', () => {
     expect(() => playNewGameSound()).not.toThrow();
   });
 
-  it('swallows blocked AudioContext construction', () => {
-    class BlockedAudioContext {
+  it('plays the happy-stones mp3 files', () => {
+    const play = vi.fn(() => Promise.resolve());
+    const audioInstances: Array<{ src: string; preload?: string; currentTime: number; play: typeof play }> = [];
+
+    class MockAudio {
+      preload?: string;
+      currentTime = -1;
+      play = play;
+      src: string;
+      constructor(src: string) {
+        this.src = src;
+        audioInstances.push(this);
+      }
+    }
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { Audio: MockAudio },
+    });
+
+    playStoneSound();
+    playCaptureSound(2);
+    playPassSound();
+    playNewGameSound();
+
+    expect(audioInstances.map((audio) => audio.src)).toEqual([
+      '/themes/happy-stones/0.mp3',
+      '/themes/happy-stones/capture0.mp3',
+      '/themes/happy-stones/pass.mp3',
+      '/themes/happy-stones/newgame.mp3',
+    ]);
+    expect(audioInstances.every((audio) => audio.preload === 'auto')).toBe(true);
+    expect(audioInstances.every((audio) => audio.currentTime === 0)).toBe(true);
+    expect(play).toHaveBeenCalledTimes(4);
+  });
+
+  it('cycles through stone and capture variants', () => {
+    const play = vi.fn(() => Promise.resolve());
+    const srcs: string[] = [];
+    vi.spyOn(performance, 'now')
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(160)
+      .mockReturnValueOnce(220)
+      .mockReturnValueOnce(280)
+      .mockReturnValueOnce(340)
+      .mockReturnValueOnce(400)
+      .mockReturnValueOnce(460)
+      .mockReturnValueOnce(520)
+      .mockReturnValueOnce(580)
+      .mockReturnValueOnce(640)
+      .mockReturnValueOnce(700)
+      .mockReturnValueOnce(760);
+
+    class MockAudio {
+      preload?: string;
+      currentTime = 0;
+      play = play;
+      constructor(src: string) {
+        srcs.push(src);
+      }
+    }
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { Audio: MockAudio },
+    });
+
+    for (let i = 0; i < 6; i++) playStoneSound();
+    for (let i = 0; i < 6; i++) playCaptureSound(i + 1);
+
+    expect(srcs).toEqual([
+      '/themes/happy-stones/0.mp3',
+      '/themes/happy-stones/1.mp3',
+      '/themes/happy-stones/2.mp3',
+      '/themes/happy-stones/3.mp3',
+      '/themes/happy-stones/4.mp3',
+      '/themes/happy-stones/0.mp3',
+      '/themes/happy-stones/capture0.mp3',
+      '/themes/happy-stones/capture1.mp3',
+      '/themes/happy-stones/capture2.mp3',
+      '/themes/happy-stones/capture3.mp3',
+      '/themes/happy-stones/capture4.mp3',
+      '/themes/happy-stones/capture0.mp3',
+    ]);
+  });
+
+  it('swallows blocked Audio construction', () => {
+    class BlockedAudio {
       constructor() {
         throw new Error('audio blocked');
       }
     }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { AudioContext: BlockedAudioContext },
+      value: { Audio: BlockedAudio },
     });
 
     expect(() => playStoneSound()).not.toThrow();
   });
 
-  it('reports blocked AudioContext construction once', () => {
+  it('reports blocked Audio construction once', () => {
     const handler = vi.fn();
     setSoundInitErrorHandler(handler);
 
-    class BlockedAudioContext {
+    class BlockedAudio {
       constructor() {
         throw new Error('audio blocked');
       }
     }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { AudioContext: BlockedAudioContext },
+      value: { Audio: BlockedAudio },
     });
 
     expect(() => playStoneSound()).not.toThrow();
@@ -68,8 +154,8 @@ describe('sound helpers', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({
-      backend: 'web-audio',
-      message: 'Could not initialize browser audio: audio blocked',
+      backend: 'html-audio',
+      message: 'Could not initialize audio file 0.mp3: audio blocked',
       platform: expect.any(String),
     }));
   });
@@ -78,14 +164,14 @@ describe('sound helpers', () => {
     const handler = vi.fn();
     setSoundInitErrorHandler(handler);
 
-    class BlockedAudioContext {
+    class BlockedAudio {
       constructor() {
         throw new Error('audio blocked');
       }
     }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { AudioContext: BlockedAudioContext },
+      value: { Audio: BlockedAudio },
     });
 
     playStoneSound();
@@ -96,9 +182,9 @@ describe('sound helpers', () => {
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
-  it('swallows blocked AudioContext accessor reads', () => {
+  it('swallows blocked Audio accessor reads', () => {
     const blockedWindow = {};
-    Object.defineProperty(blockedWindow, 'AudioContext', {
+    Object.defineProperty(blockedWindow, 'Audio', {
       configurable: true,
       get() {
         throw new Error('audio accessor blocked');
@@ -112,156 +198,55 @@ describe('sound helpers', () => {
     expect(() => playStoneSound()).not.toThrow();
   });
 
-  it('swallows blocked AudioContext state reads', () => {
-    class BlockedStateAudioContext {
-      currentTime = 0;
-      destination = {};
-      get state() {
-        throw new Error('audio state blocked');
-      }
-      resume = () => Promise.resolve();
-      createOscillator = () => ({
-        connect: () => {},
-        type: 'sine',
-        frequency: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-        start: () => {},
-        stop: () => {},
-      });
-      createGain = () => ({
-        connect: () => {},
-        gain: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-      });
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { AudioContext: BlockedStateAudioContext },
-    });
-
-    expect(() => playStoneSound()).not.toThrow();
-  });
-
-  it('waits for a suspended AudioContext to resume before playing', async () => {
-    let resumeContext: (() => void) | null = null;
-    const start = vi.fn();
-
-    class SuspendedAudioContext {
-      currentTime = 0;
-      destination = {};
-      state: AudioContextState = 'suspended';
-      resume = vi.fn(() => new Promise<void>((resolve) => {
-        resumeContext = () => {
-          this.state = 'running';
-          resolve();
-        };
-      }));
-      createOscillator = () => ({
-        connect: () => {},
-        type: 'sine',
-        frequency: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-        start,
-        stop: () => {},
-      });
-      createGain = () => ({
-        connect: () => {},
-        gain: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-      });
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { AudioContext: SuspendedAudioContext },
-    });
-
-    playStoneSound();
-
-    expect(start).not.toHaveBeenCalled();
-    const resume = resumeContext as (() => void) | null;
-    expect(resume).not.toBeNull();
-    resume!();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(start).toHaveBeenCalledTimes(1);
-  });
-
   it('debounces rapid repeats of the same sound effect', () => {
-    const start = vi.fn();
+    const play = vi.fn(() => Promise.resolve());
     vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(120).mockReturnValueOnce(160);
 
-    class RunningAudioContext {
+    class MockAudio {
+      preload?: string;
       currentTime = 0;
-      destination = {};
-      state: AudioContextState = 'running';
-      resume = () => Promise.resolve();
-      createOscillator = () => ({
-        connect: () => {},
-        type: 'sine',
-        frequency: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-        start,
-        stop: () => {},
-      });
-      createGain = () => ({
-        connect: () => {},
-        gain: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-      });
+      play = play;
+      src: string;
+      constructor(src: string) {
+        this.src = src;
+      }
     }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { AudioContext: RunningAudioContext },
+      value: { Audio: MockAudio },
     });
 
     playStoneSound();
     playStoneSound();
     playStoneSound();
 
-    expect(start).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenCalledTimes(2);
   });
 
-  it('swallows oscillator setup failures after context creation', () => {
+  it('reports rejected audio playback', async () => {
     const handler = vi.fn();
     setSoundInitErrorHandler(handler);
 
-    class BrokenAudioContext {
+    class MockAudio {
+      preload?: string;
       currentTime = 0;
-      destination = {};
-      state = 'running';
-      resume = () => Promise.resolve();
-      createOscillator = () => {
-        throw new Error('oscillator blocked');
-      };
-      createGain = () => ({
-        connect: () => {},
-        gain: {
-          setValueAtTime: () => {},
-          exponentialRampToValueAtTime: () => {},
-        },
-      });
+      play = () => Promise.reject(new Error('play blocked'));
+      src: string;
+      constructor(src: string) {
+        this.src = src;
+      }
     }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: { AudioContext: BrokenAudioContext },
+      value: { Audio: MockAudio },
     });
 
     expect(() => playPassSound()).not.toThrow();
+    await Promise.resolve();
+
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({
-      backend: 'web-audio',
-      message: 'Could not play browser audio: oscillator blocked',
+      backend: 'html-audio',
+      message: 'Could not play audio file pass.mp3: play blocked',
     }));
   });
 });
