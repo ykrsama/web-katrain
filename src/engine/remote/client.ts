@@ -170,6 +170,10 @@ class RemoteEngineClient {
     if (this._closing) throw new Error('Remote engine is shutting down');
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
 
+    // Reset any previous crash state — we're going to try again.
+    this._crashed = null;
+    this._reportedDead = false;
+
     // If a reconnect loop is already running, wait for it.
     if (this._reconnecting) {
       const deadline = Date.now() + 30_000;
@@ -709,7 +713,11 @@ class RemoteEngineClient {
   // ─── Error handling ──────────────────────────────────────────────────
 
   private _rejectIfCrashed(): void {
-    if (this._crashed) throw this._crashed;
+    // Only block if we're intentionally shutting down.
+    // Transient crashes are handled by _ensureConnected() which resets
+    // _crashed and retries. This prevents permanent deadlock after a
+    // reconnect exhaustion.
+    if (this._closing) throw new Error('Remote engine is shutting down');
   }
 
   private _failAllPending(error: Error): void {
