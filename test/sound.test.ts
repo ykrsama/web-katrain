@@ -35,7 +35,7 @@ describe('sound helpers', () => {
     expect(() => playNewGameSound()).not.toThrow();
   });
 
-  it('plays the happy-stones mp3 files', () => {
+  it('plays the sabaki mp3 files', () => {
     const play = vi.fn(() => Promise.resolve());
     const audioInstances: Array<{ src: string; preload?: string; currentTime: number; play: typeof play }> = [];
 
@@ -61,10 +61,10 @@ describe('sound helpers', () => {
     playNewGameSound();
 
     expect(audioInstances.map((audio) => audio.src)).toEqual([
-      '/themes/happy-stones/0.mp3',
-      '/themes/happy-stones/capture0.mp3',
-      '/themes/happy-stones/pass.mp3',
-      '/themes/happy-stones/newgame.mp3',
+      '/themes/sabaki/0.mp3',
+      '/themes/sabaki/capture0.mp3',
+      '/themes/sabaki/pass.mp3',
+      '/themes/sabaki/newgame.mp3',
     ]);
     expect(audioInstances.every((audio) => audio.preload === 'auto')).toBe(true);
     expect(audioInstances.every((audio) => audio.currentTime === 0)).toBe(true);
@@ -106,18 +106,18 @@ describe('sound helpers', () => {
     for (let i = 0; i < 6; i++) playCaptureSound(i + 1);
 
     expect(srcs).toEqual([
-      '/themes/happy-stones/0.mp3',
-      '/themes/happy-stones/1.mp3',
-      '/themes/happy-stones/2.mp3',
-      '/themes/happy-stones/3.mp3',
-      '/themes/happy-stones/4.mp3',
-      '/themes/happy-stones/0.mp3',
-      '/themes/happy-stones/capture0.mp3',
-      '/themes/happy-stones/capture1.mp3',
-      '/themes/happy-stones/capture2.mp3',
-      '/themes/happy-stones/capture3.mp3',
-      '/themes/happy-stones/capture4.mp3',
-      '/themes/happy-stones/capture0.mp3',
+      '/themes/sabaki/0.mp3',
+      '/themes/sabaki/1.mp3',
+      '/themes/sabaki/2.mp3',
+      '/themes/sabaki/3.mp3',
+      '/themes/sabaki/4.mp3',
+      '/themes/sabaki/0.mp3',
+      '/themes/sabaki/capture0.mp3',
+      '/themes/sabaki/capture1.mp3',
+      '/themes/sabaki/capture2.mp3',
+      '/themes/sabaki/capture3.mp3',
+      '/themes/sabaki/capture4.mp3',
+      '/themes/sabaki/capture0.mp3',
     ]);
   });
 

@@ -13,7 +13,7 @@ describe('analysis experience disclosure', () => {
     expect(toggle).toContain('aria-label="Analysis detail"');
     expect(desktop).toContain('<AnalysisExperienceToggle />');
     expect(mobile).toContain('actions: <AnalysisExperienceToggle />');
-    expect(store).toContain("analysisExperience: 'coach'");
+    expect(store).toContain("analysisExperience: 'pro'");
   });
 
   it('rejects corrupt stored disclosure values', () => {

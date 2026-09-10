@@ -1,7 +1,7 @@
 type SoundEffectKey = 'stone' | 'capture' | 'pass' | 'new-game';
 
 const MIN_SOUND_INTERVAL_MS = 50;
-const HAPPY_STONES_SOUND_BASE_PATH = '/themes/happy-stones/';
+const SABAKI_SOUND_BASE_PATH = '/themes/sabaki/';
 const STONE_SOUND_COUNT = 5;
 const CAPTURE_SOUND_COUNT = 5;
 
@@ -89,7 +89,7 @@ const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
     }
 
     try {
-        const audio = new AudioCtor(`${HAPPY_STONES_SOUND_BASE_PATH}${fileName}`);
+        const audio = new AudioCtor(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
         audio.preload = 'auto';
         audio.currentTime = 0;
         const playResult = audio.play();

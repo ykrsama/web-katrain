@@ -15,7 +15,7 @@ describe('settings defaults', () => {
     expect(useGameStore.getState().settings.hapticFeedback).toBe(true);
   });
 
-  it('enables fuzzy stone placement by default', () => {
-    expect(useGameStore.getState().settings.fuzzyStonePlacement).toBe(true);
+  it('disables fuzzy stone placement by default', () => {
+    expect(useGameStore.getState().settings.fuzzyStonePlacement).toBe(false);
   });
 });

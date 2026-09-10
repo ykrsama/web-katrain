@@ -206,9 +206,9 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
     // Opaque: 0.7 alpha left Yunzi at 4.13:1 and Shell & Slate with no margin.
     coordColor: '#222222',
   },
-  'happy-stones': {
-    id: 'happy-stones',
-    name: 'Happy Stones',
+  sabaki: {
+    id: 'sabaki',
+    name: 'Sabaki',
     description: 'Vibrant orange board with glass-like stones',
     board: {
       backgroundColor: '#d9a55b',

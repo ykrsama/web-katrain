@@ -138,7 +138,7 @@ export type BoardThemeId =
   | 'hikaru'
   | 'shell-slate'
   | 'yunzi'
-  | 'happy-stones'
+  | 'sabaki'
   | 'kifu'
   | 'baduktv';
 
