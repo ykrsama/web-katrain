@@ -300,6 +300,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   const moveInsight = useMemo(() => getMoveInsight(move, boardSize, parentBoard), [boardSize, move, parentBoard]);
   const moveInsightCoach = useMemo(() => (moveInsight ? getMoveInsightCoach(moveInsight) : null), [moveInsight]);
   const showProDetails = detailed && analysisExperience === 'pro';
+  const showShapeCoachPro = analysisExperience === 'pro';
   const shapeCoachNoteBlock = useMemo(
     () => (moveInsight && moveInsightCoach ? formatShapeCoachNoteBlock(moveInsight, moveInsightCoach) : ''),
     [moveInsight, moveInsightCoach]
@@ -608,7 +609,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
               <span className="font-semibold text-[var(--ui-text)]">{t('Beginner')}: </span>
               <span className="ui-text-muted">{moveInsightCoach.beginner}</span>
             </div>
-            {showProDetails && (
+            {showShapeCoachPro && (
               <div>
                 <span className="font-semibold text-[var(--ui-text)]">{t('Pro')}: </span>
                 <span className="ui-text-muted">{moveInsightCoach.pro}</span>
