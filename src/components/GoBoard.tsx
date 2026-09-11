@@ -3526,7 +3526,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
             });
             return (
               <div
-                className="absolute z-20 bg-[var(--ui-panel)] text-[var(--ui-text)] text-xs p-2 rounded-lg shadow-xl pointer-events-none border border-[var(--ui-border-strong)]"
+                className="absolute z-20 bg-[var(--ui-panel)]/50 backdrop-blur-[1px] text-[var(--ui-text)] text-xs p-2 rounded-lg shadow-xl pointer-events-none"
                 style={{
                   left: tooltipPlacement.left,
                   top: tooltipPlacement.top,
