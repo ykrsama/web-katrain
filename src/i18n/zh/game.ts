@@ -60,7 +60,7 @@ export default {
   'Hide advanced strategy options': '隐藏高级策略选项',
   'Advanced strategy options': '高级策略选项',
   'Strategy': '策略',
-  'Default (engine top move)': '默认（引擎首选点）',
+  'Default (engine top move)': '默认（引擎 AI 选点）',
   'Human (KataGo human net)': '人类（KataGo 人类网络）',
   'KataHandicap (KaTrain)': '让子（KaTrain）',
   'KataAntiMirror (KaTrain)': '反模仿（KaTrain）',
@@ -111,10 +111,10 @@ export default {
   'Time system': '计时方式',
   'No timer': '无计时器',
   'Byo-yomi (Japanese)': '读秒（日本式）',
-  'Main time (min)': '基本时间（分钟）',
+  'Main time (min)': '保留时间（分钟）',
   'Byo-yomi (sec)': '读秒（秒）',
   'Periods': '次数',
-  'Main time then {periods} periods of {seconds} seconds.': '基本时间后为 {periods} 次、每次 {seconds} 秒的读秒。',
+  'Main time then {periods} periods of {seconds} seconds.': '保留时间后为 {periods} 次、每次 {seconds} 秒的读秒。',
   '{n} min': '{n} 分钟',
 
   'Start from a generated position': '从生成的局面开始',
@@ -165,7 +165,7 @@ export default {
   'A dan-level all-rounder. Reads deeply and closes games cleanly.':
     '段位级全面型棋手。计算深入，干净利落地收束对局。',
   'No handicap to its reading — the engine\'s top move, every time.':
-    '计算毫无保留——每次都下引擎首选点。',
+    '计算毫无保留——每次都下引擎 AI 选点。',
   'Takes cash on the third line and dares you to build a wall you can\'t use.':
     '在三线取实空，并挑衅你筑起无用的厚势。',
   'Builds sweeping frameworks and invites you to invade — then attacks.':
@@ -237,7 +237,7 @@ export default {
   'Handicap': '让子',
   'Game': '对局',
   'Time': '时间',
-  'Main time': '基本时间',
+  'Main time': '保留时间',
   'YYYY-MM-DD': 'YYYY-MM-DD',
   'B+R, W+2.5': 'B+R, W+2.5',
   'Open link from {source}': '打开来自 {source} 的链接',

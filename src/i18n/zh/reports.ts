@@ -166,7 +166,7 @@ export default {
   'Invasion aji': '打入余味',
   'Invasion points': '打入点',
   'Joseki aim': '定式目标',
-  'Jump': '跳',
+  'Jump': '跳转',
   'KaTrain Official Report': 'KaTrain 官方报告',
   'KaTrain Report': 'KaTrain 报告',
   'KaTrain-style accuracy per game phase; the small number is analyzed moves in that phase.': 'KaTrain式按阶段准确率；小数字为该阶段的已分析走法数。',

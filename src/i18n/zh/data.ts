@@ -59,7 +59,7 @@ export default {
   'Tromp-Taylor rules': 'Tromp-Taylor 规则',
 
   // ================= AI strategies =================
-  'Default (engine top move)': '默认（引擎首选点）',
+  'Default (engine top move)': '默认（引擎 AI 选点）',
   'Human (KataGo human net)': '人类（KataGo 人类网络）',
   'KataHandicap (KaTrain)': '让子（KaTrain）',
   'KataAntiMirror (KaTrain)': '反模仿（KaTrain）',
@@ -105,10 +105,10 @@ export default {
   // ================= Eval quality =================
   'Blunder': '重大失误',
   'Mistake': '失误',
-  'Inaccuracy': '不准确',
+  'Inaccuracy': '问题手',
   'Slight loss': '轻微损失',
   'Good': '好棋',
-  'Best': '最佳',
+  'Best': '一选',
 
   // ================= Strength / rank =================
   'Kyu': '级',
@@ -258,7 +258,7 @@ export default {
   'A patient beginner. Plays honest, simple shapes and rarely starts a fight.': '有耐心的新手。下法诚实简单，很少主动挑起战斗。',
   'Solid single-digit kyu. Punishes overplays but seldom overreaches.': '稳健的个位级棋手。惩罚过分手，但很少越界。',
   'A dan-level all-rounder. Reads deeply and closes games cleanly.': '段位级全面型棋手。计算深入，干净利落地收束对局。',
-  'No handicap to its reading — the engine\'s top move, every time.': '计算毫无保留——每次都下引擎首选点。',
+  'No handicap to its reading — the engine\'s top move, every time.': '计算毫无保留——每次都下引擎 AI 选点。',
   'Takes cash on the third line and dares you to build a wall you can\'t use.': '在三线取实空，并挑衅你筑起无用的厚势。',
   'Builds sweeping frameworks and invites you to invade — then attacks.': '构筑宏大的阵势，引诱你打入——然后发起攻击。',
   'Loves a brawl. Strong ideas, but will hand back points when it gets greedy.': '喜欢混战。构想有力，但贪心时会送分。',

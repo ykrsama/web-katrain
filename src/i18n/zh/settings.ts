@@ -47,11 +47,11 @@ export default {
   'Timer': '计时器',
   'Sound Effects': '音效',
   'Timer Sound': '计时音',
-  'Main Time (min)': '基本时间（分钟）',
+  'Main Time (min)': '保留时间（分钟）',
   'Byo Length (sec)': '读秒时长（秒）',
   'Byo Periods': '读秒次数',
   'Minimal Use (sec)': '最少用时（秒）',
-  'KaTrain-style clock (main time, then byo-yomi periods). Timer runs only in Play mode and only for human turns.': 'KaTrain 风格计时器（基本时间，然后读秒）。计时器仅在“对弈”模式下且仅计算人类回合。',
+  'KaTrain-style clock (main time, then byo-yomi periods). Timer runs only in Play mode and only for human turns.': 'KaTrain 风格计时器（保留时间，然后读秒）。计时器仅在“对弈”模式下且仅计算人类回合。',
 
   // Input
   'Input': '输入',
