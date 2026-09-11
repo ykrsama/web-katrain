@@ -1121,7 +1121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                                                 >
                                                     {RULES_OPTIONS.map((option) => (
                                                         <option key={option.id} value={option.id}>
-                                                            {option.id === 'japanese' ? `${option.label} (KaTrain default)` : option.label}
+                                                            {option.id === 'chinese' ? `${option.label} (Default)` : option.label}
                                                         </option>
                                                     ))}
                                                 </select>

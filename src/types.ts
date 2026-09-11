@@ -1,6 +1,6 @@
 export type BoardSize = 9 | 13 | 19;
 export const DEFAULT_BOARD_SIZE: BoardSize = 19;
-export const KOMI = 6.5;
+export const KOMI = 7.5;
 
 export type Player = 'black' | 'white';
 export type Intersection = Player | null;
@@ -181,7 +181,7 @@ export interface GameSettings {
   loadSgfFastAnalysis: boolean; // KaTrain general/load_fast_analysis
   animPvTimeSeconds: number; // KaTrain general/anim_pv_time
   animPvMoves: number; // KaTrain general/anim_pv_moves (0 shows the whole sequence at once)
-  gameRules: GameRules; // KataGo rules preset (KaTrain default: japanese)
+  gameRules: GameRules; // KataGo rules preset
   trainerLowVisits: number; // KaTrain trainer/low_visits
   trainerTheme: 'theme:normal' | 'theme:red-green-colourblind'; // KaTrain trainer/theme
   trainerEvalThresholds: number[]; // KaTrain trainer/eval_thresholds

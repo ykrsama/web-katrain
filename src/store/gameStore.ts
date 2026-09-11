@@ -1,5 +1,5 @@
 import { createWithEqualityFn as create } from 'zustand/traditional';
-import { DEFAULT_BOARD_SIZE, type FloatArray, type GameRules, type GameState, type BoardState, type Player, type AnalysisResult, type BoardDrawing, type GameNode, type Move, type GameSettings, type CandidateMove, type RegionOfInterest, type BoardSize, type KataGoBackendPreference, type EditTool } from '../types';
+import { DEFAULT_BOARD_SIZE, KOMI, type FloatArray, type GameRules, type GameState, type BoardState, type Player, type AnalysisResult, type BoardDrawing, type GameNode, type Move, type GameSettings, type CandidateMove, type RegionOfInterest, type BoardSize, type KataGoBackendPreference, type EditTool } from '../types';
 import { findMistakeNavigationTarget } from '../utils/mistakeNavigation';
 import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLiberties, getLegalMoves, isEye, isValidMove } from '../utils/gameLogic';
 import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } from '../utils/sound';
@@ -383,6 +383,9 @@ const loadStoredSettings = (): Partial<GameSettings> | null => {
       if (experience !== 'coach' && experience !== 'pro') {
         delete (parsed as { analysisExperience?: unknown }).analysisExperience;
       }
+    }
+    if ((parsed as { gameRules?: unknown }).gameRules === 'japanese') {
+      delete (parsed as { gameRules?: unknown }).gameRules;
     }
     if ('defaultBoardSize' in parsed) {
       const sizeRaw = (parsed as { defaultBoardSize?: unknown }).defaultBoardSize;
@@ -1035,10 +1038,10 @@ const initialGameState: GameState = {
     moveHistory: [],
     capturedBlack: 0,
     capturedWhite: 0,
-    komi: 6.5
+    komi: KOMI
 };
 const initialRoot = createNode(null, null, initialGameState, createRootNodeId());
-initialRoot.properties = { RU: [rulesToSgfRu('japanese')] };
+initialRoot.properties = { RU: [rulesToSgfRu('chinese')] };
 
 const defaultSettings: GameSettings = {
   appLocale: 'en',
@@ -1074,7 +1077,7 @@ const defaultSettings: GameSettings = {
   loadSgfFastAnalysis: false,
   animPvTimeSeconds: 0.5,
   animPvMoves: 100,
-  gameRules: 'japanese',
+  gameRules: 'chinese',
   trainerLowVisits: 25,
   trainerTheme: 'theme:normal',
   trainerEvalThresholds: [12, 6, 3, 1.5, 0.5, 0],
@@ -5574,7 +5577,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       moveHistory: [],
       capturedBlack: 0,
       capturedWhite: 0,
-      komi: 6.5,
+      komi: KOMI,
     };
     const newRoot = createNode(null, null, rootState, createRootNodeId());
     newRoot.properties = { RU: [rulesToSgfRu(state.settings.gameRules)], SZ: [String(boardSize)] };
@@ -5648,7 +5651,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       moveHistory: [],
       capturedBlack: 0,
       capturedWhite: 0,
-      komi: sgf.komi ?? 6.5,
+      komi: sgf.komi ?? KOMI,
     };
 
     const newRoot = createNode(null, null, rootState, createRootNodeId());

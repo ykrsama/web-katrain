@@ -28,7 +28,7 @@ import {
 } from '../utils/library';
 import { loadSgfOrOgs } from '../utils/ogs';
 import type { CandidateMove, EditTool, GameNode, Player } from '../types';
-import { DEFAULT_BOARD_SIZE } from '../types';
+import { DEFAULT_BOARD_SIZE, KOMI } from '../types';
 import { parseGtpMove } from '../lib/gtp';
 import { computeJapaneseManualScoreFromOwnership, formatResultScoreLead, roundToHalf } from '../utils/manualScore';
 import { computeManualScoreEstimate, estimateDeadStonesByPlayout, estimateDeadStonesFromOwnership, NO_MANUAL_SCORE_ESTIMATE, toggleDeadStoneChain } from '../utils/scoring';
@@ -1726,7 +1726,7 @@ export const Layout: React.FC = () => {
     setIsNewGameOpen(false);
     if (!(await prepareForGameReplacement())) return;
     startNewGame({
-      komi,
+      komi: KOMI,
       rules: settings.gameRules,
       boardSize: settings.defaultBoardSize,
       handicap: settings.defaultHandicap,
@@ -1737,7 +1737,6 @@ export const Layout: React.FC = () => {
     markCurrentGameCleanAndClearAutoSave();
     toast(`Started ${settings.defaultBoardSize}×${settings.defaultBoardSize} game.`, 'success');
   }, [
-    komi,
     markCurrentGameCleanAndClearAutoSave,
     prepareForGameReplacement,
     settings.defaultBoardSize,
@@ -3411,8 +3410,8 @@ export const Layout: React.FC = () => {
             markCurrentGameCleanAndClearAutoSave();
             setIsNewGameOpen(false);
           }}
-            defaultKomi={komi}
-            defaultRules={settings.gameRules}
+            defaultKomi={KOMI}
+            defaultRules="chinese"
             defaultBoardSize={settings.defaultBoardSize}
             defaultHandicap={settings.defaultHandicap}
             defaultInfo={defaultGameInfo}

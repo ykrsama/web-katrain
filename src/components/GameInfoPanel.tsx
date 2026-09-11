@@ -2,8 +2,13 @@ import React from 'react';
 import { shallow } from 'zustand/shallow';
 import { FaCheck, FaEdit, FaExternalLinkAlt } from 'react-icons/fa';
 import { useGameStore } from '../store/gameStore';
-import { DEFAULT_BOARD_SIZE, type GameSettings } from '../types';
+import { DEFAULT_BOARD_SIZE, type GameSettings, type Player } from '../types';
 import { getMaxHandicap, normalizeBoardSize } from '../utils/boardSize';
+import { describeAiStrength, estimateAiRank } from '../utils/aiStrength';
+import { BotPersonaPicker } from './BotPersonaPicker';
+import { botPersonaAiPatch, type BotPersona } from '../data/botPersonas';
+import { KATAGO_HUMAN_PROFILES } from '../engine/katago/searchParams';
+import { describeHumanProfile } from '../utils/humanProfileLabel';
 import {
   formatGameInfoPlayer,
   formatGameInfoTitle,
@@ -42,15 +47,34 @@ const inputClass =
   'min-h-11 w-full ui-input border rounded px-2 py-1.5 text-xs text-[var(--ui-text)] focus:border-[var(--ui-accent)] outline-none desktop-shell:min-h-0';
 
 export const GameInfoPanel: React.FC = () => {
-  const { rootNode, komi, gameRules, setKomi, setHandicap, setRootProperty, updateSettings, treeVersion } = useGameStore(
+  const {
+    rootNode,
+    komi,
+    gameRules,
+    isAiPlaying,
+    aiColor,
+    currentPlayer,
+    settings,
+    setKomi,
+    setHandicap,
+    setRootProperty,
+    updateSettings,
+    makeAiMove,
+    treeVersion,
+  } = useGameStore(
     (state) => ({
       rootNode: state.rootNode,
       komi: state.komi,
       gameRules: state.settings.gameRules,
+      isAiPlaying: state.isAiPlaying,
+      aiColor: state.aiColor,
+      currentPlayer: state.currentPlayer,
+      settings: state.settings,
       setKomi: state.setKomi,
       setHandicap: state.setHandicap,
       setRootProperty: state.setRootProperty,
       updateSettings: state.updateSettings,
+      makeAiMove: state.makeAiMove,
       treeVersion: state.treeVersion,
     }),
     shallow
@@ -68,6 +92,23 @@ export const GameInfoPanel: React.FC = () => {
   const [handicapInput, setHandicapInput] = React.useState(() => String(handicap));
   const [isEditingHandicap, setIsEditingHandicap] = React.useState(false);
   const [isEditingInfo, setIsEditingInfo] = React.useState(false);
+  const [selectedPersonaId, setSelectedPersonaId] = React.useState<string | null>(null);
+  const [showAdvancedAi, setShowAdvancedAi] = React.useState(false);
+  const aiOpponent = isAiPlaying && aiColor ? aiColor : 'none';
+  const showAiOptions = aiOpponent !== 'none';
+  const aiStrength = estimateAiRank(settings.aiStrategy, settings);
+  const updateAiConfig = (patch: Partial<GameSettings>) => updateSettings(patch);
+  const selectPersona = (persona: BotPersona) => {
+    setSelectedPersonaId(persona.id);
+    updateAiConfig(botPersonaAiPatch(persona));
+  };
+  const setAiOpponent = (opponent: 'none' | Player) => {
+    const nextOpponent = opponent === 'none' ? null : opponent;
+    useGameStore.setState({ isAiPlaying: !!nextOpponent, aiColor: nextOpponent });
+    if (nextOpponent && nextOpponent === useGameStore.getState().currentPlayer) {
+      window.setTimeout(() => useGameStore.getState().makeAiMove(), 0);
+    }
+  };
   const title = formatGameInfoTitle(rootProps);
   const blackName = readRootInfoValue(rootProps, 'PB');
   const blackRank = readRootInfoValue(rootProps, 'BR');
@@ -269,7 +310,7 @@ export const GameInfoPanel: React.FC = () => {
             onFocus={() => setIsEditingKomi(true)}
             onBlur={commitKomi}
             onKeyDown={handleKomiKeyDown}
-            placeholder="6.5"
+            placeholder="7.5"
             className={inputClass}
             inputMode="decimal"
             spellCheck={false}
@@ -308,6 +349,155 @@ export const GameInfoPanel: React.FC = () => {
             <option value="korean">Korean</option>
           </select>
         </label>
+      </div>
+      <div className="space-y-3 rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3" data-game-info-ai-edit="true">
+        <div>
+          <div className="text-xs font-semibold text-[var(--ui-text)]">AI bot</div>
+          <div className="text-[0.625rem] ui-text-faint">Configure the current game opponent without starting over.</div>
+        </div>
+        <label className="min-w-0 space-y-1">
+          <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
+            Play against
+          </span>
+          <select
+            value={aiOpponent}
+            onChange={(e) => setAiOpponent(e.target.value as 'none' | Player)}
+            onKeyDown={handleKeyDown}
+            className={inputClass}
+          >
+            <option value="none">Human (local)</option>
+            <option value="black">AI as Black</option>
+            <option value="white">AI as White</option>
+          </select>
+        </label>
+        {showAiOptions ? (
+          <>
+            <div className="text-xs ui-text-faint">
+              You play as {aiOpponent === 'black' ? 'White' : 'Black'}.
+              {aiOpponent === currentPlayer ? ' AI is to move now.' : ''}
+            </div>
+            <div className="space-y-2">
+              <div className="text-[0.6875rem] font-semibold uppercase tracking-wide ui-text-faint">Choose a bot</div>
+              <BotPersonaPicker selectedId={selectedPersonaId} onSelect={selectPersona} />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedAi((prev) => !prev)}
+              onKeyDown={handleKeyDown}
+              className="text-xs font-semibold text-[var(--ui-accent)] hover:underline"
+              aria-expanded={showAdvancedAi}
+            >
+              {showAdvancedAi ? 'Hide advanced strategy options' : 'Advanced strategy options'}
+            </button>
+            <div className={showAdvancedAi ? 'space-y-2' : 'hidden'}>
+              <label className="min-w-0 space-y-1">
+                <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Strategy</span>
+                <select
+                  value={settings.aiStrategy}
+                  onChange={(e) => {
+                    setSelectedPersonaId(null);
+                    updateAiConfig({ aiStrategy: e.target.value as GameSettings['aiStrategy'] });
+                  }}
+                  onKeyDown={handleKeyDown}
+                  className={inputClass}
+                >
+                  <option value="default">Default (engine top move)</option>
+                  <option value="human">Human (KataGo human net)</option>
+                  <option value="handicap">KataHandicap (KaTrain)</option>
+                  <option value="antimirror">KataAntiMirror (KaTrain)</option>
+                  <option value="rank">Rank (KaTrain)</option>
+                  <option value="simple">Simple Ownership</option>
+                  <option value="settle">Settle Stones</option>
+                  <option value="scoreloss">ScoreLoss (weaker)</option>
+                  <option value="policy">Policy</option>
+                  <option value="weighted">Policy Weighted</option>
+                  <option value="jigo">Jigo</option>
+                  <option value="pick">Pick</option>
+                  <option value="local">Local</option>
+                  <option value="tenuki">Tenuki</option>
+                  <option value="territory">Territory</option>
+                  <option value="influence">Influence</option>
+                </select>
+              </label>
+              <p className="text-xs ui-text-faint" data-game-info-ai-strength={aiStrength.label ?? 'none'}>
+                {describeAiStrength(aiStrength)}
+              </p>
+              {settings.aiStrategy === 'human' ? (
+                <label className="min-w-0 space-y-1">
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Plays like</span>
+                  <select
+                    value={settings.humanSlProfile}
+                    onChange={(e) => updateAiConfig({ humanSlProfile: e.target.value })}
+                    onKeyDown={handleKeyDown}
+                    className={inputClass}
+                  >
+                    {KATAGO_HUMAN_PROFILES.map((profile) => (
+                      <option key={profile} value={profile}>{describeHumanProfile(profile)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {settings.aiStrategy === 'rank' ? (
+                <label className="min-w-0 space-y-1">
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Strength (rank target)</span>
+                  <input
+                    type="number"
+                    min={-5}
+                    max={20}
+                    step={0.5}
+                    value={settings.aiRankKyu}
+                    onChange={(e) => {
+                      const raw = parseFloat(e.target.value || '0');
+                      updateAiConfig({ aiRankKyu: Number.isNaN(raw) ? 0 : Math.min(20, Math.max(-5, raw)) });
+                    }}
+                    onKeyDown={handleKeyDown}
+                    className={inputClass}
+                  />
+                </label>
+              ) : null}
+              {settings.aiStrategy === 'scoreloss' ? (
+                <label className="min-w-0 space-y-1">
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Strength (c)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.05}
+                    value={settings.aiScoreLossStrength}
+                    onChange={(e) => updateAiConfig({ aiScoreLossStrength: Math.max(0, parseFloat(e.target.value || '0')) })}
+                    onKeyDown={handleKeyDown}
+                    className={inputClass}
+                  />
+                </label>
+              ) : null}
+              {settings.aiStrategy === 'jigo' ? (
+                <label className="min-w-0 space-y-1">
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Target Score</span>
+                  <input
+                    type="number"
+                    step={0.1}
+                    value={settings.aiJigoTargetScore}
+                    onChange={(e) => updateAiConfig({ aiJigoTargetScore: parseFloat(e.target.value || '0') })}
+                    onKeyDown={handleKeyDown}
+                    className={inputClass}
+                  />
+                </label>
+              ) : null}
+              <div className="text-xs ui-text-faint">
+                Full per-strategy parameters remain available in Settings → AI/Engine.
+              </div>
+            </div>
+            {aiOpponent === currentPlayer ? (
+              <button
+                type="button"
+                className="min-h-9 rounded border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 text-xs font-semibold text-[var(--ui-text)] hover:brightness-110"
+                onClick={() => makeAiMove()}
+                onKeyDown={handleKeyDown}
+              >
+                Move now
+              </button>
+            ) : null}
+          </>
+        ) : null}
       </div>
     </div>
   );

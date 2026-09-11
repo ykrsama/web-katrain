@@ -12,6 +12,7 @@ import { CandidateMoveList } from '../CandidateMoveList';
 import { AnalysisExperienceToggle } from '../AnalysisExperienceToggle';
 import { NotesPanel } from '../NotesPanel';
 import { Timer } from '../Timer';
+import { GameInfoPanel } from '../GameInfoPanel';
 import { LanguageSwitcher } from '../layout/LanguageSwitcher';
 import { getDashboardLayoutMode, type DashboardLayoutMode } from '../../utils/dashboardLayout';
 import { LIBRARY_OPEN_STORAGE_KEY } from '../../utils/layoutPreferences';
@@ -224,7 +225,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   } = props;
   const rulesLabel = formatRulesLabel(rules);
 
-  const [sections, setSections] = useState({ tree: true, analysis: true, candidates: true, notes: true });
+  const [sections, setSections] = useState({ info: true, tree: true, analysis: true, candidates: true, notes: true });
   // Top game-info strip and bottom metrics bar collapse like the side panels so
   // the board can take the full column; reopen handles mirror the edge toggles.
   const [gamestripOpen, setGamestripOpen] = useState(() => {
@@ -887,10 +888,13 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <button type="button" className="iconbtn drawer-close" title="Close" style={{ margin: '6px 6px 6px 0' }} onClick={() => setSidebarOpen(false)}><Icon name="x" size={14} /></button>
           </div>
           <div className="sidebar-scroll">
-            {/* No "Game info" section: the gamestrip above the board is a strict
-                superset of it (same title, size, rules, players, komi and result,
-                plus captures, handicap and save state) and its own edge toggle
-                brings it back when hidden. */}
+            {/* Game info */}
+            <div className={`section${sections.info ? ' open' : ''}`}>
+              {sectionHead('info', 'Game info', 'info')}
+              <div className="section-body">
+                <GameInfoPanel />
+              </div>
+            </div>
 
             {/* Game tree */}
             <div className={`section${sections.tree ? ' open' : ''}`}>
