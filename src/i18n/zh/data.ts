@@ -96,10 +96,10 @@ export default {
   'Win-rate Change': '胜率变化',
 
   // ================= Analysis experience =================
-  'Coach': '教练模式',
-  'Pro': '专业模式',
+  'Coach': '教学',
+  'Pro': '专业',
   'Analysis detail': '分析详情',
-  'Coach: plain-language guidance and move quality': '教练：通俗的语言指导与走子质量',
+  'Coach: plain-language guidance and move quality': '教学：通俗的语言指导与走子质量',
   'Pro: full win rate, score, visits, policy, and engine detail': '专业：完整胜率、目数、访问量、策略与引擎详情',
 
   // ================= Eval quality =================

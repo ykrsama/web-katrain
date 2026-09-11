@@ -74,9 +74,9 @@ export default {
   // Analysis
   'Analysis Detail': '分析详情',
   'Detail level': '详细程度',
-  'Coach': '教练模式',
-  'Pro': '专业模式',
-  'Coach keeps the review to move quality and plain-language guidance. Pro adds win rate, score, visits, policy and the engine’s own detail everywhere. The same switch sits at the top of the Analysis panel.': '教练模式把复盘限定为走法质量和通俗易懂的指导。专业模式则会在各处增加胜率、目数、计算量、策略以及引擎自身的细节。同样的开关也位于“分析”面板顶部。',
+  'Coach': '教学',
+  'Pro': '专业',
+  'Coach keeps the review to move quality and plain-language guidance. Pro adds win rate, score, visits, policy and the engine’s own detail everywhere. The same switch sits at the top of the Analysis panel.': '教学模式把复盘限定为走法质量和通俗易懂的指导。专业模式则会在各处增加胜率、目数、计算量、策略以及引擎自身的细节。同样的开关也位于“分析”面板顶部。',
   'Analysis Overlays': '分析叠加显示',
   'Show Children ({shortcut})': '显示分支 ({shortcut})',
   'Evaluation Dots ({shortcut})': '显示评点 ({shortcut})',
