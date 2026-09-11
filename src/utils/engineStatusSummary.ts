@@ -1,4 +1,5 @@
 import type { KataGoBackendPreference } from '../types';
+import { t } from '../i18n';
 
 export type EngineStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -19,14 +20,14 @@ export interface EngineActivityPresentation {
 export function getEngineActivityPresentation(
   args: EngineActivityPresentationArgs,
 ): EngineActivityPresentation {
-  if (args.error) return { state: 'error', label: 'Engine error' };
-  if (args.status === 'loading') return { state: 'loading', label: ENGINE_LOADING_LABEL };
-  if (args.isAiThinking) return { state: 'running', label: 'AI thinking…' };
+  if (args.error) return { state: 'error', label: t('Engine error') };
+  if (args.status === 'loading') return { state: 'loading', label: t(ENGINE_LOADING_LABEL) };
+  if (args.isAiThinking) return { state: 'running', label: t('AI thinking…') };
   if (args.isGameAnalysisRunning || args.isContinuousAnalysis) {
-    return { state: 'running', label: 'Analyzing…' };
+    return { state: 'running', label: t('Analyzing…') };
   }
-  if (args.isAnalysisMode) return { state: 'ready', label: 'Analysis mode' };
-  return { state: 'ready', label: 'KataGo ready' };
+  if (args.isAnalysisMode) return { state: 'ready', label: t('Analysis mode') };
+  return { state: 'ready', label: t('KataGo ready') };
 }
 
 /**
@@ -70,30 +71,30 @@ export function formatEngineBackendLabel(backend: string | null | undefined): st
   const normalized = backend?.trim().toLowerCase();
   switch (normalized) {
     case 'webgpu':
-      return 'WebGPU';
+      return t('WebGPU');
     case 'webgpu-gc':
-      return 'WebGPU GC';
+      return t('WebGPU GC');
     case 'wasm':
-      return 'CPU (WASM)';
+      return t('CPU (WASM)');
     case 'cpu':
-      return 'CPU';
+      return t('CPU');
     case 'tensorflow':
     case 'tfjs':
-      return 'TensorFlow.js';
+      return t('TensorFlow.js');
     case 'webnn':
-      return 'WebNN';
+      return t('WebNN');
     case 'native':
     case 'native-gpu':
-      return 'Native GPU';
+      return t('Native GPU');
     case 'native-cpu':
-      return 'Native CPU';
+      return t('Native CPU');
     case 'pytorch':
-      return 'PyTorch';
+      return t('PyTorch');
     case '':
     case undefined:
-      return 'Not loaded';
+      return t('Not loaded');
     default:
-      return backend ?? 'Not loaded';
+      return backend ?? t('Not loaded');
   }
 }
 
@@ -112,12 +113,12 @@ function isBundledModelPath(modelUrl: string): boolean {
 
 export function getEngineModelSource(modelUrl: string | null | undefined): string {
   const rawUrl = modelUrl?.trim();
-  if (!rawUrl) return 'Unknown';
-  if (rawUrl.startsWith('blob:')) return 'Uploaded';
-  if (/^https?:\/\//i.test(rawUrl)) return 'Remote';
-  if (/^file:/i.test(rawUrl)) return 'Local';
-  if (isBundledModelPath(rawUrl)) return 'Bundled';
-  return 'Local';
+  if (!rawUrl) return t('Unknown');
+  if (rawUrl.startsWith('blob:')) return t('Uploaded');
+  if (/^https?:\/\//i.test(rawUrl)) return t('Remote');
+  if (/^file:/i.test(rawUrl)) return t('Local');
+  if (isBundledModelPath(rawUrl)) return t('Bundled');
+  return t('Local');
 }
 
 function getEngineBackendReason(args: {
@@ -136,35 +137,37 @@ function getEngineBackendReason(args: {
   }
 
   if (args.status === 'loading') {
-    return `Loading ${args.activeBackendLabel} analysis.`;
+    return t('Loading {backend} analysis.', { backend: args.activeBackendLabel });
   }
 
   if (args.isFallback) {
     return args.backendNote
       ? `${args.backendNote}.`
-      : `${args.requestedBackendLabel} was requested; ${args.activeBackendLabel} is running.`;
+      : t('{requested} was requested; {active} is running.', { requested: args.requestedBackendLabel, active: args.activeBackendLabel });
   }
 
   const normalized = args.activeBackend?.trim().toLowerCase();
   if (normalized === 'webgpu' || normalized === 'webgpu-gc') {
-    return 'Browser GPU acceleration is active.';
+    return t('Browser GPU acceleration is active.');
   }
   if (normalized === 'wasm') {
-    return 'Compatible CPU analysis path; slower than WebGPU but broadly supported.';
+    return t('Compatible CPU analysis path; slower than WebGPU but broadly supported.');
   }
   if (normalized === 'cpu') {
-    return 'Plain CPU analysis path selected for maximum compatibility.';
+    return t('Plain CPU analysis path selected for maximum compatibility.');
   }
   if (!normalized) {
-    return 'Analysis engine will start when analysis runs.';
+    return t('Analysis engine will start when analysis runs.');
   }
-  return `${args.activeBackendLabel} analysis path is active.`;
+  return t('{backend} analysis path is active.', { backend: args.activeBackendLabel });
 }
 
 export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineStatusSummary {
   const hasLoadedBackend = !!args.activeBackend?.trim();
   const hasConfiguredModel = !!args.modelLabel?.trim();
   const reportsReadyWhileIdle = args.status === 'idle' && (hasLoadedBackend || hasConfiguredModel);
+  // Internal canonical token, kept in English because consumers compare it
+  // literally (e.g. `stateLabel === 'Ready'`); display surfaces translate it.
   const stateLabel = args.error
     ? 'Error'
     : args.status === 'loading'
@@ -176,7 +179,7 @@ export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineSta
   const activeBackendLabel = formatEngineBackendLabel(activeBackend);
   const requestedBackendLabel = formatEngineBackendLabel(args.requestedBackend);
   const isFallback = !!args.activeBackend && args.activeBackend !== args.requestedBackend;
-  const stateDisplay = isFallback ? `${stateLabel} fallback` : stateLabel;
+  const stateDisplay = isFallback ? t('{state} fallback', { state: t(stateLabel) }) : t(stateLabel);
   // Model names are long developer detail (often a training-run hash); the
   // compact label stays at state · backend and the title carries the model.
   const parts = [stateDisplay, activeBackendLabel];
@@ -192,14 +195,14 @@ export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineSta
     backendNote: args.backendNote,
   });
   const titleLines = [
-    `State: ${stateLabel}`,
-    reportsReadyWhileIdle ? 'Activity: Idle' : '',
-    `Backend: ${activeBackendLabel}`,
-    isFallback ? `Requested: ${requestedBackendLabel}` : '',
-    args.modelLabel ? `Model: ${args.modelLabel}` : '',
-    `Source: ${modelSource}`,
-    reasonLabel ? `Reason: ${reasonLabel}` : '',
-    args.error ? `Error: ${args.error}` : '',
+    t('State: {state}', { state: t(stateLabel) }),
+    reportsReadyWhileIdle ? t('Activity: Idle') : '',
+    t('Backend: {backend}', { backend: activeBackendLabel }),
+    isFallback ? t('Requested: {backend}', { backend: requestedBackendLabel }) : '',
+    args.modelLabel ? t('Model: {model}', { model: args.modelLabel }) : '',
+    t('Source: {source}', { source: modelSource }),
+    reasonLabel ? t('Reason: {reason}', { reason: reasonLabel }) : '',
+    args.error ? t('Error: {error}', { error: args.error }) : '',
   ].filter(Boolean);
 
   return {

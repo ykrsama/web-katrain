@@ -9,6 +9,7 @@ import { getCurrentLineNodes } from '../utils/branchNavigation';
 import { buildKifuDiagrams, type MovesPerDiagram } from '../utils/kifuDiagrams';
 import { printWindow } from '../utils/print';
 import { formatGameInfoPlayer, readRootInfoValue } from '../utils/gameInfoDisplay';
+import { useT } from '../i18n';
 import type { GameNode } from '../types';
 
 interface KifuPrintModalProps {
@@ -59,6 +60,7 @@ const KIFU_PRINT_STYLE = `
 `;
 
 export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
+  const t = useT();
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
   const [movesPerDiagram, setMovesPerDiagram] = useState<MovesPerDiagram>(50);
@@ -88,11 +90,11 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
     return {
       diagrams: buildKifuDiagrams(moveNodes, movesPerDiagram),
       playerNames: {
-        black: formatGameInfoPlayer(readRootInfoValue(rootProps, 'PB'), readRootInfoValue(rootProps, 'BR'), 'Black'),
-        white: formatGameInfoPlayer(readRootInfoValue(rootProps, 'PW'), readRootInfoValue(rootProps, 'WR'), 'White'),
+        black: formatGameInfoPlayer(readRootInfoValue(rootProps, 'PB'), readRootInfoValue(rootProps, 'BR'), t('Black')),
+        white: formatGameInfoPlayer(readRootInfoValue(rootProps, 'PW'), readRootInfoValue(rootProps, 'WR'), t('White')),
       },
     };
-  }, [activeBranchChildIds, currentNode, movesPerDiagram, treeVersion]);
+  }, [activeBranchChildIds, currentNode, movesPerDiagram, treeVersion, t]);
 
   const toStaticMarkers = (markers: { x: number; y: number; text: string; player: 'black' | 'white' }[]): StaticBoardMarker[] =>
     markers.map((m) => ({
@@ -104,7 +106,7 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
       textColor: m.player === 'black' ? '#f9fafb' : '#0b0b0b',
     }));
   const canPrint = diagrams.length > 0;
-  const printActionLabel = canPrint ? 'Print kifu or save as PDF' : 'No moves to print';
+  const printActionLabel = canPrint ? t('Print kifu or save as PDF') : t('No moves to print');
 
   return (
     <div
@@ -118,14 +120,14 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
       <div className="kifu-print ui-panel flex max-h-[92dvh] w-[92vw] max-w-3xl flex-col overflow-hidden rounded-2xl border shadow-2xl">
         <div className="kifu-controls relative flex flex-col items-stretch gap-3 border-b border-[var(--ui-border)] px-3 py-3 ui-bar sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
           <div className="min-w-0 pr-12 sm:pr-0">
-            <div className="text-xs uppercase tracking-[0.2em] ui-text-faint">Print kifu</div>
+            <div className="text-xs uppercase tracking-[0.2em] ui-text-faint">{t('Print kifu')}</div>
             <h2 id="kifu-print-title" className="text-lg font-semibold text-[var(--ui-text)]">
-              <span className="sr-only">Print Kifu: </span>
-              {playerNames.black} vs {playerNames.white}
+              <span className="sr-only">{t('Print Kifu')}: </span>
+              {t('{black} vs {white}', { black: playerNames.black, white: playerNames.white })}
             </h2>
           </div>
           <div className="flex min-w-0 w-full items-center gap-1 sm:w-auto sm:gap-2">
-            <div className="flex min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-[var(--ui-border)] sm:flex-none" role="group" aria-label="Moves per diagram">
+            <div className="flex min-w-0 flex-1 items-center overflow-hidden rounded-lg border border-[var(--ui-border)] sm:flex-none" role="group" aria-label={t('Moves per diagram')}>
               {MOVES_PER_DIAGRAM_OPTIONS.map((opt) => {
                 const active = movesPerDiagram === opt.value;
                 return (
@@ -141,10 +143,10 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
                   >
                     {opt.value === 'all' ? (
                       <>
-                        <span className="sm:hidden">All</span>
-                        <span className="hidden sm:inline">{opt.label}</span>
+                        <span className="sm:hidden">{t('All')}</span>
+                        <span className="hidden sm:inline">{t(opt.label)}</span>
                       </>
-                    ) : opt.label}
+                    ) : t(opt.label)}
                   </button>
                 );
               })}
@@ -157,13 +159,13 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
               aria-label={printActionLabel}
               title={printActionLabel}
             >
-              <FaPrint aria-hidden="true" /> <span className="hidden lg:inline">Print / PDF</span>
+              <FaPrint aria-hidden="true" /> <span className="hidden lg:inline">{t('Print / PDF')}</span>
             </button>
             <button
               type="button"
               onClick={onClose}
               className="ui-control absolute right-3 top-3 grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] sm:static"
-              aria-label="Close kifu print"
+              aria-label={t('Close kifu print')}
             >
               <FaTimes aria-hidden="true" />
             </button>
@@ -173,16 +175,20 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
         <div className="overflow-y-auto p-5">
           <div className="kifu-controls mb-4 text-xs ui-text-muted">
             {diagrams.length === 0
-              ? 'No moves to print yet.'
-              : `${diagrams.length} diagram${diagrams.length === 1 ? '' : 's'} · ${movesPerDiagram === 'all' ? 'all moves on one board' : `${movesPerDiagram} moves per diagram`}.`}
+              ? t('No moves to print yet.')
+              : t('{count} diagram{s} · {detail}.', {
+                  count: diagrams.length,
+                  s: diagrams.length === 1 ? '' : 's',
+                  detail: movesPerDiagram === 'all' ? t('all moves on one board') : t('{count} moves per diagram', { count: movesPerDiagram }),
+                })}
           </div>
           <div className="kifu-diagram-grid grid grid-cols-1 gap-6 sm:grid-cols-2">
             {diagrams.map((diagram) => (
               <div key={diagram.index} className="kifu-diagram-page flex flex-col items-center">
                 <div className="kifu-diagram-caption mb-2 text-sm font-semibold text-[var(--ui-text)]">
                   {diagram.startMove === diagram.endMove
-                    ? `Move ${diagram.startMove}`
-                    : `Moves ${diagram.startMove}–${diagram.endMove}`}
+                    ? t('Move {n}', { n: diagram.startMove })
+                    : t('Moves {start}–{end}', { start: diagram.startMove, end: diagram.endMove })}
                 </div>
                 <StaticBoard
                   board={diagram.board}
@@ -192,7 +198,7 @@ export const KifuPrintModal: React.FC<KifuPrintModalProps> = ({ onClose }) => {
                   // two-column preview its ~350px column still governs. It is
                   // the printed page's single column that this lets it fill.
                   maxPx={720}
-                  ariaLabel={`Kifu diagram moves ${diagram.startMove} to ${diagram.endMove}`}
+                  ariaLabel={t('Kifu diagram moves {start} to {end}', { start: diagram.startMove, end: diagram.endMove })}
                 />
               </div>
             ))}

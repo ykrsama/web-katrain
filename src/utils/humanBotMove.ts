@@ -6,7 +6,8 @@ import {
   type HumanChosenCandidate,
   type HumanChosenMoveParams,
 } from '../engine/katago/chosenMove';
-import type { CandidateMove, FloatArray } from '../types';
+import type { AppLocaleId, CandidateMove, FloatArray } from '../types';
+import { translate } from '../i18n/translate';
 
 /**
  * Picking a move the way a human of a given rank would, following KataGo's own
@@ -129,9 +130,14 @@ export function pickHumanBotMove(options: HumanBotOptions): HumanBotPick | null 
 }
 
 /** How the move reads in the AI's thoughts line. */
-export function describeHumanBotPick(pick: HumanBotPick, profile: string, boardSize: number): string {
-  if (pick.isPass) return `Human (${profile}) passed, following the engine's judgement.`;
+export function describeHumanBotPick(pick: HumanBotPick, profile: string, boardSize: number, locale?: AppLocaleId): string {
+  if (pick.isPass) {
+    const template = `Human ({profile}) passed, following the engine's judgement.`;
+    return locale ? translate(locale, template, { profile }) : `Human (${profile}) passed, following the engine's judgement.`;
+  }
   const column = String.fromCharCode(65 + (pick.x >= 8 ? pick.x + 1 : pick.x));
   const label = `${column}${boardSize - pick.y}`;
-  return `Human (${profile}) played ${label}, which players of that rank pick ${(pick.prob * 100).toFixed(1)}% of the time.`;
+  const template = `Human ({profile}) played {label}, which players of that rank pick {prob}% of the time.`;
+  const prob = (pick.prob * 100).toFixed(1);
+  return locale ? translate(locale, template, { profile, label, prob }) : `Human (${profile}) played ${label}, which players of that rank pick ${prob}% of the time.`;
 }

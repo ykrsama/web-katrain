@@ -13,6 +13,7 @@ import {
   formatCandidateVisits,
   formatCandidateWinRate,
 } from '../utils/candidateMoveFormat';
+import { t, useT } from '../i18n';
 
 /**
  * The engine's candidates as a list, not as circles on the board.
@@ -68,8 +69,8 @@ const formatStdev = (stdev: number | undefined): string =>
 /** Coach wording for a candidate: the quality word and, when it costs something, the gap to the top move in plain points. */
 const coachQualityText = (quality: string, pointsLost: number): string => {
   const lost = Number.isFinite(pointsLost) ? Math.max(0, pointsLost) : 0;
-  if (lost < 0.05) return `${quality} — the engine's top choice`;
-  return `${quality}, ${lost.toFixed(1)} points behind the best move`;
+  if (lost < 0.05) return t("{quality} — the engine's top choice", { quality });
+  return t('{quality}, {lost} points behind the best move', { quality, lost: lost.toFixed(1) });
 };
 
 export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey, onHover, maxRows = 8 }) => {
@@ -90,10 +91,11 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
     shallow
   );
 
+  const t = useT();
   const evalColors = useMemo(() => getKaTrainEvalColors(trainerTheme), [trainerTheme]);
   const evalThresholds = thresholds.length > 0 ? thresholds : DEFAULT_EVAL_THRESHOLDS;
   const isPro = analysisExperience === 'pro';
-  const qualityLabels = ['Blunder', 'Mistake', 'Inaccuracy', 'Slight', 'Good', 'Best'] as const;
+  const qualityLabels = [t('Blunder'), t('Mistake'), t('Inaccuracy'), t('Slight'), t('Good'), t('Best')] as const;
   const [sortKey, setSortKey] = useState<SortKey>('rank');
   // Pro can open two more columns: the policy prior and the score's spread.
   // Off by default so the narrow panel keeps its four figures readable.
@@ -116,8 +118,8 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
       type="button"
       className={`cl-num cl-sort${sortKey === key ? ' is-sorted' : ''}`}
       onClick={() => setSortKey(sortKey === key ? 'rank' : key)}
-      title={`${title}. Click to sort by it; click again for the engine's order.`}
-      aria-label={`Sort by ${label.toLowerCase()}`}
+      title={t("{title}. Click to sort by it; click again for the engine's order.", { title })}
+      aria-label={t('Sort by {label}', { label: label.toLowerCase() })}
       aria-pressed={sortKey === key}
     >
       {label}
@@ -128,10 +130,10 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
     // Three different nothings. Saying "no candidates" while a drill is
     // deliberately withholding them would blame the engine for the silence.
     const emptyText = drillHidesAnswer
-      ? 'Hidden while the drill is asking about this position.'
+      ? t('Hidden while the drill is asking about this position.')
       : isAnalysisMode
-        ? 'No candidates for this position yet.'
-        : 'Turn on analysis to rank the moves here.';
+        ? t('No candidates for this position yet.')
+        : t('Turn on analysis to rank the moves here.');
     return <div className="px-3 py-2 text-[0.6875rem] ui-text-faint">{emptyText}</div>;
   }
 
@@ -146,15 +148,15 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
       <div className="candidate-list-head">
         <span className="cl-rank" aria-hidden="true">#</span>
         <span className="cl-move">
-          <span aria-hidden="true">Move</span>
+          <span aria-hidden="true">{t('Move')}</span>
           {isPro && (
             <button
               type="button"
               className={`cl-detail-toggle${showDetail ? ' is-on' : ''}`}
               onClick={() => setDetail((v) => !v)}
               aria-pressed={showDetail}
-              aria-label={showDetail ? 'Hide prior and spread columns' : 'Show prior and spread columns'}
-              title={showDetail ? 'Hide the policy prior and score spread' : 'Show the policy prior and score spread'}
+              aria-label={showDetail ? t('Hide prior and spread columns') : t('Show prior and spread columns')}
+              title={showDetail ? t('Hide the policy prior and score spread') : t('Show the policy prior and score spread')}
             >
               {showDetail ? '−' : '+'}
             </button>
@@ -162,15 +164,15 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
         </span>
         {isPro ? (
           <>
-            {sortButton('win', 'B win', "Black's win rate after this move, whoever is to play")}
-            {sortButton('score', 'Score', 'Score lead for Black after this move')}
-            {sortButton('lost', 'Lost', 'Points behind the top candidate')}
-            {sortButton('visits', 'Visits', 'How many times the search read this move')}
-            {showDetail && sortButton('prior', 'Prior', "The policy net's first instinct for this move, before any search")}
-            {showDetail && sortButton('stdev', 'Std', 'Spread of the score estimates behind this move: wider means less settled')}
+            {sortButton('win', t('B win'), t("Black's win rate after this move, whoever is to play"))}
+            {sortButton('score', t('Score'), t('Score lead for Black after this move'))}
+            {sortButton('lost', t('Lost'), t('Points behind the top candidate'))}
+            {sortButton('visits', t('Visits'), t('How many times the search read this move'))}
+            {showDetail && sortButton('prior', t('Prior'), t("The policy net's first instinct for this move, before any search"))}
+            {showDetail && sortButton('stdev', t('Std'), t('Spread of the score estimates behind this move: wider means less settled'))}
           </>
         ) : (
-          <span className="cl-quality" aria-hidden="true">Quality</span>
+          <span className="cl-quality" aria-hidden="true">{t('Quality')}</span>
         )}
       </div>
       <ul className="candidate-list-rows">
@@ -206,13 +208,35 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
                 }}
                 title={
                   isPro
-                    ? `${hoveredKey === key ? 'Play' : 'Preview'} ${label}. ${formatCandidateWinRate(move.winRate)} Black win rate, score ${formatCandidateScore(move.scoreLead)}, ${formatCandidateVisits(move.visits)} visits.`
-                    : `${hoveredKey === key ? 'Play' : 'Preview'} ${label}: ${coachQualityText(qualityLabels[cls] ?? 'Good', move.pointsLost)}.`
+                    ? t('{verb} {label}. {winrate} Black win rate, score {score}, {visits} visits.', {
+                        verb: t(hoveredKey === key ? 'Play' : 'Preview'),
+                        label,
+                        winrate: formatCandidateWinRate(move.winRate),
+                        score: formatCandidateScore(move.scoreLead),
+                        visits: formatCandidateVisits(move.visits),
+                      })
+                    : t('{verb} {label}: {quality}.', {
+                        verb: t(hoveredKey === key ? 'Play' : 'Preview'),
+                        label,
+                        quality: coachQualityText(qualityLabels[cls] ?? t('Good'), move.pointsLost),
+                      })
                 }
                 aria-label={
                   isPro
-                    ? `Candidate ${rank}: ${label}, ${formatCandidateWinRate(move.winRate)} Black win rate, score ${formatCandidateScore(move.scoreLead)}, ${formatCandidatePointsLost(move.pointsLost)} points. ${hoveredKey === key ? 'Play it' : 'Show its variation'}.`
-                    : `Candidate ${rank}: ${label}, ${coachQualityText(qualityLabels[cls] ?? 'Good', move.pointsLost)}. ${hoveredKey === key ? 'Play it' : 'Show its variation'}.`
+                    ? t('Candidate {rank}: {label}, {winrate} Black win rate, score {score}, {lost} points. {action}.', {
+                        rank,
+                        label,
+                        winrate: formatCandidateWinRate(move.winRate),
+                        score: formatCandidateScore(move.scoreLead),
+                        lost: formatCandidatePointsLost(move.pointsLost),
+                        action: t(hoveredKey === key ? 'Play it' : 'Show its variation'),
+                      })
+                    : t('Candidate {rank}: {label}, {quality}. {action}.', {
+                        rank,
+                        label,
+                        quality: coachQualityText(qualityLabels[cls] ?? t('Good'), move.pointsLost),
+                        action: t(hoveredKey === key ? 'Play it' : 'Show its variation'),
+                      })
                 }
               >
                 <span className="cl-rank">{rank}</span>
@@ -225,8 +249,8 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
                       tabIndex={0}
                       className={`cl-pv-toggle${pvOpenKey === key ? ' is-open' : ''}`}
                       aria-expanded={pvOpenKey === key}
-                      aria-label={pvOpenKey === key ? `Hide the variation after ${label}` : `Show the variation after ${label} as text`}
-                      title={pvOpenKey === key ? 'Hide variation' : 'Show variation as text'}
+                      aria-label={pvOpenKey === key ? t('Hide the variation after {label}', { label }) : t('Show the variation after {label} as text', { label })}
+                      title={pvOpenKey === key ? t('Hide variation') : t('Show variation as text')}
                       onClick={(event) => {
                         event.stopPropagation();
                         setPvOpenKey((open) => (open === key ? null : key));
@@ -252,7 +276,7 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
                     {showDetail && <span className="cl-num ui-text-faint">{formatStdev(move.scoreStdev)}</span>}
                   </>
                 ) : (
-                  <span className="cl-quality" style={{ color: dot }}>{qualityLabels[cls] ?? 'Good'}</span>
+                  <span className="cl-quality" style={{ color: dot }}>{qualityLabels[cls] ?? t('Good')}</span>
                 )}
               </button>
               {isPro && pvOpenKey === key && move.pv && move.pv.length > 1 && (
@@ -268,14 +292,14 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
                       className="cl-pv-action"
                       onClick={() => {
                         void copyTextToClipboard(move.pv!.join(' ')).then((ok) =>
-                          useGameStore.setState({ notification: { message: ok ? 'Variation copied.' : 'Could not copy the variation.', type: ok ? 'success' : 'error' } })
+                          useGameStore.setState({ notification: { message: ok ? t('Variation copied.') : t('Could not copy the variation.'), type: ok ? 'success' : 'error' } })
                         );
                       }}
                     >
-                      Copy
+                      {t('Copy')}
                     </button>
                     <button type="button" className="cl-pv-action" onClick={() => addPvVariation(move.pv ?? [])}>
-                      Keep in tree
+                      {t('Keep in tree')}
                     </button>
                   </span>
                 </div>

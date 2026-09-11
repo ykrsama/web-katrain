@@ -68,6 +68,7 @@ import {
 } from '../utils/photoBoard';
 import { SectionHeader } from './layout/ui';
 import { panelCardBase, panelCardClosed, panelCardOpen } from './layout/ui-utils';
+import { useT } from '../i18n';
 import { getIndexedDB, readLocalStorage, writeLocalStorage } from '../utils/storage';
 import { isMobileLayoutViewport } from '../utils/responsiveLayout';
 import { downloadBlob as downloadBlobFile } from '../utils/objectUrl';
@@ -138,6 +139,7 @@ const LibraryTextDialog: React.FC<{
   dialog: LibraryTextDialogState;
   onClose: () => void;
 }> = ({ dialog, onClose }) => {
+  const t = useT();
   const [value, setValue] = useState(dialog.initialValue);
   const [folderId, setFolderId] = useState<string | null>(dialog.folderSelect?.initialFolderId ?? null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -171,7 +173,7 @@ const LibraryTextDialog: React.FC<{
             type="button"
             onClick={onClose}
             className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close"
+            aria-label={t('Close')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -215,7 +217,7 @@ const LibraryTextDialog: React.FC<{
           )}
           <div className="flex justify-end gap-2">
             <button type="button" className="panel-action-button" onClick={onClose}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="button"
@@ -236,6 +238,7 @@ const LibraryConfirmDialog: React.FC<{
   dialog: LibraryConfirmDialogState;
   onClose: () => void;
 }> = ({ dialog, onClose }) => {
+  const t = useT();
   useEscapeToClose(onClose);
 
   const confirm = () => {
@@ -259,7 +262,7 @@ const LibraryConfirmDialog: React.FC<{
             type="button"
             onClick={onClose}
             className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close"
+            aria-label={t('Close')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -268,7 +271,7 @@ const LibraryConfirmDialog: React.FC<{
           <p className="text-sm text-[var(--ui-text-muted)]">{dialog.message}</p>
           <div className="flex justify-end gap-2">
             <button type="button" className="panel-action-button" onClick={onClose} autoFocus>
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="button"
@@ -323,6 +326,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   externalFileUpdate = null,
   externalItemCreate = null,
 }) => {
+  const t = useT();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [libraryStatus, setLibraryStatus] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -403,7 +407,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       .catch((error) => {
         if (cancelled) return;
         setLibraryStatus('error');
-        setLibraryError(error instanceof Error ? error.message : 'Failed to load library.');
+        setLibraryError(error instanceof Error ? error.message : t('Failed to load library.'));
       });
     return () => {
       cancelled = true;
@@ -423,7 +427,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       .catch((error) => {
         if (cancelled) return;
         setLibraryStatus('error');
-        setLibraryError(error instanceof Error ? error.message : 'Failed to save library.');
+        setLibraryError(error instanceof Error ? error.message : t('Failed to save library.'));
       });
     return () => {
       cancelled = true;
@@ -629,7 +633,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const folderItems = useMemo(() => items.filter(isFolder), [items]);
   const folderOptions = useMemo(() => getLibraryFolderOptions(items), [items]);
   const currentFolder = folderItems.find((folder) => folder.id === activeFolderId) ?? null;
-  const currentFolderName = currentFolder?.name ?? 'Root';
+  const currentFolderName = currentFolder?.name ?? t('Root');
   const libraryStats = useMemo(() => getLibraryStats(items), [items]);
   const loadedLibraryFile = useMemo(() => {
     if (!loadedFileId) return null;
@@ -638,26 +642,26 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   }, [items, loadedFileId]);
   const canSaveCurrentToLibrary = libraryStatus !== 'loading' && libraryStatus !== 'error';
   const saveCurrentTitle = !canSaveCurrentToLibrary
-    ? 'Library is not ready'
+    ? t('Library is not ready')
     : loadedLibraryFile
-      ? `Update "${loadedLibraryFile.name}" in Library`
-      : 'Save current game to Library';
+      ? t('Update "{name}" in Library', { name: loadedLibraryFile.name })
+      : t('Save current game to Library');
   const libraryStorageBadge = libraryStatus === 'loading'
-    ? 'Loading'
+    ? t('Loading')
     : libraryStatus === 'saving'
-      ? 'Saving'
+      ? t('Saving')
       : libraryStatus === 'error'
-        ? 'Error'
+        ? t('Error')
         : indexedDbAvailable
-          ? 'IndexedDB'
-          : 'Local';
+          ? t('IndexedDB')
+          : t('Local');
   const libraryStorageTitle = libraryError
     ?? (indexedDbAvailable
-      ? 'IndexedDB library storage'
-      : 'Using local fallback storage because IndexedDB is unavailable');
+      ? t('IndexedDB library storage')
+      : t('Using local fallback storage because IndexedDB is unavailable'));
   const libraryStatsText = [
-    `${libraryStats.files} game${libraryStats.files === 1 ? '' : 's'}`,
-    `${libraryStats.folders} folder${libraryStats.folders === 1 ? '' : 's'}`,
+    t('{count} game{s}', { count: libraryStats.files, s: libraryStats.files === 1 ? '' : 's' }),
+    t('{count} folder{s}', { count: libraryStats.folders, s: libraryStats.folders === 1 ? '' : 's' }),
     formatLibrarySize(libraryStats.size),
   ].join(' · ');
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
@@ -879,31 +883,31 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const handleSaveCurrent = () => {
     if (!canSaveCurrentToLibrary) {
       onToast(
-        libraryStatus === 'loading' ? 'Library is still loading.' : 'Library storage is unavailable.',
+        libraryStatus === 'loading' ? t('Library is still loading.') : t('Library storage is unavailable.'),
         libraryStatus === 'loading' ? 'info' : 'error'
       );
       return;
     }
     const sgf = getCurrentSgf();
     if (!sgf.trim()) {
-      onToast('Nothing to save yet.', 'info');
+      onToast(t('Nothing to save yet.'), 'info');
       return;
     }
     if (loadedLibraryFile) {
       setItems((prev) => updateLibraryFileSgf(prev, loadedLibraryFile.id, sgf));
       onCurrentSaved?.();
-      onToast(`Updated "${loadedLibraryFile.name}" in Library.`, 'success');
+      onToast(t('Updated "{name}" in Library.', { name: loadedLibraryFile.name }), 'success');
       return;
     }
     setTextDialog({
-      title: 'Save to Library',
-      label: 'Name',
-      initialValue: suggestLibraryItemNameFromSgf(sgf, `Game ${items.length + 1}`),
-      placeholder: 'Game name',
-      confirmLabel: 'Save',
+      title: t('Save to Library'),
+      label: t('Name'),
+      initialValue: suggestLibraryItemNameFromSgf(sgf, t('Game {n}', { n: items.length + 1 })),
+      placeholder: t('Game name'),
+      confirmLabel: t('Save'),
       folderSelect: {
-        label: 'Save to folder',
-        rootLabel: 'Root',
+        label: t('Save to folder'),
+        rootLabel: t('Root'),
         initialFolderId: currentFolder?.id ?? null,
         options: folderOptions,
       },
@@ -914,18 +918,18 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         setItems((prev) => [newItem, ...prev]);
         onLoadedFileChange?.(newItem.id, newItem.name);
         onCurrentSaved?.();
-        onToast(`Saved "${newItem.name}" to Library.`, 'success');
+        onToast(t('Saved "{name}" to Library.', { name: newItem.name }), 'success');
       },
     });
   };
 
   const handleRename = (item: LibraryItem) => {
     setTextDialog({
-      title: `Rename ${isFolder(item) ? 'Folder' : 'File'}`,
-      label: 'Name',
+      title: t(isFolder(item) ? 'Rename Folder' : 'Rename File'),
+      label: t('Name'),
       initialValue: item.name,
-      placeholder: isFolder(item) ? 'Folder name' : 'Game name',
-      confirmLabel: 'Rename',
+      placeholder: t(isFolder(item) ? 'Folder name' : 'Game name'),
+      confirmLabel: t('Rename'),
       onSubmit: (next) => {
         const uniqueName = getUniqueLibraryItemName(next, items, item.parentId ?? null, item.id);
         setItems((prev) => updateLibraryItem(prev, item.id, { name: uniqueName }));
@@ -940,11 +944,11 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleEditTags = (item: LibraryFile) => {
     setTextDialog({
-      title: `Tags for ${item.name}`,
-      label: 'Tags (comma-separated)',
+      title: t('Tags for {name}', { name: item.name }),
+      label: t('Tags (comma-separated)'),
       initialValue: (item.tags ?? []).join(', '),
-      placeholder: 'joseki, review, tsumego',
-      confirmLabel: 'Save tags',
+      placeholder: t('joseki, review, tsumego'),
+      confirmLabel: t('Save tags'),
       onSubmit: (next) => {
         setItems((prev) => setLibraryFileTags(prev, item.id, next.split(',')));
       },
@@ -953,18 +957,18 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleCreateFolder = (parentId: string | null = activeFolderId) => {
     setTextDialog({
-      title: 'New Folder',
-      label: 'Name',
-      initialValue: 'New Folder',
-      placeholder: 'Folder name',
-      confirmLabel: 'Create',
+      title: t('New Folder'),
+      label: t('Name'),
+      initialValue: t('New Folder'),
+      placeholder: t('Folder name'),
+      confirmLabel: t('Create'),
       onSubmit: (name) => {
         const uniqueName = getUniqueLibraryItemName(name, items, parentId);
         const folder = createLibraryFolder(uniqueName, parentId);
         setItems((prev) => [folder, ...prev]);
         setExpandedFolderIds((prev) => new Set(prev).add(folder.id));
         setCurrentFolderId(folder.id);
-        onToast(`Created folder "${folder.name}".`, 'success');
+        onToast(t('Created folder "{name}".', { name: folder.name }), 'success');
       },
     });
   };
@@ -993,22 +997,26 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     }
     setItems([...files, ...next]);
     setExpandedFolderIds((prev) => new Set(prev).add(folderId));
-    onToast(`Synced ${games.length} OGS game${games.length === 1 ? '' : 's'} into "${folderName}".`, 'success');
+    onToast(t('Synced {count} OGS game{s} into "{folder}".', {
+      count: games.length,
+      s: games.length === 1 ? '' : 's',
+      folder: folderName,
+    }), 'success');
   };
 
   const handleClearLibrary = () => {
-    const itemLabel = `${items.length} library item${items.length === 1 ? '' : 's'}`;
+    const itemLabel = t('{count} library item{s}', { count: items.length, s: items.length === 1 ? '' : 's' });
     setConfirmDialog({
-      title: 'Clear Library',
-      message: `Clear all ${itemLabel}? This cannot be undone.`,
-      confirmLabel: 'Clear',
+      title: t('Clear Library'),
+      message: t('Clear all {items}? This cannot be undone.', { items: itemLabel }),
+      confirmLabel: t('Clear'),
       danger: true,
       onConfirm: () => {
         setItems([]);
         setSelectedIds(new Set());
         onLoadedFileChange?.(null);
         setCurrentFolderId(null);
-        onToast('Library cleared.', 'info');
+        onToast(t('Library cleared.'), 'info');
       },
     });
   };
@@ -1025,15 +1033,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       ? items.filter((candidate) => isDescendantOf(candidate.id, item.id)).length
       : 0;
     const contentsLabel = descendantCount > 0
-      ? ` and its ${descendantCount} item${descendantCount === 1 ? '' : 's'}`
+      ? t(' and its {count} item{s}', { count: descendantCount, s: descendantCount === 1 ? '' : 's' })
       : '';
     const message = isFolderItem
-      ? `Delete folder "${item.name}"${contentsLabel}? This cannot be undone.`
-      : `Delete "${item.name}" from Library? This cannot be undone.`;
+      ? t('Delete folder "{name}"{contents}? This cannot be undone.', { name: item.name, contents: contentsLabel })
+      : t('Delete "{name}" from Library? This cannot be undone.', { name: item.name });
     setConfirmDialog({
-      title: isFolderItem ? 'Delete Folder' : 'Delete Game',
+      title: t(isFolderItem ? 'Delete Folder' : 'Delete Game'),
       message,
-      confirmLabel: 'Delete',
+      confirmLabel: t('Delete'),
       danger: true,
       onConfirm: () => {
         setItems((prev) => deleteLibraryItem(prev, item.id));
@@ -1047,7 +1055,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const handleDuplicate = (item: LibraryItem) => {
     const result = duplicateLibraryItem(items, item.id);
     if (!result.duplicated) {
-      onToast('Failed to duplicate library item.', 'error');
+      onToast(t('Failed to duplicate library item.'), 'error');
       return;
     }
     const duplicated = result.duplicated;
@@ -1056,34 +1064,34 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     if (isFolder(duplicated)) {
       setExpandedFolderIds((prev) => new Set(prev).add(duplicated.id));
     }
-    onToast(`Duplicated "${item.name}".`, 'success');
+    onToast(t('Duplicated "{name}".', { name: item.name }), 'success');
   };
 
   const handleDownload = (item: LibraryFile) => {
     const blob = new Blob([item.sgf], { type: 'application/x-go-sgf' });
     if (!downloadBlobFile(blob, librarySgfDownloadFilename(item.name))) {
-      onToast('Failed to start SGF download.', 'error');
+      onToast(t('Failed to start SGF download.'), 'error');
       return;
     }
-    onToast(`Exported "${item.name}".`, 'success');
+    onToast(t('Exported "{name}".', { name: item.name }), 'success');
   };
 
   const handleBackupLibrary = () => {
     try {
       const blob = new Blob([createLibraryBackup(items)], { type: 'application/json' });
       if (!downloadBlobFile(blob, `webkatrain-library-${new Date().toISOString().slice(0, 10)}.json`)) {
-        onToast('Failed to start library backup download.', 'error');
+        onToast(t('Failed to start library backup download.'), 'error');
         return;
       }
-      onToast('Library backup downloaded.', 'success');
+      onToast(t('Library backup downloaded.'), 'success');
     } catch {
-      onToast('Failed to create library backup.', 'error');
+      onToast(t('Failed to create library backup.'), 'error');
     }
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
     if (!downloadBlobFile(blob, filename)) {
-      throw new Error('Download unavailable');
+      throw new Error(t('Download unavailable'));
     }
   };
 
@@ -1091,13 +1099,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     try {
       const { blob, fileCount } = await createLibraryZipBlob(items);
       if (fileCount === 0) {
-        onToast('No SGF files to export.', 'info');
+        onToast(t('No SGF files to export.'), 'info');
         return;
       }
       downloadBlob(blob, `webkatrain-library-${new Date().toISOString().slice(0, 10)}.zip`);
-      onToast(`Exported ${fileCount} SGF file${fileCount === 1 ? '' : 's'} as ZIP.`, 'success');
+      onToast(t('Exported {count} SGF file{s} as ZIP.', { count: fileCount, s: fileCount === 1 ? '' : 's' }), 'success');
     } catch {
-      onToast('Failed to create library ZIP.', 'error');
+      onToast(t('Failed to create library ZIP.'), 'error');
     }
   };
 
@@ -1105,13 +1113,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     try {
       const { blob, fileCount } = await createLibraryZipBlob(items, new Set([item.id]));
       if (fileCount === 0) {
-        onToast(`Folder "${item.name}" has no SGF files to export.`, 'info');
+        onToast(t('Folder "{name}" has no SGF files to export.', { name: item.name }), 'info');
         return;
       }
       downloadBlob(blob, `${safeDownloadName(item.name, 'folder')}.zip`);
-      onToast(`Exported "${item.name}" with ${fileCount} SGF file${fileCount === 1 ? '' : 's'}.`, 'success');
+      onToast(t('Exported "{name}" with {count} SGF file{s}.', { name: item.name, count: fileCount, s: fileCount === 1 ? '' : 's' }), 'success');
     } catch {
-      onToast('Failed to export folder ZIP.', 'error');
+      onToast(t('Failed to export folder ZIP.'), 'error');
     }
   };
 
@@ -1126,9 +1134,9 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       setSelectedIds(new Set());
       onLoadedFileChange?.(null);
       setCurrentFolderId(null);
-      onToast(`Restored ${restored.length} library item${restored.length === 1 ? '' : 's'}.`, 'success');
+      onToast(t('Restored {count} library item{s}.', { count: restored.length, s: restored.length === 1 ? '' : 's' }), 'success');
     } catch {
-      onToast('Failed to restore library backup.', 'error');
+      onToast(t('Failed to restore library backup.'), 'error');
     } finally {
       if (backupInputRef.current) backupInputRef.current.value = '';
     }
@@ -1159,9 +1167,9 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       || Array.from(visibleSelectedIds).some((selectedId) => isDescendantOf(item.id, selectedId))
     )).length;
     setConfirmDialog({
-      title: 'Delete Selected',
-      message: `Delete ${affectedCount} library item${affectedCount === 1 ? '' : 's'}? This cannot be undone.`,
-      confirmLabel: 'Delete',
+      title: t('Delete Selected'),
+      message: t('Delete {count} library item{s}? This cannot be undone.', { count: affectedCount, s: affectedCount === 1 ? '' : 's' }),
+      confirmLabel: t('Delete'),
       danger: true,
       onConfirm: () => {
         setItems((prev) => {
@@ -1187,12 +1195,12 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     const selected = Array.from(visibleSelectedIds);
     const result = duplicateLibraryItems(items, selected);
     if (result.duplicatedIds.length === 0) {
-      onToast('No selected items were duplicated.', 'info');
+      onToast(t('No selected items were duplicated.'), 'info');
       return;
     }
     setItems(result.items);
     setSelectedIds(result.duplicated ? new Set([result.duplicated.id]) : new Set());
-    onToast(`Duplicated ${selected.length} selected item${selected.length === 1 ? '' : 's'}.`, 'success');
+    onToast(t('Duplicated {count} selected item{s}.', { count: selected.length, s: selected.length === 1 ? '' : 's' }), 'success');
   };
 
   const handleBulkExport = async () => {
@@ -1200,13 +1208,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     try {
       const { blob, fileCount } = await createLibraryZipBlob(items, visibleSelectedIds);
       if (fileCount === 0) {
-        onToast('No files selected to export.', 'info');
+        onToast(t('No files selected to export.'), 'info');
         return;
       }
       downloadBlob(blob, `webkatrain-selection-${new Date().toISOString().slice(0, 10)}.zip`);
-      onToast(`Exported ${fileCount} selected SGF file${fileCount === 1 ? '' : 's'} as ZIP.`, 'success');
+      onToast(t('Exported {count} selected SGF file{s} as ZIP.', { count: fileCount, s: fileCount === 1 ? '' : 's' }), 'success');
     } catch {
-      onToast('Failed to export selected items.', 'error');
+      onToast(t('Failed to export selected items.'), 'error');
       return;
     }
   };
@@ -1219,14 +1227,17 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     setItems(result.items);
     setBulkMoveTarget('');
     if (result.movedIds.length === 0) {
-      onToast('No selected items were moved.', 'info');
+      onToast(t('No selected items were moved.'), 'info');
       return;
     }
     if (result.skippedIds.length > 0) {
-      onToast(`Moved ${result.movedIds.length} item(s); skipped ${result.skippedIds.length} invalid move(s).`, 'info');
+      onToast(t('Moved {moved} item(s); skipped {skipped} invalid move(s).', {
+        moved: result.movedIds.length,
+        skipped: result.skippedIds.length,
+      }), 'info');
       return;
     }
-    onToast(`Moved ${result.movedIds.length} selected item${result.movedIds.length === 1 ? '' : 's'}.`, 'success');
+    onToast(t('Moved {count} selected item{s}.', { count: result.movedIds.length, s: result.movedIds.length === 1 ? '' : 's' }), 'success');
   };
 
   const handleMoveToRoot = (item: LibraryItem) => {
@@ -1234,7 +1245,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     setItems((prev) => prev.map((candidate) => (
       candidate.id === item.id ? { ...candidate, parentId: null, updatedAt: Date.now() } : candidate
     )));
-    onToast(`Moved "${item.name}" to Root.`, 'success');
+    onToast(t('Moved "{name}" to Root.', { name: item.name }), 'success');
   };
 
   const handleLoad = async (item: LibraryItem) => {
@@ -1244,12 +1255,12 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       if (!loaded) return;
       onLoadedFileChange?.(item.id, item.name);
       setCurrentFolderId(item.parentId ?? null);
-      onToast(`Loaded "${item.name}".`, 'success');
+      onToast(t('Loaded "{name}".', { name: item.name }), 'success');
       if (isMobileLayoutViewport()) {
         onClose();
       }
     } catch {
-      onToast('Failed to load SGF from Library.', 'error');
+      onToast(t('Failed to load SGF from Library.'), 'error');
     }
   };
 
@@ -1302,14 +1313,18 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     if (imported.length === 0) {
       onToast(
         openedPhotoBoard
-          ? 'Opened photo board from image.'
+          ? t('Opened photo board from image.')
           : skippedUnsupportedPhotoImages > 0
             ? PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE
             : skippedOversizedSgfFiles > 0
-              ? `SGF files are limited to ${MAX_SGF_IMPORT_LABEL}. ${skippedOversizedSgfFiles} file${skippedOversizedSgfFiles === 1 ? '' : 's'} skipped.`
+              ? t('SGF files are limited to {limit}. {count} file{s} skipped.', {
+                  limit: MAX_SGF_IMPORT_LABEL,
+                  count: skippedOversizedSgfFiles,
+                  s: skippedOversizedSgfFiles === 1 ? '' : 's',
+                })
             : skippedInvalidSgfFiles > 0
-              ? 'No valid SGF games were imported.'
-              : 'No SGF, ZIP, or board image files were imported.',
+              ? t('No valid SGF games were imported.')
+              : t('No SGF, ZIP, or board image files were imported.'),
         (skippedUnsupportedPhotoImages > 0 || skippedOversizedSgfFiles > 0 || skippedInvalidSgfFiles > 0) && !openedPhotoBoard ? 'error' : 'info'
       );
       return;
@@ -1317,13 +1332,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     setItems((prev) => [...imported, ...prev]);
     const importedFiles = imported.filter(isFile).length;
     const skippedUnsupportedSummary = skippedUnsupportedPhotoImages > 0
-      ? ` Skipped ${skippedUnsupportedPhotoImages} unsupported board image${skippedUnsupportedPhotoImages === 1 ? '' : 's'}.`
+      ? t(' Skipped {count} unsupported board image{s}.', { count: skippedUnsupportedPhotoImages, s: skippedUnsupportedPhotoImages === 1 ? '' : 's' })
       : '';
     const skippedInvalidSgfSummary = skippedInvalidSgfFiles > 0
-      ? ` Skipped ${skippedInvalidSgfFiles} invalid SGF file${skippedInvalidSgfFiles === 1 ? '' : 's'}.`
+      ? t(' Skipped {count} invalid SGF file{s}.', { count: skippedInvalidSgfFiles, s: skippedInvalidSgfFiles === 1 ? '' : 's' })
       : '';
     onToast(
-      `Imported ${importedFiles} file${importedFiles === 1 ? '' : 's'}${openedPhotoBoard ? ' and opened photo board image' : ''}.${skippedUnsupportedSummary}${skippedInvalidSgfSummary}`,
+      `${t('Imported {count} file{s}', { count: importedFiles, s: importedFiles === 1 ? '' : 's' })}${openedPhotoBoard ? t(' and opened photo board image') : ''}.${skippedUnsupportedSummary}${skippedInvalidSgfSummary}`,
       'success'
     );
   };
@@ -1341,19 +1356,19 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       const result = await createLibraryItemFromSgfOrOgsText(
         droppedText,
         folderId,
-        `Game ${items.length + 1}`
+        t('Game {n}', { n: items.length + 1 })
       );
       const uniqueName = getUniqueLibraryItemName(result.item.name, items, result.item.parentId ?? null);
       const item = uniqueName === result.item.name ? result.item : { ...result.item, name: uniqueName };
       setItems((prev) => [item, ...prev]);
       onToast(
         result.source === 'ogs' && result.gameId
-          ? `Imported OGS game ${result.gameId} to Library.`
-          : `Imported "${item.name}" to Library.`,
+          ? t('Imported OGS game {id} to Library.', { id: result.gameId })
+          : t('Imported "{name}" to Library.', { name: item.name }),
         'success'
       );
     } catch {
-      onToast('Failed to import dropped SGF or OGS URL.', 'error');
+      onToast(t('Failed to import dropped SGF or OGS URL.'), 'error');
     }
     return true;
   };
@@ -1464,7 +1479,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           }))
         }
       >
-        Show {Math.min(hidden, LIBRARY_PAGE_SIZE)} more of {total}
+        {t('Show {shown} more of {total}', {
+          shown: Math.min(hidden, LIBRARY_PAGE_SIZE),
+          total,
+        })}
       </button>
     );
   };
@@ -1473,11 +1491,11 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     const isSelected = visibleSelectedIds.has(item.id);
     const isLoaded = loadedFileId === item.id;
     const isLoadedDirty = isLoaded && loadedFileDirty;
-    const selectFileLabel = `${isSelected ? 'Deselect' : 'Select'} ${item.name}`;
-    const duplicateFileLabel = `Duplicate ${item.name}`;
-    const downloadFileLabel = `Download ${item.name} as SGF`;
-    const renameFileLabel = `Rename ${item.name}`;
-    const deleteFileLabel = `Delete ${item.name}`;
+    const selectFileLabel = t(isSelected ? 'Deselect {name}' : 'Select {name}', { name: item.name });
+    const duplicateFileLabel = t('Duplicate {name}', { name: item.name });
+    const downloadFileLabel = t('Download {name} as SGF', { name: item.name });
+    const renameFileLabel = t('Rename {name}', { name: item.name });
+    const deleteFileLabel = t('Delete {name}', { name: item.name });
     const moveSummary = getLibraryFileMoveSummary(item);
     return (
       <div
@@ -1493,7 +1511,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         tabIndex={0}
         aria-selected={isSelected}
         aria-current={isLoaded ? 'true' : undefined}
-        aria-label={`${item.name}, game file, ${moveSummary}${isLoadedDirty ? ', unsaved changes' : ''}`}
+        aria-label={`${item.name}, ${t('game file')}, ${moveSummary}${isLoadedDirty ? `, ${t('unsaved changes')}` : ''}`}
         data-library-row="file"
         data-library-row-name={item.name}
         data-library-loaded-dirty={isLoadedDirty ? 'true' : undefined}
@@ -1526,7 +1544,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         <div className="library-tree-node-meta">
           {(item.metadata.black || item.metadata.white) &&
           !libraryNameRepeatsPlayers(item.name, item.metadata.black, item.metadata.white)
-            ? `${item.metadata.black ?? 'Black'} vs ${item.metadata.white ?? 'White'} · `
+            ? `${t('{black} vs {white}', { black: item.metadata.black ?? t('Black'), white: item.metadata.white ?? t('White') })} · `
             : ''}
           {item.metadata.date ? `${item.metadata.date} · ` : ''}
           {moveSummary} · {(item.size / 1024).toFixed(1)} KB
@@ -1543,11 +1561,11 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         {isLoadedDirty && (
           <span
             className="library-dirty-indicator"
-            title="Unsaved changes"
-            aria-label="Unsaved changes"
+            title={t('Unsaved changes')}
+            aria-label={t('Unsaved changes')}
             data-library-dirty-indicator="true"
           >
-            Unsaved
+            {t('Unsaved')}
           </span>
         )}
         <div className="library-tree-node-actions">
@@ -1558,8 +1576,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               e.stopPropagation();
               handleToggleFavorite(item);
             }}
-            title={item.favorite ? `Unstar ${item.name}` : `Star ${item.name}`}
-            aria-label={item.favorite ? `Unstar ${item.name}` : `Star ${item.name}`}
+            title={item.favorite ? t('Unstar {name}', { name: item.name }) : t('Star {name}', { name: item.name })}
+            aria-label={item.favorite ? t('Unstar {name}', { name: item.name }) : t('Star {name}', { name: item.name })}
             aria-pressed={!!item.favorite}
           >
             {item.favorite ? <FaStar size={12} className="text-amber-400" /> : <FaRegStar size={12} />}
@@ -1571,8 +1589,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               e.stopPropagation();
               handleEditTags(item);
             }}
-            title={`Edit tags for ${item.name}`}
-            aria-label={`Edit tags for ${item.name}`}
+            title={t('Edit tags for {name}', { name: item.name })}
+            aria-label={t('Edit tags for {name}', { name: item.name })}
           >
             <FaTag size={12} />
           </button>
@@ -1635,13 +1653,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     const isSelected = visibleSelectedIds.has(item.id);
     const hasLoaded = activeAncestorIds.has(item.id);
     const hasDirtyLoaded = hasLoaded && loadedFileDirty;
-    const toggleFolderLabel = `${isExpanded ? 'Collapse' : 'Expand'} ${item.name}`;
-    const selectFolderLabel = `${isSelected ? 'Deselect' : 'Select'} ${item.name}`;
-    const duplicateFolderLabel = `Duplicate ${item.name}`;
-    const exportFolderLabel = `Export ${item.name} as ZIP`;
-    const renameFolderLabel = `Rename ${item.name}`;
-    const deleteFolderLabel = `Delete ${item.name}`;
-    const moreFolderActionsLabel = `More actions for ${item.name}`;
+    const toggleFolderLabel = t(isExpanded ? 'Collapse {name}' : 'Expand {name}', { name: item.name });
+    const selectFolderLabel = t(isSelected ? 'Deselect {name}' : 'Select {name}', { name: item.name });
+    const duplicateFolderLabel = t('Duplicate {name}', { name: item.name });
+    const exportFolderLabel = t('Export {name} as ZIP', { name: item.name });
+    const renameFolderLabel = t('Rename {name}', { name: item.name });
+    const deleteFolderLabel = t('Delete {name}', { name: item.name });
+    const moreFolderActionsLabel = t('More actions for {name}', { name: item.name });
     return (
       <div key={item.id}>
         <div
@@ -1658,7 +1676,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           tabIndex={0}
           aria-selected={isSelected || activeFolderId === item.id}
           aria-expanded={allowChildren && children.length > 0 ? isExpanded : undefined}
-          aria-label={`${item.name}, folder, ${children.length} item${children.length === 1 ? '' : 's'}${hasDirtyLoaded ? ', contains loaded game with unsaved changes' : ''}`}
+          aria-label={`${item.name}, ${t('folder')}, ${t('{count} item{s}', { count: children.length, s: children.length === 1 ? '' : 's' })}${hasDirtyLoaded ? `, ${t('contains loaded game with unsaved changes')}` : ''}`}
           data-library-row="folder"
           data-library-row-name={item.name}
           data-library-folder-loaded-dirty={hasDirtyLoaded ? 'true' : undefined}
@@ -1804,7 +1822,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             : `calc(100dvh - ${contextMenu.y + 8}px)`,
         }}
         role="menu"
-        aria-label="Library actions"
+        aria-label={t('Library actions')}
         onKeyDown={handleContextMenuKeyDown}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
@@ -1816,18 +1834,18 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             className={menuButtonClass}
             onClick={() => runContextAction(() => handleCreateFolder())}
           >
-            <FaPlus size={12} /> New folder
+            <FaPlus size={12} /> {t('New folder')}
           </button>
         ) : contextMenuSelection.size > 1 && contextMenuSelection.has(contextMenuItem.id) ? (
           <>
-            <div className="library-context-menu-header">{contextMenuSelection.size} selected</div>
+            <div className="library-context-menu-header">{t('{count} selected', { count: contextMenuSelection.size })}</div>
             <button
               type="button"
               role="menuitem"
               className={menuButtonClass}
               onClick={() => runContextAction(handleBulkDuplicate)}
             >
-              <FaCopy size={12} /> Duplicate selected
+              <FaCopy size={12} /> {t('Duplicate selected')}
             </button>
             <button
               type="button"
@@ -1835,7 +1853,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               className={menuButtonClass}
               onClick={() => runContextAction(() => void handleBulkExport())}
             >
-              <FaDownload size={12} /> Export selected as ZIP
+              <FaDownload size={12} /> {t('Export selected as ZIP')}
             </button>
             <div className="library-context-menu-separator" />
             <button
@@ -1844,7 +1862,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               className={dangerMenuButtonClass}
               onClick={() => runContextAction(handleBulkDelete)}
             >
-              <FaTrash size={12} /> Delete selected
+              <FaTrash size={12} /> {t('Delete selected')}
             </button>
           </>
         ) : (
@@ -1856,7 +1874,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className={menuButtonClass}
                 onClick={() => runContextAction(() => void handleLoad(contextMenuItem))}
               >
-                <FaPlay size={12} /> Load
+                <FaPlay size={12} /> {t('Load')}
               </button>
             )}
             {isFolder(contextMenuItem) && (
@@ -1866,7 +1884,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className={menuButtonClass}
                 onClick={() => runContextAction(() => handleCreateFolder(contextMenuItem.id))}
               >
-                <FaPlus size={12} /> New folder inside
+                <FaPlus size={12} /> {t('New folder inside')}
               </button>
             )}
             <button
@@ -1875,7 +1893,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               className={menuButtonClass}
               onClick={() => runContextAction(() => handleRename(contextMenuItem))}
             >
-              <FaPen size={12} /> Rename
+              <FaPen size={12} /> {t('Rename')}
             </button>
             <button
               type="button"
@@ -1883,7 +1901,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               className={menuButtonClass}
               onClick={() => runContextAction(() => handleDuplicate(contextMenuItem))}
             >
-              <FaCopy size={12} /> Duplicate
+              <FaCopy size={12} /> {t('Duplicate')}
             </button>
             <button
               type="button"
@@ -1894,7 +1912,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 else void handleExportFolderZip(contextMenuItem);
               })}
             >
-              <FaDownload size={12} /> {isFile(contextMenuItem) ? 'Download SGF' : 'Export folder as ZIP'}
+              <FaDownload size={12} /> {t(isFile(contextMenuItem) ? 'Download SGF' : 'Export folder as ZIP')}
             </button>
             {contextMenuItem.parentId && (
               <button
@@ -1903,7 +1921,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className={menuButtonClass}
                 onClick={() => runContextAction(() => handleMoveToRoot(contextMenuItem))}
               >
-                <FaArrowUp size={12} /> Move to Root
+                <FaArrowUp size={12} /> {t('Move to Root')}
               </button>
             )}
             <div className="library-context-menu-separator" />
@@ -1913,7 +1931,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               className={dangerMenuButtonClass}
               onClick={() => runContextAction(() => handleDelete(contextMenuItem))}
             >
-              <FaTrash size={12} /> Delete
+              <FaTrash size={12} /> {t('Delete')}
             </button>
           </>
         )}
@@ -1999,11 +2017,11 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               type="button"
               className="mobile-panel-back h-11 min-h-11 min-w-11 shrink-0 px-3 flex items-center gap-2 rounded-md hover:bg-[var(--ui-surface-2)] text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
               onClick={onClose}
-              title="Back to board"
-              aria-label="Back to board"
+              title={t('Back to board')}
+              aria-label={t('Back to board')}
             >
               <FaChevronLeft size={12} aria-hidden="true" />
-              <span className="mobile-panel-back-label text-sm font-medium">Board</span>
+              <span className="mobile-panel-back-label text-sm font-medium">{t('Board')}</span>
             </button>
           ) : (
             <button
@@ -2014,13 +2032,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 'shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--ui-surface-2)] text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors',
               ].join(' ')}
               onClick={onClose}
-              title="Close library"
-              aria-label="Close library"
+              title={t('Close library')}
+              aria-label={t('Close library')}
             >
               <FaTimes />
             </button>
           )}
-          <div className="text-sm font-semibold text-[var(--ui-text)]">Library</div>
+          <div className="text-sm font-semibold text-[var(--ui-text)]">{t('Library')}</div>
           <div
             className={[
               'hidden sm:inline-flex px-2 py-0.5 rounded border text-[0.625rem] font-semibold uppercase tracking-wider',
@@ -2042,8 +2060,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               type="button"
               className={`${headerActionClass} library-header-collapsible-action`}
               onClick={() => handleCreateFolder()}
-              title="Create new folder"
-              aria-label="Create new folder"
+              title={t('Create new folder')}
+              aria-label={t('Create new folder')}
             >
               <FaPlus />
             </button>
@@ -2053,7 +2071,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               onClick={handleSaveCurrent}
               disabled={!canSaveCurrentToLibrary}
               title={saveCurrentTitle}
-              aria-label={loadedLibraryFile ? 'Update loaded library game' : 'Save current game to Library'}
+              aria-label={loadedLibraryFile ? t('Update loaded library game') : t('Save current game to Library')}
             >
               <FaSave />
             </button>
@@ -2061,8 +2079,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               type="button"
               className={`${headerActionClass} library-header-collapsible-action`}
               onClick={() => fileInputRef.current?.click()}
-              title="Import SGF, ZIP, or board image files"
-              aria-label="Import SGF, ZIP, or board image files"
+              title={t('Import SGF, ZIP, or board image files')}
+              aria-label={t('Import SGF, ZIP, or board image files')}
             >
               <FaFolderOpen />
             </button>
@@ -2071,8 +2089,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               ref={headerMenuButtonRef}
               className={headerActionClass}
               onClick={() => setHeaderMenuOpen((prev) => !prev)}
-              title="More library actions"
-              aria-label="More library actions"
+              title={t('More library actions')}
+              aria-label={t('More library actions')}
               aria-haspopup="menu"
               aria-expanded={headerMenuOpen}
             >
@@ -2109,7 +2127,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   : 'calc(100dvh - var(--ui-bar-height) - 8px)',
               }}
             role="menu"
-            aria-label="More library actions"
+            aria-label={t('More library actions')}
             onKeyDown={handleHeaderMenuKeyDown}
             onPointerDown={(event) => event.stopPropagation()}
           >
@@ -2119,7 +2137,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item"
                 onClick={() => runHeaderAction(() => handleCreateFolder())}
               >
-                <FaPlus size={12} /> Create new folder
+                <FaPlus size={12} /> {t('Create new folder')}
               </button>
               <button
                 type="button"
@@ -2127,7 +2145,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item"
                 onClick={() => runHeaderAction(() => fileInputRef.current?.click())}
               >
-                <FaFolderOpen size={12} /> Import files
+                <FaFolderOpen size={12} /> {t('Import files')}
               </button>
               <div className="library-context-menu-separator" />
               <button
@@ -2136,7 +2154,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item"
                 onClick={() => runHeaderAction(() => void handleExportLibraryZip())}
               >
-                <FaFileArchive size={12} /> Export library as ZIP
+                <FaFileArchive size={12} /> {t('Export library as ZIP')}
               </button>
               <button
                 type="button"
@@ -2144,7 +2162,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item"
                 onClick={() => runHeaderAction(() => setShowOgsSync(true))}
               >
-                <FaCloudDownloadAlt size={12} /> Sync from OGS
+                <FaCloudDownloadAlt size={12} /> {t('Sync from OGS')}
               </button>
               <button
                 type="button"
@@ -2152,7 +2170,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item"
                 onClick={() => runHeaderAction(handleBackupLibrary)}
               >
-                <FaDownload size={12} /> Download backup
+                <FaDownload size={12} /> {t('Download backup')}
               </button>
               <button
                 type="button"
@@ -2160,7 +2178,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item"
                 onClick={() => runHeaderAction(() => backupInputRef.current?.click())}
               >
-                <FaUpload size={12} /> Restore backup
+                <FaUpload size={12} /> {t('Restore backup')}
               </button>
               <div className="library-context-menu-separator" />
               <button
@@ -2169,7 +2187,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 className="library-context-menu-item danger"
                 onClick={() => runHeaderAction(handleClearLibrary)}
               >
-                <FaTrash size={12} /> Clear library
+                <FaTrash size={12} /> {t('Clear library')}
               </button>
             </div>
           )}
@@ -2178,7 +2196,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="flex flex-col min-h-0">
             {renderSection({
-              title: 'Library',
+              title: t('Library'),
               open: true,
               onToggle: () => {},
               // The panel's own bar already says Library, and this is its only
@@ -2195,8 +2213,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     type="search"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    aria-label="Search library"
-                    placeholder="Search library…"
+                    aria-label={t('Search library')}
+                    placeholder={t('Search library…')}
                     // Matching truncates past this anyway; stopping it at the
                     // input keeps a pasted record out of React state as well.
                     maxLength={MAX_SEARCH_QUERY_LENGTH}
@@ -2208,7 +2226,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                       type="button"
                       className="library-search-clear absolute right-0 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
                       onClick={() => setQuery('')}
-                      aria-label="Clear library search"
+                      aria-label={t('Clear library search')}
                     >
                       <FaTimes aria-hidden="true" size={11} />
                     </button>
@@ -2218,21 +2236,21 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value)}
                   className="ui-input border rounded px-2 py-1 text-xs text-[var(--ui-text)]"
-                  aria-label="Sort library"
-                  title="Sort"
+                  aria-label={t('Sort library')}
+                  title={t('Sort')}
                 >
-                  <option value="recent">Recent</option>
-                  <option value="name">Name</option>
-                  <option value="moves">Moves</option>
-                  <option value="size">Size</option>
+                  <option value="recent">{t('Recent')}</option>
+                  <option value="name">{t('Name')}</option>
+                  <option value="moves">{t('Moves')}</option>
+                  <option value="size">{t('Size')}</option>
                 </select>
                 <button
                   type="button"
                   className="panel-icon-button"
                   onClick={() => setFavoritesOnly((prev) => !prev)}
                   aria-pressed={favoritesOnly}
-                  title={favoritesOnly ? 'Show all games' : 'Show favorites only'}
-                  aria-label={favoritesOnly ? 'Show all games' : 'Show favorites only'}
+                  title={favoritesOnly ? t('Show all games') : t('Show favorites only')}
+                  aria-label={favoritesOnly ? t('Show all games') : t('Show favorites only')}
                   style={favoritesOnly ? { color: 'var(--ui-accent)' } : undefined}
                 >
                   {favoritesOnly ? <FaStar size={12} className="text-amber-400" /> : <FaRegStar size={12} />}
@@ -2242,10 +2260,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     value={activeTag ?? ''}
                     onChange={(e) => setActiveTag(e.target.value || null)}
                     className="ui-input border rounded px-2 py-1 text-xs text-[var(--ui-text)]"
-                    aria-label="Filter by tag"
-                    title="Filter by tag"
+                    aria-label={t('Filter by tag')}
+                    title={t('Filter by tag')}
                   >
-                    <option value="">All tags</option>
+                    <option value="">{t('All tags')}</option>
                     {availableTags.map((tag) => (
                       <option key={tag} value={tag}>#{tag}</option>
                     ))}
@@ -2256,8 +2274,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   className="panel-icon-button"
                   onClick={handleGoUp}
                   disabled={!activeFolderId}
-                  title="Go to parent folder"
-                  aria-label="Go to parent folder"
+                  title={t('Go to parent folder')}
+                  aria-label={t('Go to parent folder')}
                 >
                   <FaArrowUp size={12} />
                 </button>
@@ -2266,8 +2284,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   className="panel-icon-button"
                   onClick={() => setCurrentFolderId(null)}
                   disabled={!activeFolderId}
-                  title={activeFolderId ? 'Go to library root' : 'Already at library root'}
-                  aria-label="Go to library root"
+                  title={activeFolderId ? t('Go to library root') : t('Already at library root')}
+                  aria-label={t('Go to library root')}
                 >
                   <FaFolderOpen size={12} />
                 </button>
@@ -2277,7 +2295,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 <div className="library-breadcrumbs flex min-w-0 flex-wrap items-center gap-1 text-[0.6875rem] ui-text-faint">
                   {/* The trail already ends at the current folder, so naming it
                       in the label too printed it twice ("Folder: X  X"). */}
-                  <span>Folder:</span>
+                  <span>{t('Folder')}:</span>
                   {isSearching || breadcrumbs.length === 0 ? (
                     <span>{currentFolderName}</span>
                   ) : (
@@ -2287,7 +2305,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                         type="button"
                         className="library-breadcrumb-button px-1.5 py-0.5 rounded hover:bg-[var(--ui-surface-2)] ui-text-faint"
                         onClick={() => setCurrentFolderId(crumb.id)}
-                        aria-label={`Open folder ${crumb.name}`}
+                        aria-label={t('Open folder {name}', { name: crumb.name })}
                       >
                         {index === 0 ? crumb.name : `/${crumb.name}`}
                       </button>
@@ -2295,21 +2313,21 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   )}
                   {isDragging && (
                     <span className="ui-accent-soft border rounded px-2 py-0.5">
-                      Drop SGF, OGS URL, ZIP, or board images to import
+                      {t('Drop SGF, OGS URL, ZIP, or board images to import')}
                     </span>
                   )}
                 </div>
                 <div className="ml-auto flex items-center gap-2 text-[0.6875rem] ui-text-faint">
                   <div>
-                    {sortedItems.length} items{visibleSelectedIds.size > 0 ? ` · ${visibleSelectedIds.size} selected` : ''}
+                    {t('{count} item{s}', { count: sortedItems.length, s: sortedItems.length === 1 ? '' : 's' })}{visibleSelectedIds.size > 0 ? ` · ${t('{count} selected', { count: visibleSelectedIds.size })}` : ''}
                   </div>
                   {visibleSelectedIds.size > 0 ? (
                     <button
                       type="button"
                       className="library-select-all h-6 w-6 rounded hover:bg-[var(--ui-surface-2)] flex items-center justify-center"
                       onClick={handleClearSelection}
-                      title="Clear selection"
-                      aria-label="Clear selection"
+                      title={t('Clear selection')}
+                      aria-label={t('Clear selection')}
                     >
                       <FaTimes size={12} />
                     </button>
@@ -2318,8 +2336,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                       type="button"
                       className="library-select-all h-6 w-6 rounded hover:bg-[var(--ui-surface-2)] flex items-center justify-center"
                       onClick={handleSelectAll}
-                      title="Select all"
-                      aria-label="Select all"
+                      title={t('Select all')}
+                      aria-label={t('Select all')}
                     >
                       <FaCheckSquare size={12} />
                     </button>
@@ -2332,8 +2350,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     type="button"
                     className={bulkActionClass}
                     onClick={handleBulkDuplicate}
-                    title="Duplicate selected"
-                    aria-label="Duplicate selected"
+                    title={t('Duplicate selected')}
+                    aria-label={t('Duplicate selected')}
                   >
                     <FaCopy size={12} />
                   </button>
@@ -2341,8 +2359,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     type="button"
                     className={bulkActionClass}
                     onClick={() => void handleBulkExport()}
-                    title="Export selected as ZIP"
-                    aria-label="Export selected as ZIP"
+                    title={t('Export selected as ZIP')}
+                    aria-label={t('Export selected as ZIP')}
                   >
                     <FaDownload size={12} />
                   </button>
@@ -2350,19 +2368,19 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     type="button"
                     className={bulkDangerActionClass}
                     onClick={handleBulkDelete}
-                    title="Delete selected"
-                    aria-label="Delete selected"
+                    title={t('Delete selected')}
+                    aria-label={t('Delete selected')}
                   >
                     <FaTrash size={12} />
                   </button>
                   <select
                     value={bulkMoveTarget}
                     onChange={(e) => setBulkMoveTarget(e.target.value)}
-                    aria-label="Move selected to folder"
+                    aria-label={t('Move selected to folder')}
                     className="ml-1 ui-input border rounded px-2 py-1 text-xs text-[var(--ui-text)]"
                   >
-                    <option value="">Move to...</option>
-                    <option value="root">Root</option>
+                    <option value="">{t('Move to...')}</option>
+                    <option value="root">{t('Root')}</option>
                     {folderItems.map((folder) => (
                       <option key={folder.id} value={folder.id}>
                         {folder.name}
@@ -2374,10 +2392,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     className="panel-action-button"
                     onClick={handleBulkMove}
                     disabled={!bulkMoveTarget}
-                    title="Move selected items"
-                    aria-label="Move selected items"
+                    title={t('Move selected items')}
+                    aria-label={t('Move selected items')}
                   >
-                    Move
+                    {t('Move')}
                   </button>
                 </div>
               )}
@@ -2388,7 +2406,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   dragOverRoot ? 'bg-[var(--ui-accent-soft)]' : '',
                 ].join(' ')}
                 role="tree"
-                aria-label="Library games"
+                aria-label={t('Library games')}
                 onDragOver={handleRootDragOver}
                 onDragLeave={handleRootDragLeave}
                 onDrop={handleRootDrop}
@@ -2400,8 +2418,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 {isSearching ? (
                   sortedItems.length === 0 ? (
                     <div className="p-6 text-sm ui-text-faint">
-                      <div className="font-semibold text-[var(--ui-text-muted)] mb-2">No matches</div>
-                      <div>Try a different search term.</div>
+                      <div className="font-semibold text-[var(--ui-text-muted)] mb-2">{t('No matches')}</div>
+                      <div>{t('Try a different search term.')}</div>
                     </div>
                   ) : (
                     <div>
@@ -2413,18 +2431,18 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   )
                 ) : libraryStatus === 'loading' ? (
                   <div className="p-6 text-sm ui-text-faint">
-                    <div className="font-semibold text-[var(--ui-text-muted)] mb-2">Loading library</div>
-                    <div>Opening IndexedDB storage and migrating saved SGFs if needed.</div>
+                    <div className="font-semibold text-[var(--ui-text-muted)] mb-2">{t('Loading library')}</div>
+                    <div>{t('Opening IndexedDB storage and migrating saved SGFs if needed.')}</div>
                   </div>
                 ) : libraryStatus === 'error' ? (
                   <div className="p-6 text-sm ui-text-faint">
-                    <div className="font-semibold text-[var(--ui-danger)] mb-2">Library storage error</div>
-                    <div>{libraryError ?? 'The library could not be read or saved.'}</div>
+                    <div className="font-semibold text-[var(--ui-danger)] mb-2">{t('Library storage error')}</div>
+                    <div>{libraryError ?? t('The library could not be read or saved.')}</div>
                   </div>
                 ) : items.length === 0 ? (
                   <div className="p-6 text-sm ui-text-faint">
-                    <div className="font-semibold text-[var(--ui-text-muted)] mb-2">Library is empty</div>
-                    <div>Save the current game, or use the import button for SGF, ZIP, and board image files. On a desktop you can drop them here too.</div>
+                    <div className="font-semibold text-[var(--ui-text-muted)] mb-2">{t('Library is empty')}</div>
+                    <div>{t('Save the current game, or use the import button for SGF, ZIP, and board image files. On a desktop you can drop them here too.')}</div>
                   </div>
                 ) : (
                   <div>
@@ -2436,7 +2454,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 )}
               </div>
               {items.length > 0 && (
-                <div className="library-stats" aria-label="Library totals">
+                <div className="library-stats" aria-label={t('Library totals')}>
                   {libraryStatsText}
                 </div>
               )}

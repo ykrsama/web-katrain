@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaTimes, FaTrash } from 'react-icons/fa';
+import { useT } from '../i18n';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 
 interface AnalysisCacheClearConfirmModalProps {
@@ -9,13 +10,14 @@ interface AnalysisCacheClearConfirmModalProps {
 }
 
 const formatAnalysisCount = (count: number): string =>
-  count === 1 ? '1 cached analysis' : `${count} cached analyses`;
+  count === 1 ? '{count} cached analysis' : '{count} cached analyses';
 
 export const AnalysisCacheClearConfirmModal: React.FC<AnalysisCacheClearConfirmModalProps> = ({
   count,
   onCancel,
   onConfirm,
 }) => {
+  const t = useT();
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       event.stopPropagation();
@@ -33,7 +35,7 @@ export const AnalysisCacheClearConfirmModal: React.FC<AnalysisCacheClearConfirmM
     focusContainer: false,
     initialFocusRef: cancelButtonRef,
   });
-  const label = formatAnalysisCount(count);
+  const label = t(formatAnalysisCount(count), { count });
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-3 mobile-safe-inset mobile-safe-area-bottom">
@@ -49,13 +51,13 @@ export const AnalysisCacheClearConfirmModal: React.FC<AnalysisCacheClearConfirmM
       >
         <div className="ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="analysis-cache-clear-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Clear Analysis Cache
+            {t('Clear Analysis Cache')}
           </h2>
           <button
             type="button"
             onClick={onCancel}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Cancel clear analysis cache"
+            aria-label={t('Cancel clear analysis cache')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -63,11 +65,10 @@ export const AnalysisCacheClearConfirmModal: React.FC<AnalysisCacheClearConfirmM
 
         <div className="space-y-3 p-4">
           <p id="analysis-cache-clear-description" className="text-sm leading-6 text-[var(--ui-text-muted)]">
-            This removes {label} from the current game. Moves and notes stay unchanged, but restored SGF analysis
-            will not be exported again unless you run analysis for those positions.
+            {t('This removes {label} from the current game. Moves and notes stay unchanged, but restored SGF analysis will not be exported again unless you run analysis for those positions.', { label })}
           </p>
           <div className="rounded border border-[var(--ui-warning)] bg-[var(--ui-warning-soft)] px-3 py-2 text-sm font-semibold text-[var(--ui-warning)]">
-            You can analyze the game again later.
+            {t('You can analyze the game again later.')}
           </div>
         </div>
 
@@ -79,14 +80,14 @@ export const AnalysisCacheClearConfirmModal: React.FC<AnalysisCacheClearConfirmM
             className="min-h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] sm:w-auto"
             autoFocus
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
             onClick={onConfirm}
             className="min-h-11 w-full rounded-lg border border-[var(--ui-danger)] bg-[var(--ui-danger-soft)] px-4 py-2 text-sm font-semibold text-[var(--ui-danger)] hover:bg-[var(--ui-surface-2)] sm:w-auto"
           >
-            <span className="inline-flex items-center gap-2"><FaTrash aria-hidden="true" /> Clear {label}</span>
+            <span className="inline-flex items-center gap-2"><FaTrash aria-hidden="true" /> {t('Clear {label}', { label })}</span>
           </button>
         </div>
       </div>

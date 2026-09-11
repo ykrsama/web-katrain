@@ -6,6 +6,7 @@ import {
 } from '../data/boardPatternLibrary';
 import { findBoardPattern, type BoardPattern } from './boardPatterns';
 import { getLiberties, getOpponent } from './gameLogic';
+import { t } from '../i18n';
 
 export type MoveInsightTone = 'corner' | 'side' | 'center' | 'pass' | 'tactical' | 'neutral';
 
@@ -140,6 +141,43 @@ const SHAPE_PATTERN_NAMES = new Set(
   [...NAMED_SHAPE_PATTERNS, ...CONTACT_MOVE_PATTERNS].map((pattern) => pattern.name)
 );
 
+function isFusekiLabel(label: string): boolean {
+  return FUSEKI_PATTERN_NAMES.has(label) || FUSEKI_PATTERNS.some((pattern) => t(pattern.name) === label);
+}
+
+function isShapeLabel(label: string): boolean {
+  return (
+    SHAPE_PATTERN_NAMES.has(label) ||
+    [...NAMED_SHAPE_PATTERNS, ...CONTACT_MOVE_PATTERNS].some((pattern) => t(pattern.name) === label)
+  );
+}
+
+/**
+ * Translate a board-region word (as produced by `boardRegion`) to the current
+ * locale. The words are internal English tokens embedded in detail sentences,
+ * so they are mapped here rather than treated as full-page copy.
+ */
+function tRegion(region: string): string {
+  const words: Record<string, string> = {
+    center: '中腹',
+    'left side': '左侧',
+    'right side': '右侧',
+    'upper side': '上侧',
+    'lower side': '下侧',
+    'upper left': '左上',
+    'upper right': '右上',
+    'lower left': '左下',
+    'lower right': '右下',
+    left: '左',
+    right: '右',
+    top: '上',
+    bottom: '下',
+    upper: '上',
+    lower: '下',
+  };
+  return words[region] ?? region;
+}
+
 function getLibraryPatternInsight(
   move: Move,
   parentBoard: BoardState,
@@ -149,8 +187,8 @@ function getLibraryPatternInsight(
   if (!match) return null;
   const info = LIBRARY_PATTERN_DETAILS[match.pattern.name];
   return {
-    label: match.pattern.name,
-    detail: info?.detail ?? 'Named Go pattern.',
+    label: t(match.pattern.name),
+    detail: t(info?.detail ?? 'Named Go pattern.'),
     tone: info?.tone ?? 'tactical',
     learnMoreUrl: match.pattern.url ?? undefined,
   };
@@ -398,8 +436,8 @@ function getCornerRelationInsight(move: Move, board: BoardState, boardSize: numb
         }
 
         return {
-          label: pattern.label,
-          detail: pattern.detail,
+          label: t(pattern.label),
+          detail: t(pattern.detail),
           tone: 'corner',
           learnMoreUrl: pattern.learnMoreUrl,
         };
@@ -430,8 +468,8 @@ function getEmptyTriangleInsight(move: Move, board: BoardState, boardSize: numbe
       board[diagonal.y]?.[diagonal.x] === null
     ) {
       return {
-        label: 'Empty triangle',
-        detail: 'Creates three stones in a bent 2x2 shape, usually an inefficient connection.',
+        label: t('Empty triangle'),
+        detail: t('Creates three stones in a bent 2x2 shape, usually an inefficient connection.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?EmptyTriangle',
       };
@@ -462,8 +500,8 @@ function getCutOrDiagonalInsight(move: Move, board: BoardState, boardSize: numbe
     const sideBStone = board[sideB.y]?.[sideB.x];
     if (sideAStone === opponent && sideBStone === opponent) {
       return {
-        label: 'Cut',
-        detail: 'Separates opposing stones by occupying the cutting shape between them.',
+        label: t('Cut'),
+        detail: t('Separates opposing stones by occupying the cutting shape between them.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?Cut',
       };
@@ -474,8 +512,8 @@ function getCutOrDiagonalInsight(move: Move, board: BoardState, boardSize: numbe
       (sideBStone === opponent && sideAStone === null)
     ) {
       return {
-        label: 'Hane',
-        detail: 'Bends around an opposing stone from a diagonal friendly stone.',
+        label: t('Hane'),
+        detail: t('Bends around an opposing stone from a diagonal friendly stone.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?Hane',
       };
@@ -483,8 +521,8 @@ function getCutOrDiagonalInsight(move: Move, board: BoardState, boardSize: numbe
 
     if (sideAStone === null && sideBStone === null) {
       return {
-        label: 'Diagonal (kosumi)',
-        detail: 'Makes a light diagonal connection with flexible follow-ups.',
+        label: t('Diagonal (kosumi)'),
+        detail: t('Makes a light diagonal connection with flexible follow-ups.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?Kosumi',
       };
@@ -529,8 +567,8 @@ function getWedgeInsight(move: Move, board: BoardState, boardSize: number): Move
       sides.every((point) => board[point.y]?.[point.x] === null)
     ) {
       return {
-        label: 'Wedge',
-        detail: 'Plays between two opposing stones to separate or pressure both sides.',
+        label: t('Wedge'),
+        detail: t('Plays between two opposing stones to separate or pressure both sides.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?Wedge',
       };
@@ -568,8 +606,8 @@ function getShoulderHitInsight(move: Move, board: BoardState, boardSize: number)
       surroundingPoints.every((point) => board[point.y]?.[point.x] === null)
     ) {
       return {
-        label: 'Shoulder hit',
-        detail: 'Leans diagonally against an opposing stone to reduce its area while staying light.',
+        label: t('Shoulder hit'),
+        detail: t('Leans diagonally against an opposing stone to reduce its area while staying light.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?ShoulderHit',
       };
@@ -612,8 +650,8 @@ function getAttachmentInsight(move: Move, board: BoardState, boardSize: number):
       sidePoints.every((point) => board[point.y]?.[point.x] === null)
     ) {
       return {
-        label: 'Attachment',
-        detail: 'Touches an opposing stone directly, usually asking for an immediate local response.',
+        label: t('Attachment'),
+        detail: t('Touches an opposing stone directly, usually asking for an immediate local response.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?Attachment',
       };
@@ -663,8 +701,8 @@ function getBambooJointInsight(move: Move, board: BoardState, boardSize: number)
         empties.every((point) => board[point.y]?.[point.x] === null)
       ) {
         return {
-          label: 'Bamboo joint',
-          detail: 'Completes a flexible four-stone connection that is hard to cut cleanly.',
+          label: t('Bamboo joint'),
+          detail: t('Completes a flexible four-stone connection that is hard to cut cleanly.'),
           tone: 'tactical',
           learnMoreUrl: 'https://senseis.xmp.net/?BambooJoint',
         };
@@ -706,8 +744,8 @@ function getTigersMouthInsight(move: Move, board: BoardState, boardSize: number)
         board[front.y]?.[front.x] === null
       ) {
         return {
-          label: "Tiger's mouth",
-          detail: 'Forms a light connection around a shared cutting point.',
+          label: t("Tiger's mouth"),
+          detail: t('Forms a light connection around a shared cutting point.'),
           tone: 'tactical',
           learnMoreUrl: 'https://senseis.xmp.net/?TigersMouth',
         };
@@ -741,8 +779,8 @@ function getJumpShapeInsight(move: Move, board: BoardState, boardSize: number): 
     const onePointGap = { x: move.x + direction.x, y: move.y + direction.y };
     if (hasFriendlyStoneWithEmptyPath(onePointStone, [onePointGap])) {
       return {
-        label: 'One-point jump',
-        detail: 'Extends from a friendly stone with one empty point between, making a fast but peepable connection.',
+        label: t('One-point jump'),
+        detail: t('Extends from a friendly stone with one empty point between, making a fast but peepable connection.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?OnePointJump',
       };
@@ -755,8 +793,8 @@ function getJumpShapeInsight(move: Move, board: BoardState, boardSize: number): 
     ];
     if (hasFriendlyStoneWithEmptyPath(twoPointStone, twoPointGaps)) {
       return {
-        label: 'Two-point jump',
-        detail: 'Extends quickly with two empty points between friendly stones; efficient but easier to invade or cut.',
+        label: t('Two-point jump'),
+        detail: t('Extends quickly with two empty points between friendly stones; efficient but easier to invade or cut.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?TwoPointJump',
       };
@@ -790,8 +828,8 @@ function getJumpShapeInsight(move: Move, board: BoardState, boardSize: number): 
           ];
     if (hasFriendlyStoneWithEmptyPath(stone, empties)) {
       return {
-        label: 'Small knight',
-        detail: 'Makes a keima connection: fast and flexible, but with a known cutting point.',
+        label: t('Small knight'),
+        detail: t('Makes a keima connection: fast and flexible, but with a known cutting point.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?Keima',
       };
@@ -829,8 +867,8 @@ function getJumpShapeInsight(move: Move, board: BoardState, boardSize: number): 
           ];
     if (hasFriendlyStoneWithEmptyPath(stone, empties)) {
       return {
-        label: 'Large knight',
-        detail: 'Makes a wide knight move that is fast for development but leaves more cutting aji.',
+        label: t('Large knight'),
+        detail: t('Makes a wide knight move that is fast for development but leaves more cutting aji.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?LargeKnightsMove',
       };
@@ -855,8 +893,8 @@ function getJumpShapeInsight(move: Move, board: BoardState, boardSize: number): 
     ];
     if (hasFriendlyStoneWithEmptyPath(stone, empties)) {
       return {
-        label: 'Diagonal jump',
-        detail: 'Links two friendly stones diagonally at a distance, keeping speed while leaving several forcing points.',
+        label: t('Diagonal jump'),
+        detail: t('Links two friendly stones diagonally at a distance, keeping speed while leaving several forcing points.'),
         tone: 'tactical',
         learnMoreUrl: 'https://senseis.xmp.net/?DiagonalJump',
       };
@@ -895,16 +933,19 @@ function getTacticalMoveInsight(move: Move, boardSize: number, parentBoard?: Boa
   if (capturedGroups.size > 0) {
     const capturedStones = [...capturedGroups.values()].reduce((sum, count) => sum + count, 0);
     return {
-      label: 'Capture',
-      detail: `Captures ${capturedStones} ${opponent} stone${capturedStones === 1 ? '' : 's'} by taking the last liberty.`,
+      label: t('Capture'),
+      detail: t('Captures {count} {color} stones by taking the last liberty.', {
+        count: capturedStones,
+        color: t(opponent),
+      }),
       tone: 'tactical',
     };
   }
 
   if (atariGroups.size > 0) {
     return {
-      label: 'Atari',
-      detail: `Puts ${atariGroups.size === 1 ? 'an opponent group' : `${atariGroups.size} opponent groups`} down to one liberty.`,
+      label: t('Atari'),
+      detail: t('Puts {count} opponent groups down to one liberty.', { count: atariGroups.size }),
       tone: 'tactical',
       learnMoreUrl: 'https://senseis.xmp.net/?Atari',
     };
@@ -917,24 +958,24 @@ function getTacticalMoveInsight(move: Move, boardSize: number, parentBoard?: Boa
   const ownLiberties = getLiberties(nextBoard, move.x, move.y).liberties;
   if (ownLiberties === 0) {
     return {
-      label: 'Suicide',
-      detail: 'Places a stone with no liberties and no capture; most rulesets reject this move.',
+      label: t('Suicide'),
+      detail: t('Places a stone with no liberties and no capture; most rulesets reject this move.'),
       tone: 'tactical',
       learnMoreUrl: 'https://senseis.xmp.net/?Suicide',
     };
   }
   if (ownLiberties === 1) {
     return {
-      label: 'Self-atari',
-      detail: 'Leaves the played stone or connected group with only one liberty.',
+      label: t('Self-atari'),
+      detail: t('Leaves the played stone or connected group with only one liberty.'),
       tone: 'tactical',
     };
   }
 
   if (neighbors.length > 0 && friendlyNeighborCount === neighbors.length) {
     return {
-      label: 'Fill',
-      detail: 'Fills a point fully surrounded by friendly stones; often an endgame, ko, or life-and-death move.',
+      label: t('Fill'),
+      detail: t('Fills a point fully surrounded by friendly stones; often an endgame, ko, or life-and-death move.'),
       tone: 'tactical',
     };
   }
@@ -981,8 +1022,8 @@ function getTacticalMoveInsight(move: Move, boardSize: number, parentBoard?: Boa
 
   if (friendlyGroups.size >= 2) {
     return {
-      label: 'Connect',
-      detail: `Joins ${friendlyGroups.size} friendly groups into a stronger shape.`,
+      label: t('Connect'),
+      detail: t('Joins {count} friendly groups into a stronger shape.', { count: friendlyGroups.size }),
       tone: 'tactical',
     };
   }
@@ -994,8 +1035,8 @@ export function getMoveInsight(move: Move | null, boardSize: number, parentBoard
   if (!move) return null;
   if (move.x < 0 || move.y < 0) {
     return {
-      label: 'Pass',
-      detail: 'Passing hands the turn over without placing a stone.',
+      label: t('Pass'),
+      detail: t('Passing hands the turn over without placing a stone.'),
       tone: 'pass',
       learnMoreUrl: 'https://senseis.xmp.net/?Pass',
     };
@@ -1024,8 +1065,8 @@ export function getMoveInsight(move: Move | null, boardSize: number, parentBoard
 
   if (lineFromLeft === centerLine && lineFromTop === centerLine) {
     return {
-      label: boardSize >= 15 ? 'Tengen' : 'Center point',
-      detail: 'Center point; globally influential but slow to claim secure territory.',
+      label: t(boardSize >= 15 ? 'Tengen' : 'Center point'),
+      detail: t('Center point; globally influential but slow to claim secure territory.'),
       tone: 'center',
       learnMoreUrl: boardSize >= 15 ? 'https://senseis.xmp.net/?Tengen' : undefined,
     };
@@ -1035,15 +1076,27 @@ export function getMoveInsight(move: Move | null, boardSize: number, parentBoard
     const low = Math.min(horizontalLine, verticalLine);
     const high = Math.max(horizontalLine, verticalLine);
     const key = `${low}-${high}`;
-    const pattern = CORNER_PATTERNS[key] ?? {
-      label: `${low}-${high} corner point`,
-      detail: `${ordinal(low)}-${ordinal(high)} line corner move; read locally and check direction before committing.`,
-    };
+    const staticPattern = CORNER_PATTERNS[key];
+    let label: string;
+    let detail: string;
+    let learnMoreUrl: string | undefined;
+    if (staticPattern) {
+      label = t(staticPattern.label);
+      detail = t('{region} corner. {detail}', {
+        region: tRegion(region),
+        detail: t(staticPattern.detail),
+      });
+      learnMoreUrl = staticPattern.learnMoreUrl;
+    } else {
+      const lines = `${low}-${high}`;
+      label = t('{lines} corner point', { lines });
+      detail = t('{lines} line corner move; read locally and check direction before committing.', { lines });
+    }
     return {
-      label: pattern.label,
-      detail: `${region} corner. ${pattern.detail}`,
+      label,
+      detail,
       tone: 'corner',
-      learnMoreUrl: pattern.learnMoreUrl,
+      learnMoreUrl,
     };
   }
 
@@ -1051,8 +1104,10 @@ export function getMoveInsight(move: Move | null, boardSize: number, parentBoard
   const isStarPoint = starLines.includes(lineFromLeft) && starLines.includes(lineFromTop);
   if (isStarPoint) {
     return {
-      label: 'Side star point',
-      detail: `${region} star point; often useful for frameworks, extensions, and influence.`,
+      label: t('Side star point'),
+      detail: t('{region} star point; often useful for frameworks, extensions, and influence.', {
+        region: tRegion(region),
+      }),
       tone: 'side',
       learnMoreUrl: 'https://senseis.xmp.net/?StarPoint',
     };
@@ -1065,289 +1120,291 @@ export function getMoveInsight(move: Move | null, boardSize: number, parentBoard
         : nearestEdge(lineFromTop, lineFromBottom, 'top', 'bottom');
     const edgeText = edge === 'center' ? region : `${edge} side`;
     return {
-      label: `${ordinal(sideLine)}-line side move`,
-      detail: `${edgeText}; ${lineRole(sideLine)}.`,
+      label: t(`${ordinal(sideLine)}-line side move`),
+      detail: t('{edge}; {role}.', { edge: tRegion(edgeText), role: t(lineRole(sideLine)) }),
       tone: 'side',
     };
   }
 
   return {
-    label: 'Center-area move',
-    detail: `${region}; ${lineRole(sideLine)}.`,
+    label: t('Center-area move'),
+    detail: t('{region}; {role}.', { region: tRegion(region), role: t(lineRole(sideLine)) }),
     tone: 'center',
   };
 }
 
 export function getMoveInsightCoach(insight: MoveInsight): MoveInsightCoach {
-  if (FUSEKI_PATTERN_NAMES.has(insight.label)) {
-    if (insight.label === '3-3 Point Invasion') {
+  if (isFusekiLabel(insight.label)) {
+    if (insight.label === t('3-3 Point Invasion')) {
       return {
-        beginner: 'The 3-3 invasion takes the corner right away but gives the opponent a strong outside wall.',
-        pro: 'Time the invasion by how well the resulting wall works with the rest of the board.',
-        checks: ['Wall direction', 'Timing', 'Ladder breaks'],
+        beginner: t('The 3-3 invasion takes the corner right away but gives the opponent a strong outside wall.'),
+        pro: t('Time the invasion by how well the resulting wall works with the rest of the board.'),
+        checks: [t('Wall direction'), t('Timing'), t('Ladder breaks')],
       };
     }
     return {
-      beginner: 'This completes a named whole-board opening — a plan for the entire board, not just one corner.',
-      pro: 'Study games with this formation to learn its standard follow-ups, invasion points, and direction of play.',
-      checks: ['Framework plan', 'Invasion points', 'Direction of play'],
+      beginner: t('This completes a named whole-board opening — a plan for the entire board, not just one corner.'),
+      pro: t('Study games with this formation to learn its standard follow-ups, invasion points, and direction of play.'),
+      checks: [t('Framework plan'), t('Invasion points'), t('Direction of play')],
     };
   }
 
-  if (SHAPE_PATTERN_NAMES.has(insight.label)) {
+  if (isShapeLabel(insight.label)) {
     return {
-      beginner: 'This completes a classic named shape — good shape gives your stones connection and eye potential.',
-      pro: 'Confirm the shape is doing real work here: efficiency matters more than the shape itself.',
-      checks: ['Connection', 'Eye shape', 'Efficiency'],
+      beginner: t('This completes a classic named shape — good shape gives your stones connection and eye potential.'),
+      pro: t('Confirm the shape is doing real work here: efficiency matters more than the shape itself.'),
+      checks: [t('Connection'), t('Eye shape'), t('Efficiency')],
     };
   }
 
   if (insight.tone === 'pass') {
     return {
-      beginner: 'Passing is usually right when both players have no valuable moves left.',
-      pro: 'Check ko threats, dame, sente endgame, and whether passing changes life-and-death status.',
-      checks: ['Endgame left?', 'Ko threats?', 'Life and death?'],
+      beginner: t('Passing is usually right when both players have no valuable moves left.'),
+      pro: t('Check ko threats, dame, sente endgame, and whether passing changes life-and-death status.'),
+      checks: [t('Endgame left?'), t('Ko threats?'), t('Life and death?')],
     };
   }
 
-  if (insight.label === 'Capture') {
+  if (insight.label === t('Capture')) {
     return {
-      beginner: 'Captures remove opponent stones and often settle an urgent local fight.',
-      pro: 'Check whether the capture is sente, creates shortage of liberties, or leaves a snapback or ko.',
-      checks: ['Sente', 'Snapback', 'Ko'],
+      beginner: t('Captures remove opponent stones and often settle an urgent local fight.'),
+      pro: t('Check whether the capture is sente, creates shortage of liberties, or leaves a snapback or ko.'),
+      checks: [t('Sente'), t('Snapback'), t('Ko')],
     };
   }
 
-  if (insight.label === 'Atari') {
+  if (insight.label === t('Atari')) {
     return {
-      beginner: 'Atari gives an opponent group one liberty, so they usually need to answer.',
-      pro: 'Confirm the atari is profitable; loose ataris can strengthen the opponent or lose sente.',
-      checks: ['Escape route', 'Net', 'Sente'],
+      beginner: t('Atari gives an opponent group one liberty, so they usually need to answer.'),
+      pro: t('Confirm the atari is profitable; loose ataris can strengthen the opponent or lose sente.'),
+      checks: [t('Escape route'), t('Net'), t('Sente')],
     };
   }
 
-  if (insight.label === 'Self-atari') {
+  if (insight.label === t('Self-atari')) {
     return {
-      beginner: 'Self-atari means your own stones have only one liberty, so they may be captured next.',
-      pro: 'Read whether it works as a forcing sacrifice, ladder, snapback, or ko threat before trusting it.',
-      checks: ['Liberties', 'Ladder', 'Snapback'],
+      beginner: t('Self-atari means your own stones have only one liberty, so they may be captured next.'),
+      pro: t('Read whether it works as a forcing sacrifice, ladder, snapback, or ko threat before trusting it.'),
+      checks: [t('Liberties'), t('Ladder'), t('Snapback')],
     };
   }
 
-  if (insight.label === 'Suicide') {
+  if (insight.label === t('Suicide')) {
     return {
-      beginner: 'Most games do not allow suicide moves because the played stone would have no liberties.',
-      pro: 'If this came from an imported record, check the ruleset and whether the move should be rejected.',
-      checks: ['Ruleset', 'Import', 'Legality'],
+      beginner: t('Most games do not allow suicide moves because the played stone would have no liberties.'),
+      pro: t('If this came from an imported record, check the ruleset and whether the move should be rejected.'),
+      checks: [t('Ruleset'), t('Import'), t('Legality')],
     };
   }
 
-  if (insight.label === 'Empty triangle') {
+  if (insight.label === t('Empty triangle')) {
     return {
-      beginner: 'An empty triangle connects stones, but it is often slow and heavy.',
-      pro: 'Check whether a bamboo joint, tiger mouth, diagonal move, or forcing exchange keeps the same connection more efficiently.',
-      checks: ['Efficiency', 'Cut point', 'Alternative'],
+      beginner: t('An empty triangle connects stones, but it is often slow and heavy.'),
+      pro: t('Check whether a bamboo joint, tiger mouth, diagonal move, or forcing exchange keeps the same connection more efficiently.'),
+      checks: [t('Efficiency'), t('Cut point'), t('Alternative')],
     };
   }
 
-  if (insight.label === 'Bamboo joint') {
+  if (insight.label === t('Bamboo joint')) {
     return {
-      beginner: 'A bamboo joint connects lightly: if one cutting point is attacked, the other point usually reconnects.',
-      pro: 'Check whether the joint is still short of liberties, vulnerable to forcing moves, or better played as a sente exchange.',
-      checks: ['Cut resistance', 'Liberties', 'Aji'],
+      beginner: t('A bamboo joint connects lightly: if one cutting point is attacked, the other point usually reconnects.'),
+      pro: t('Check whether the joint is still short of liberties, vulnerable to forcing moves, or better played as a sente exchange.'),
+      checks: [t('Cut resistance'), t('Liberties'), t('Aji')],
     };
   }
 
-  if (insight.label === "Tiger's mouth") {
+  if (insight.label === t("Tiger's mouth")) {
     return {
-      beginner: "A tiger's mouth protects a cutting point while keeping the stones flexible.",
-      pro: 'Check peeps, shortage of liberties, and whether the mouth points at the important side of the fight.',
-      checks: ['Peep', 'Liberties', 'Direction'],
+      beginner: t("A tiger's mouth protects a cutting point while keeping the stones flexible."),
+      pro: t('Check peeps, shortage of liberties, and whether the mouth points at the important side of the fight.'),
+      checks: [t('Peep'), t('Liberties'), t('Direction')],
     };
   }
 
-  if (insight.label === 'Cut') {
+  if (insight.label === t('Cut')) {
     return {
-      beginner: 'A cut tries to split opposing stones so they must live or connect separately.',
-      pro: 'Read ladders, nets, counter-cuts, and whether the cutting stones have enough liberties.',
-      checks: ['Ladder', 'Net', 'Liberties'],
+      beginner: t('A cut tries to split opposing stones so they must live or connect separately.'),
+      pro: t('Read ladders, nets, counter-cuts, and whether the cutting stones have enough liberties.'),
+      checks: [t('Ladder'), t('Net'), t('Liberties')],
     };
   }
 
-  if (insight.label === 'Hane') {
+  if (insight.label === t('Hane')) {
     return {
-      beginner: 'A hane bends around contact and often creates pressure or shape at the same time.',
-      pro: 'Read the counter-hane, cuts, ladders, and whether the bend keeps enough liberties.',
-      checks: ['Counter-hane', 'Cuts', 'Liberties'],
+      beginner: t('A hane bends around contact and often creates pressure or shape at the same time.'),
+      pro: t('Read the counter-hane, cuts, ladders, and whether the bend keeps enough liberties.'),
+      checks: [t('Counter-hane'), t('Cuts'), t('Liberties')],
     };
   }
 
-  if (insight.label === 'Wedge') {
+  if (insight.label === t('Wedge')) {
     return {
-      beginner: 'A wedge pushes between opposing stones, often aiming to split them.',
-      pro: 'Check whether both sides can be handled, or whether the wedge becomes a weak cutting stone.',
-      checks: ['Both sides', 'Counter-cut', 'Liberties'],
+      beginner: t('A wedge pushes between opposing stones, often aiming to split them.'),
+      pro: t('Check whether both sides can be handled, or whether the wedge becomes a weak cutting stone.'),
+      checks: [t('Both sides'), t('Counter-cut'), t('Liberties')],
     };
   }
 
-  if (insight.label === 'Shoulder hit') {
+  if (insight.label === t('Shoulder hit')) {
     return {
-      beginner: 'A shoulder hit leans on an opposing stone to reduce its area while building outside influence.',
-      pro: 'Check direction, follow-up cuts, and whether the opponent can profit by pushing through.',
-      checks: ['Direction', 'Follow-up', 'Cuts'],
+      beginner: t('A shoulder hit leans on an opposing stone to reduce its area while building outside influence.'),
+      pro: t('Check direction, follow-up cuts, and whether the opponent can profit by pushing through.'),
+      checks: [t('Direction'), t('Follow-up'), t('Cuts')],
     };
   }
 
-  if (insight.label === 'Attachment') {
+  if (insight.label === t('Attachment')) {
     return {
-      beginner: 'An attachment touches an opposing stone, so both players usually need to read the local contact fight.',
-      pro: 'Check hane, extend, crosscut, and whether the attachment strengthens the opponent in sente.',
-      checks: ['Hane', 'Extend', 'Crosscut'],
+      beginner: t('An attachment touches an opposing stone, so both players usually need to read the local contact fight.'),
+      pro: t('Check hane, extend, crosscut, and whether the attachment strengthens the opponent in sente.'),
+      checks: [t('Hane'), t('Extend'), t('Crosscut')],
     };
   }
 
-  if (insight.label === 'Diagonal (kosumi)') {
+  if (insight.label === t('Diagonal (kosumi)')) {
     return {
-      beginner: 'A diagonal move connects lightly while leaving room to shape around pressure.',
-      pro: 'Check whether the diagonal is strong enough, or whether a solid connection, tiger mouth, or jump is more efficient.',
-      checks: ['Cut point', 'Shape', 'Efficiency'],
+      beginner: t('A diagonal move connects lightly while leaving room to shape around pressure.'),
+      pro: t('Check whether the diagonal is strong enough, or whether a solid connection, tiger mouth, or jump is more efficient.'),
+      checks: [t('Cut point'), t('Shape'), t('Efficiency')],
     };
   }
 
-  if (insight.label === 'One-point jump') {
+  if (insight.label === t('One-point jump')) {
     return {
-      beginner: 'A one-point jump extends quickly from a friendly stone while keeping a loose connection.',
-      pro: 'Check peeps, cuts, and whether the jump gives the opponent an easy forcing move.',
-      checks: ['Peep', 'Cut', 'Direction'],
+      beginner: t('A one-point jump extends quickly from a friendly stone while keeping a loose connection.'),
+      pro: t('Check peeps, cuts, and whether the jump gives the opponent an easy forcing move.'),
+      checks: [t('Peep'), t('Cut'), t('Direction')],
     };
   }
 
-  if (insight.label === 'Two-point jump') {
+  if (insight.label === t('Two-point jump')) {
     return {
-      beginner: 'A two-point jump is faster than a one-point jump, but it leaves more space for the opponent to invade.',
-      pro: 'Check whether nearby strength protects the gap, or whether a cap, shoulder hit, or invasion punishes the distance.',
-      checks: ['Gap safety', 'Cap', 'Invasion'],
+      beginner: t('A two-point jump is faster than a one-point jump, but it leaves more space for the opponent to invade.'),
+      pro: t('Check whether nearby strength protects the gap, or whether a cap, shoulder hit, or invasion punishes the distance.'),
+      checks: [t('Gap safety'), t('Cap'), t('Invasion')],
     };
   }
 
-  if (insight.label === 'Small knight') {
+  if (insight.label === t('Small knight')) {
     return {
-      beginner: 'A small knight move is a fast, flexible connection with one common cutting weakness.',
-      pro: 'Read the attachment and cut points, especially when either stone is short of liberties.',
-      checks: ['Attachment', 'Cut point', 'Liberties'],
+      beginner: t('A small knight move is a fast, flexible connection with one common cutting weakness.'),
+      pro: t('Read the attachment and cut points, especially when either stone is short of liberties.'),
+      checks: [t('Attachment'), t('Cut point'), t('Liberties')],
     };
   }
 
-  if (insight.label === 'Large knight') {
+  if (insight.label === t('Large knight')) {
     return {
-      beginner: 'A large knight move is wider and faster, so it needs more support from nearby stones.',
-      pro: 'Check whether the opponent can split, shoulder hit, or lean on the outside before the shape settles.',
-      checks: ['Split', 'Shoulder hit', 'Support'],
+      beginner: t('A large knight move is wider and faster, so it needs more support from nearby stones.'),
+      pro: t('Check whether the opponent can split, shoulder hit, or lean on the outside before the shape settles.'),
+      checks: [t('Split'), t('Shoulder hit'), t('Support')],
     };
   }
 
-  if (insight.label === 'Diagonal jump') {
+  if (insight.label === t('Diagonal jump')) {
     return {
-      beginner: 'A diagonal jump links stones at a distance, often aiming for speed more than solid connection.',
-      pro: 'Check the forcing points around the diagonal and whether a closer move removes important aji.',
-      checks: ['Forcing points', 'Aji', 'Efficiency'],
+      beginner: t('A diagonal jump links stones at a distance, often aiming for speed more than solid connection.'),
+      pro: t('Check the forcing points around the diagonal and whether a closer move removes important aji.'),
+      checks: [t('Forcing points'), t('Aji'), t('Efficiency')],
     };
   }
 
-  if (insight.label === 'Connect') {
+  if (insight.label === t('Connect')) {
     return {
-      beginner: 'Connecting stones makes them harder to cut and easier to keep alive.',
-      pro: 'Compare the solid connection with forcing moves, tiger mouths, and counter-cuts.',
-      checks: ['Cuts', 'Shape', 'Aji'],
+      beginner: t('Connecting stones makes them harder to cut and easier to keep alive.'),
+      pro: t('Compare the solid connection with forcing moves, tiger mouths, and counter-cuts.'),
+      checks: [t('Cuts'), t('Shape'), t('Aji')],
     };
   }
 
-  if (insight.label === 'Fill') {
+  if (insight.label === t('Fill')) {
     return {
-      beginner: 'Filling your own surrounded point can be right, but it often spends a move inside your shape.',
-      pro: 'Check whether the point affects life, ko, seki, dame, or final scoring before playing it.',
-      checks: ['Eye shape', 'Seki', 'Endgame'],
+      beginner: t('Filling your own surrounded point can be right, but it often spends a move inside your shape.'),
+      pro: t('Check whether the point affects life, ko, seki, dame, or final scoring before playing it.'),
+      checks: [t('Eye shape'), t('Seki'), t('Endgame')],
     };
   }
 
   if (insight.tone === 'center') {
     return {
-      beginner: 'Center moves build influence, but they need nearby stones or weak groups to matter.',
-      pro: 'Look for targets, sector lines, and whether the move turns outside strength into profit.',
-      checks: ['Targets', 'Direction', 'Follow-up'],
+      beginner: t('Center moves build influence, but they need nearby stones or weak groups to matter.'),
+      pro: t('Look for targets, sector lines, and whether the move turns outside strength into profit.'),
+      checks: [t('Targets'), t('Direction'), t('Follow-up')],
     };
   }
 
   if (insight.tone === 'side') {
-    const lowSide = insight.label.includes('2nd-line') || insight.label.includes('3rd-line');
+    const lowSide =
+      insight.label === t('2nd-line side move') ||
+      insight.label === t('3rd-line side move');
     return {
       beginner: lowSide
-        ? 'Low side moves are about territory and stability along the edge.'
-        : 'High side moves are about influence, pressure, and building a framework.',
-      pro: 'Check extension distance, nearby thickness, cut points, and whether the side move is sente.',
-      checks: ['Extension', 'Cuts', 'Sente'],
+        ? t('Low side moves are about territory and stability along the edge.')
+        : t('High side moves are about influence, pressure, and building a framework.'),
+      pro: t('Check extension distance, nearby thickness, cut points, and whether the side move is sente.'),
+      checks: [t('Extension'), t('Cuts'), t('Sente')],
     };
   }
 
-  if (insight.label === 'Low approach') {
+  if (insight.label === t('Low approach')) {
     return {
-      beginner: 'A low approach asks for corner territory or a stable base while reducing the opponent.',
-      pro: 'Choose the approach direction by checking pincers, extensions, ladders, and nearby strength.',
-      checks: ['Pincer', 'Base', 'Direction'],
+      beginner: t('A low approach asks for corner territory or a stable base while reducing the opponent.'),
+      pro: t('Choose the approach direction by checking pincers, extensions, ladders, and nearby strength.'),
+      checks: [t('Pincer'), t('Base'), t('Direction')],
     };
   }
 
-  if (insight.label === 'High approach') {
+  if (insight.label === t('High approach')) {
     return {
-      beginner: 'A high approach puts more weight on outside influence and pressure than on immediate territory.',
-      pro: 'Check whether the high side attacks a weak group, builds a moyo, or gives the opponent an easy base.',
-      checks: ['Influence', 'Target', 'Pincer'],
+      beginner: t('A high approach puts more weight on outside influence and pressure than on immediate territory.'),
+      pro: t('Check whether the high side attacks a weak group, builds a moyo, or gives the opponent an easy base.'),
+      checks: [t('Influence'), t('Target'), t('Pincer')],
     };
   }
 
-  if (insight.label === 'Low enclosure') {
+  if (insight.label === t('Low enclosure')) {
     return {
-      beginner: 'A low enclosure secures the corner and makes the stones harder to invade.',
-      pro: 'Check whether enclosing is bigger than approaching another corner, extending, or taking sente.',
-      checks: ['Corner secure', 'Extension', 'Sente'],
+      beginner: t('A low enclosure secures the corner and makes the stones harder to invade.'),
+      pro: t('Check whether enclosing is bigger than approaching another corner, extending, or taking sente.'),
+      checks: [t('Corner secure'), t('Extension'), t('Sente')],
     };
   }
 
-  if (insight.label === 'High enclosure') {
+  if (insight.label === t('High enclosure')) {
     return {
-      beginner: 'A high enclosure builds a wider corner shape and points more toward outside influence.',
-      pro: 'Check approach timing, outside direction, and whether the wider shape leaves useful invasion aji.',
-      checks: ['Direction', 'Invasion aji', 'Follow-up'],
+      beginner: t('A high enclosure builds a wider corner shape and points more toward outside influence.'),
+      pro: t('Check approach timing, outside direction, and whether the wider shape leaves useful invasion aji.'),
+      checks: [t('Direction'), t('Invasion aji'), t('Follow-up')],
     };
   }
 
   if (insight.label.includes('3-3')) {
     return {
-      beginner: 'The 3-3 point secures corner territory quickly, often giving the opponent outside influence.',
-      pro: 'Before invading, count outside strength and confirm the opponent cannot profit twice.',
-      checks: ['Corner secure', 'Outside influence', 'Sente'],
+      beginner: t('The 3-3 point secures corner territory quickly, often giving the opponent outside influence.'),
+      pro: t('Before invading, count outside strength and confirm the opponent cannot profit twice.'),
+      checks: [t('Corner secure'), t('Outside influence'), t('Sente')],
     };
   }
 
   if (insight.label.includes('4-4')) {
     return {
-      beginner: 'The 4-4 point develops quickly and keeps many follow-ups open.',
-      pro: 'Choose approach direction by checking ladders, pincers, and which side is more important.',
-      checks: ['Approach side', 'Pincer', 'Ladders'],
+      beginner: t('The 4-4 point develops quickly and keeps many follow-ups open.'),
+      pro: t('Choose approach direction by checking ladders, pincers, and which side is more important.'),
+      checks: [t('Approach side'), t('Pincer'), t('Ladders')],
     };
   }
 
   if (insight.label.includes('3-4')) {
     return {
-      beginner: 'The 3-4 point leans toward territory and has a clear direction for enclosure or extension.',
-      pro: 'Read approach pressure, shimari value, and whether the outside direction fits the board.',
-      checks: ['Shimari', 'Approach', 'Direction'],
+      beginner: t('The 3-4 point leans toward territory and has a clear direction for enclosure or extension.'),
+      pro: t('Read approach pressure, shimari value, and whether the outside direction fits the board.'),
+      checks: [t('Shimari'), t('Approach'), t('Direction')],
     };
   }
 
   return {
-    beginner: 'Corner moves trade territory, influence, and speed. Start by asking what this corner wants.',
-    pro: 'Check local joseki direction, outside strength, ladders, and who keeps sente after the exchange.',
-    checks: ['Joseki aim', 'Outside strength', 'Sente'],
+    beginner: t('Corner moves trade territory, influence, and speed. Start by asking what this corner wants.'),
+    pro: t('Check local joseki direction, outside strength, ladders, and who keeps sente after the exchange.'),
+    checks: [t('Joseki aim'), t('Outside strength'), t('Sente')],
   };
 }

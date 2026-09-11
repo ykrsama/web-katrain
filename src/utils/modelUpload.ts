@@ -1,6 +1,7 @@
 import { getIndexedDB, readLocalStorage, removeLocalStorage, writeLocalStorage } from './storage';
 import { stripUnsafeFilenameControls } from './filename';
 import { createObjectUrlOrThrow, revokeObjectUrl } from './objectUrl';
+import { t } from '../i18n';
 
 export const MAX_BROWSER_MODEL_UPLOAD_BYTES = 128 * 1024 * 1024;
 export const MAX_BROWSER_MODEL_UPLOAD_LABEL = '128 MB';
@@ -46,7 +47,7 @@ let lastManualModelUrl: string | null = null;
 
 export const sanitizeModelDisplayName = (
   name: string | null | undefined,
-  fallback = 'Uploaded weights'
+  fallback = t('Uploaded weights')
 ): string => {
   const cleaned = stripUnsafeFilenameControls(name ?? '').replace(/\s+/g, ' ').trim();
   return cleaned || fallback;
@@ -88,11 +89,13 @@ export const isKataGoModelWeightsFile = (file: ModelFileLike): boolean => {
 };
 
 export const modelUploadTooLargeMessage = (size: number): string =>
-  `This model is too large for the browser engine (${(size / (1024 * 1024)).toFixed(0)} MB). ` +
-  `Use the Strong b18 browser weights or another compressed model under ${MAX_BROWSER_MODEL_UPLOAD_LABEL}.`;
+  t(
+    'This model is too large for the browser engine ({size} MB). Use the Strong b18 browser weights or another compressed model under {max}.',
+    { size: (size / (1024 * 1024)).toFixed(0), max: MAX_BROWSER_MODEL_UPLOAD_LABEL }
+  );
 
 export const formatUploadedModelSize = (size: number): string => {
-  if (!Number.isFinite(size) || size <= 0) return 'Unknown size';
+  if (!Number.isFinite(size) || size <= 0) return t('Unknown size');
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) {
     const kb = size / 1024;
@@ -113,7 +116,7 @@ export const getUploadedModelInfo = (): UploadedModelInfo | null => uploadedMode
 
 export const validateModelUploadFile = (file: ModelFileLike): string | null => {
   if (!isKataGoModelWeightsFile(file)) {
-    return 'Use a KataGo .bin.gz weights file.';
+    return t('Use a KataGo .bin.gz weights file.');
   }
   const size = typeof file.size === 'number' && Number.isFinite(file.size) ? file.size : 0;
   if (size > MAX_BROWSER_MODEL_UPLOAD_BYTES) return modelUploadTooLargeMessage(size);

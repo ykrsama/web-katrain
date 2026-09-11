@@ -1,5 +1,6 @@
 import { APP_INFO, APP_REPOSITORY_URL } from './appInfo';
 import { getSessionStorage } from './storage';
+import { t } from '../i18n';
 
 export const APP_ERROR_STORAGE_KEY = 'web-katrain:last-error:v1';
 
@@ -146,22 +147,26 @@ export function consumeStoredErrorReport(storage: Storage | null = getSessionSto
 
 export function formatAppErrorReport(report: AppErrorReport): string {
   const lines = [
-    `Web KaTrain diagnostics`,
-    `Version: v${APP_INFO.version}`,
-    `Commit: ${APP_INFO.commit}${APP_INFO.commitDate ? ` (${APP_INFO.commitDate})` : ''}`,
-    `Repository: ${APP_REPOSITORY_URL}`,
-    `Type: ${report.type}`,
-    `Time: ${report.occurredAt}`,
-    `Message: ${report.message}`,
+    t('Web KaTrain diagnostics'),
+    t('Version: {version}', { version: `v${APP_INFO.version}` }),
+    t('Commit: {commit}', {
+      commit: APP_INFO.commit + (APP_INFO.commitDate ? ` (${APP_INFO.commitDate})` : ''),
+    }),
+    t('Repository: {repository}', { repository: APP_REPOSITORY_URL }),
+    t('Type: {type}', { type: report.type }),
+    t('Time: {time}', { time: report.occurredAt }),
+    t('Message: {message}', { message: report.message }),
   ];
-  if (report.source) lines.push(`Source: ${report.source}`);
+  if (report.source) lines.push(t('Source: {source}', { source: report.source }));
   if (report.line !== undefined || report.column !== undefined) {
-    lines.push(`Location: ${report.line ?? '?'}:${report.column ?? '?'}`);
+    lines.push(
+      t('Location: {location}', { location: `${report.line ?? '?'}:${report.column ?? '?'}` })
+    );
   }
-  if (report.url) lines.push(`URL: ${report.url}`);
-  if (report.userAgent) lines.push(`User agent: ${report.userAgent}`);
-  if (report.componentStack) lines.push('', 'React component stack:', report.componentStack.trim());
-  if (report.stack) lines.push('', 'Stack:', report.stack);
+  if (report.url) lines.push(t('URL: {url}', { url: report.url }));
+  if (report.userAgent) lines.push(t('User agent: {agent}', { agent: report.userAgent }));
+  if (report.componentStack) lines.push('', t('React component stack:'), report.componentStack.trim());
+  if (report.stack) lines.push('', t('Stack:'), report.stack);
   return lines.join('\n');
 }
 

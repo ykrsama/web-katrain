@@ -5,6 +5,7 @@ import { isDrillHidingAnswer } from '../utils/mistakeDrill';
 import type { CandidateMove } from '../types';
 import { getEvaluationClass } from '../utils/nodeAnalysis';
 import { evalColorToCss, getKaTrainEvalColors } from '../utils/katrainTheme';
+import { t, useT } from '../i18n';
 
 interface CandidatePvTilesProps {
   /** `${x},${y}` of the currently pinned candidate, or null. */
@@ -16,7 +17,7 @@ interface CandidatePvTilesProps {
 const moveKey = (move: CandidateMove) => `${move.x},${move.y}`;
 
 function moveLabel(move: CandidateMove, boardSize: number): string {
-  if (move.x < 0 || move.y < 0) return 'Pass';
+  if (move.x < 0 || move.y < 0) return t('Pass');
   const col = String.fromCharCode(65 + (move.x >= 8 ? move.x + 1 : move.x));
   return `${col}${boardSize - move.y}`;
 }
@@ -44,6 +45,7 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
     shallow
   );
 
+  const t = useT();
   const evalColors = useMemo(() => getKaTrainEvalColors(trainerTheme), [trainerTheme]);
 
   const tiles = useMemo(
@@ -105,7 +107,7 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
         scrollEdges.overflow && !scrollEdges.atStart ? 'has-overflow-left' : '',
         scrollEdges.overflow && !scrollEdges.atEnd ? 'has-overflow-right' : '',
       ].join(' ')}
-      aria-label="Preview continuations"
+      aria-label={t('Preview continuations')}
     >
       {tiles.map((move) => {
         const key = moveKey(move);
@@ -124,7 +126,7 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
                 ? 'border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] text-[var(--ui-text)]'
                 : 'border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]',
             ].join(' ')}
-            title={`Preview ${moveLabel(move, boardSize)} continuation (${move.pv?.length ?? 0} moves)`}
+            title={t('Preview {label} continuation ({count} moves)', { label: moveLabel(move, boardSize), count: move.pv?.length ?? 0 })}
           >
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dot }} aria-hidden="true" />
             <span>{moveLabel(move, boardSize)}</span>
@@ -136,9 +138,9 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
           type="button"
           onClick={() => addPvVariation(pinnedMove.pv ?? [])}
           className="candidate-pv-tile shrink-0 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-2 py-1 text-xs font-semibold text-[var(--ui-accent)] hover:brightness-110 touch-manipulation"
-          title={`Add the ${moveLabel(pinnedMove, boardSize)} continuation to the move tree`}
+          title={t('Add the {label} continuation to the move tree', { label: moveLabel(pinnedMove, boardSize) })}
         >
-          Keep in tree
+          {t('Keep in tree')}
         </button>
       )}
       {pinnedKey && (
@@ -146,10 +148,10 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
           type="button"
           onClick={() => onPin(null)}
           className="candidate-pv-tile shrink-0 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-xs text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] touch-manipulation"
-          title="Clear preview"
-          aria-label="Clear continuation preview"
+          title={t('Clear preview')}
+          aria-label={t('Clear continuation preview')}
         >
-          Clear
+          {t('Clear')}
         </button>
       )}
     </div>

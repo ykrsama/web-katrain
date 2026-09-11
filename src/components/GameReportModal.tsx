@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FaBookOpen, FaBullseye, FaChartLine, FaInfoCircle, FaTimes } from 'react-icons/fa';
 import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
+import { useT } from '../i18n';
 import {
   GAME_REPORT_PHASES,
   MOVE_POLICY_CATEGORIES,
@@ -96,23 +97,6 @@ function fmtWinSwing(value: number | undefined): string {
   return points > 0 ? `+${points.toFixed(1)}pp` : `${points.toFixed(1)}pp`;
 }
 
-function policyCategoryLabel(category: MovePolicyCategory | undefined): string {
-  switch (category) {
-    case 'aiMove':
-      return 'AI move';
-    case 'good':
-      return 'Good';
-    case 'inaccuracy':
-      return 'Inaccuracy';
-    case 'mistake':
-      return 'Mistake';
-    case 'blunder':
-      return 'Blunder';
-    default:
-      return 'Unranked';
-  }
-}
-
 function policyCategoryClass(category: MovePolicyCategory | undefined): string {
   switch (category) {
     case 'aiMove':
@@ -190,6 +174,24 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     }),
     shallow
   );
+  const t = useT();
+  const locale = useGameStore((s) => s.settings.appLocale);
+  const policyCategoryLabel = (category: MovePolicyCategory | undefined): string => {
+    switch (category) {
+      case 'aiMove':
+        return t('AI move');
+      case 'good':
+        return t('Good');
+      case 'inaccuracy':
+        return t('Inaccuracy');
+      case 'mistake':
+        return t('Mistake');
+      case 'blunder':
+        return t('Blunder');
+      default:
+        return t('Unranked');
+    }
+  };
   const humanProfileLabel = describeHumanProfile(humanSlProfile);
   const hasMoveTimes = useMemo(
     () => hasMoveTimeData(computeMoveTimes(getCurrentLineNodes(currentNode, activeBranchChildIds), rootNode.properties)),
@@ -523,31 +525,34 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
   const hasFullCoverage = hasReviewTargets && coverage >= 0.999;
   const phaseLabel = getPhaseLabel(phaseFilter);
   const reviewMoveRange = useMemo(() => getPhaseAnalysisMoveRange(boardSize, phaseFilter), [boardSize, phaseFilter]);
-  const reviewScopeLabel = phaseFilter === 'all' ? 'fast review' : `${phaseLabel.toLowerCase()} review`;
+  const reviewScopeLabel = phaseFilter === 'all' ? t('fast review') : `${phaseLabel}${t('review')}`;
   // Keep naming the action even with nothing to review: the button is disabled in
   // that state and the status banner already says "No moves to review" and why, so
   // relabelling both button instances repeated that line three times on one screen.
   const reviewButtonLabel = isGameAnalysisRunning
-    ? `Stop ${gameAnalysisType ?? 'analysis'}${gameAnalysisTotal > 0 ? ` (${gameAnalysisDone}/${gameAnalysisTotal})` : ''}`
+    ? `${t('Stop {type}', { type: gameAnalysisType ?? t('analysis') })}${gameAnalysisTotal > 0 ? ` (${gameAnalysisDone}/${gameAnalysisTotal})` : ''}`
     : hasFullCoverage
-      ? `Re-run ${reviewScopeLabel}`
-      : `Run ${reviewScopeLabel}`;
+      ? t('Re-run {scope}', { scope: reviewScopeLabel })
+      : t('Run {scope}', { scope: reviewScopeLabel });
   const coveragePercent = totalMoves > 0 ? Math.round(coverage * 100) : 0;
   const analysisStatusTitle = isGameAnalysisRunning
-    ? 'Review running'
+    ? t('Review running')
     : hasFullCoverage
-      ? 'Analysis complete'
+      ? t('Analysis complete')
       : hasReviewTargets
-        ? 'Partial analysis'
-        : 'No moves to review';
+        ? t('Partial analysis')
+        : t('No moves to review');
   const analysisStatusDetail = isGameAnalysisRunning
-    ? `Fast review is updating the report${gameAnalysisTotal > 0 ? ` (${gameAnalysisDone}/${gameAnalysisTotal})` : ''}.`
+    ? `${t('Fast review is updating the report')}${gameAnalysisTotal > 0 ? ` (${gameAnalysisDone}/${gameAnalysisTotal})` : ''}.`
     : hasFullCoverage
-      ? 'Every move in this filter has consecutive analysis, so the report is complete.'
+      ? t('Every move in this filter has consecutive analysis, so the report is complete.')
       : hasReviewTargets
-        ? `${analyzedMoves}/${totalMoves} moves have report-grade consecutive analysis. Run ${reviewScopeLabel} to fill the gaps.`
-        : 'Load or play a game with moves before running a report review.';
-  const playerFilterLabel = playerFilter === 'all' ? 'All players' : playerNames[playerFilter];
+        ? t('{count} moves have report-grade consecutive analysis. Run {scope} to fill the gaps.', {
+            count: `${analyzedMoves}/${totalMoves}`,
+            scope: reviewScopeLabel,
+          })
+        : t('Load or play a game with moves before running a report review.');
+  const playerFilterLabel = playerFilter === 'all' ? t('All players') : playerNames[playerFilter];
   const statsPlayers: Array<Player> = playerFilter === 'all' ? ['black', 'white'] : [playerFilter];
   const filteredReportEntries = useMemo(() => {
     return report.moveEntries.filter((entry) => {
@@ -567,7 +572,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
   );
   const studyFocus = useMemo(
     () => getReportStudyFocus({ reportsByPhase, phaseFilter, playerFilter }),
-    [phaseFilter, playerFilter, reportsByPhase]
+    [locale, phaseFilter, playerFilter, reportsByPhase]
   );
   // Keep the printable PDF bounded even when the on-screen list shows all mistakes.
   const pdfMistakes = useMemo(() => allMistakes.slice(0, 10), [allMistakes]);
@@ -604,78 +609,78 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
   }, [report.histogram, report.labels]);
   const bucketFilterLabel = bucketFilter == null ? null : report.labels[bucketFilter] ?? null;
   const policyFilterLabel = policyFilter ? policyCategoryLabel(policyFilter) : null;
-  const mistakeSortLabel = mistakeSort === 'policy' ? 'Quality' : 'Loss';
+  const mistakeSortLabel = mistakeSort === 'policy' ? t('Quality') : t('Loss');
 
   const activeFilterLabels = useMemo(() => {
     const labels = [phaseLabel, playerFilterLabel];
-    if (bucketFilterLabel) labels.push(`Loss ${bucketFilterLabel}`);
-    if (policyFilterLabel) labels.push(`Quality ${policyFilterLabel}`);
+    if (bucketFilterLabel) labels.push(t('Loss {bucket}', { bucket: bucketFilterLabel }));
+    if (policyFilterLabel) labels.push(t('Quality {quality}', { quality: policyFilterLabel }));
     return labels;
   }, [bucketFilterLabel, phaseLabel, playerFilterLabel, policyFilterLabel]);
   const keyStatRows: Array<{ label: string; description: string; value: (p: Player) => string }> = [
     {
-      label: 'Moves',
-      description: 'Analyzed moves included by the current phase, player, loss, and policy filters.',
+      label: t('Moves'),
+      description: t('Analyzed moves included by the current phase, player, loss, and policy filters.'),
       value: (p) => String(report.stats[p].numMoves),
     },
     {
-      label: 'Accuracy',
-      description: 'KaTrain-style score-loss accuracy; higher values mean less weighted point loss.',
+      label: t('Accuracy'),
+      description: t('KaTrain-style score-loss accuracy; higher values mean less weighted point loss.'),
       value: (p) => fmtNum(report.stats[p].accuracy, 1),
     },
     {
-      label: 'Policy accuracy',
-      description: 'Move quality score from policy rank and relative policy probability.',
+      label: t('Policy accuracy'),
+      description: t('Move quality score from policy rank and relative policy probability.'),
       value: (p) => fmtNum(report.stats[p].policyAccuracy, 1),
     },
     {
-      label: 'Complexity',
-      description: 'Average policy-weighted difficulty of the positions analyzed.',
+      label: t('Complexity'),
+      description: t('Average policy-weighted difficulty of the positions analyzed.'),
       value: (p) => fmtPct(report.stats[p].complexity),
     },
     {
-      label: 'Mean point loss',
-      description: 'Average points lost per analyzed move.',
+      label: t('Mean point loss'),
+      description: t('Average points lost per analyzed move.'),
       value: (p) => fmtNum(report.stats[p].meanPtLoss, 2),
     },
     {
-      label: 'Avg point swing',
-      description: 'Average points gained minus points lost per analyzed move; positive values mean the player recovered more than they gave up.',
+      label: t('Avg point swing'),
+      description: t('Average points gained minus points lost per analyzed move; positive values mean the player recovered more than they gave up.'),
       value: (p) => fmtSigned(report.stats[p].meanPtSwing, 2),
     },
     {
-      label: 'Weighted point loss',
-      description: 'Point loss weighted by position difficulty, matching KaTrain report semantics.',
+      label: t('Weighted point loss'),
+      description: t('Point loss weighted by position difficulty, matching KaTrain report semantics.'),
       value: (p) => fmtNum(report.stats[p].weightedPtLoss, 2),
     },
     {
-      label: 'Total point loss',
-      description: 'Sum of point loss across analyzed moves in the active filters.',
+      label: t('Total point loss'),
+      description: t('Sum of point loss across analyzed moves in the active filters.'),
       value: (p) => fmtNum(report.stats[p].totalPtLoss, 2),
     },
     {
-      label: 'Net point swing',
-      description: 'Total points gained minus points lost across analyzed moves in the active filters.',
+      label: t('Net point swing'),
+      description: t('Total points gained minus points lost across analyzed moves in the active filters.'),
       value: (p) => fmtSigned(report.stats[p].totalPtSwing, 2),
     },
     {
-      label: 'Max point loss',
-      description: 'Largest single-move point loss in the active filters.',
+      label: t('Max point loss'),
+      description: t('Largest single-move point loss in the active filters.'),
       value: (p) => fmtNum(report.stats[p].maxPtLoss, 2),
     },
     {
-      label: 'AI top move',
-      description: 'Share of moves that exactly matched the engine top choice.',
+      label: t('AI top move'),
+      description: t('Share of moves that exactly matched the engine top choice.'),
       value: (p) => fmtPct(report.stats[p].aiTopMove),
     },
     {
-      label: 'AI top5 move',
-      description: 'Share of moves that ranked inside the engine top five policy candidates.',
+      label: t('AI top5 move'),
+      description: t('Share of moves that ranked inside the engine top five policy candidates.'),
       value: (p) => fmtPct(report.stats[p].aiTop5Move),
     },
     {
-      label: 'AI approved',
-      description: 'Share of moves accepted by KaTrain’s looser top-move or low-loss approval rule.',
+      label: t('AI approved'),
+      description: t('Share of moves accepted by KaTrain’s looser top-move or low-loss approval rule.'),
       value: (p) => fmtPct(report.stats[p].aiApprovedMove),
     },
   ];
@@ -708,7 +713,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
       setPdfSnapshots(snapshots);
       await afterAnimationFrames(2);
       if (!printWindow()) {
-        setTimedNotification('Print dialog unavailable in this browser.', 'error');
+        setTimedNotification(t('Print dialog unavailable in this browser.'), 'error');
       }
     } finally {
       setIsPreparingPdf(false);
@@ -741,7 +746,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
   const startPractice = (entry: MoveReportEntry) => {
     if (isInsertMode) {
-      setTimedNotification('Finish insert mode before starting mistake practice.', 'error');
+      setTimedNotification(t('Finish insert mode before starting mistake practice.'), 'error');
       return;
     }
 
@@ -752,7 +757,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
       if (!latest.isInsertMode && latest.currentNode.children.length > 0) {
         latest.toggleInsertMode();
       }
-      setTimedNotification(`Practice move ${entry.moveNumber}: try a correction for ${playerNames[entry.player]}.`, 'info');
+      setTimedNotification(t('Practice move {move}: try a correction for {player}.', { move: entry.moveNumber, player: playerNames[entry.player] }), 'info');
     }, 0);
     setReportHoverMove(null);
     onClose();
@@ -770,8 +775,13 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
       const policy = entry.policy;
       const policyRank = formatPolicyRank(policy?.rank);
       const policyTitle = policy
-        ? `Policy rank ${policyRank}; played prior ${fmtPolicyPct(policy.playedPrior)}; top prior ${fmtPolicyPct(policy.topPrior)}; ${fmtPolicyPct(policy.relativePrior)} of top move`
-        : 'Policy data unavailable';
+        ? t('Policy rank {rank}; played prior {played}; top prior {top}; {rel} of top move', {
+            rank: policyRank,
+            played: fmtPolicyPct(policy.playedPrior),
+            top: fmtPolicyPct(policy.topPrior),
+            rel: fmtPolicyPct(policy.relativePrior),
+          })
+        : t('Policy data unavailable');
       return (
         <div
           key={`${entry.node.id}-${entry.moveNumber}`}
@@ -798,14 +808,14 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   className={`px-2 py-1 ${secondaryButtonClass}`}
                   onClick={() => jumpToNode(entry.node)}
                 >
-                  Jump
+                  {t('Jump')}
                 </button>
                 <button
                   type="button"
                   className="px-2 py-1 rounded bg-[var(--ui-accent-soft)] border border-[var(--ui-accent)] text-[var(--ui-accent)] hover:brightness-110"
                   onClick={() => startPractice(entry)}
                 >
-                  <span className="inline-flex items-center gap-1"><FaBullseye /> Practice</span>
+                  <span className="inline-flex items-center gap-1"><FaBullseye /> {t('Practice')}</span>
                 </button>
               </div>
             ) : (
@@ -815,17 +825,19 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           <div className={`col-span-12 text-[0.625rem] font-mono print-muted ${faintClass}`}>
             <div className="flex flex-wrap items-center gap-2">
               <span title={policyTitle}>
-                Policy: <span className={[
+                {t('Policy')}: <span className={[
                   'inline-flex items-center rounded-full border px-1.5 py-0.5 font-semibold',
                   policyCategoryClass(policy?.category),
                 ].join(' ')}>
                   {policyCategoryLabel(policy?.category)}
                 </span>{' '}
-                {policyRank} · {fmtPolicyPct(policy?.relativePrior)} of top
+                {policyRank} · {fmtPolicyPct(policy?.relativePrior)} {t('of top')}
               </span>
               {typeof entry.humanPrior === 'number' && (
                 <span
-                  title={`How often a player of the configured rank plays this move, from KataGo's human network${entry.humanRank ? ` (their #${entry.humanRank} choice here)` : ''}`}
+                  title={t("How often a player of the configured rank plays this move, from KataGo's human network{rank}", {
+                    rank: entry.humanRank ? t(' (their #{rank} choice here)', { rank: entry.humanRank }) : '',
+                  })}
                 >
                   {humanProfileLabel}: {fmtPolicyPct(entry.humanPrior)}
                   {entry.humanRank ? ` · #${entry.humanRank}` : ''}
@@ -836,9 +848,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   went up (-5.0pp)" under a White mistake, so both are shown
                   from the mover's side, and say whose. */}
               <span>
-                {entry.player === 'black' ? 'Black' : 'White'} win: {fmtWinRate(moverWinRate(entry.winRateBefore, entry.player))} {'->'} {fmtWinRate(moverWinRate(entry.winRateAfter, entry.player))} ({fmtWinSwing(entry.winRateSwing)})
+                {t(entry.player === 'black' ? 'Black win' : 'White win')}: {fmtWinRate(moverWinRate(entry.winRateBefore, entry.player))} {'->'} {fmtWinRate(moverWinRate(entry.winRateAfter, entry.player))} ({fmtWinSwing(entry.winRateSwing)})
               </span>
-              <span>PV: {formatPv(entry.pv)}</span>
+              <span>{t('PV: {pv}', { pv: formatPv(entry.pv) })}</span>
             </div>
           </div>
         </div>
@@ -853,7 +865,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
         ? [entry.topMove, ...pv]
         : pv;
     if (line.length === 0) {
-      return <div className={`text-xs ${faintClass}`}>PV unavailable.</div>;
+      return <div className={`text-xs ${faintClass}`}>{t('PV unavailable.')}</div>;
     }
     const max = 24;
     const nodes = line.slice(0, max);
@@ -864,7 +876,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
             {idx + 1}. {move}
           </div>
         ))}
-        {line.length > max && <div className={`text-[0.625rem] ${faintClass}`}>... {line.length - max} more</div>}
+        {line.length > max && <div className={`text-[0.625rem] ${faintClass}`}>... {t('{count} more', { count: line.length - max })}</div>}
       </div>
     );
   };
@@ -874,12 +886,12 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     try {
       const dataUrl = await captureBoardSnapshot();
       if (!dataUrl) {
-        setSnapshotError('Snapshot unavailable.');
+        setSnapshotError(t('Snapshot unavailable.'));
         return;
       }
       setSnapshotUrl(dataUrl);
     } catch {
-      setSnapshotError('Snapshot unavailable.');
+      setSnapshotError(t('Snapshot unavailable.'));
     }
   };
 
@@ -971,15 +983,15 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
       >
         <div className="game-report-modal-header flex items-center justify-between px-5 py-4 border-b border-[var(--ui-border)] ui-bar">
           <div>
-            <div className="text-xs uppercase tracking-[0.2em] ui-text-faint">KaTrain Report</div>
+            <div className="text-xs uppercase tracking-[0.2em] ui-text-faint">{t('KaTrain Report')}</div>
             <h2 id="game-report-title" className="text-lg font-semibold text-[var(--ui-text)]">
-              Game Analysis Summary
+              {t('Game Analysis Summary')}
             </h2>
             <div className="mt-1 text-sm ui-text-muted">
               {playerNames.black} vs {playerNames.white}
             </div>
             {showOutcome && gameTags.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Game tags">
+              <div className="mt-2 flex flex-wrap gap-1.5" aria-label={t('Game tags')}>
                 {gameTags.map((tag) => (
                   <span
                     key={tag.id}
@@ -999,18 +1011,18 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               ref={reportGuideButtonRef}
               onClick={() => setShowReportGuide(true)}
               className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
-              title="Open report guide"
-              aria-label="Open report guide"
+              title={t('Open report guide')}
+              aria-label={t('Open report guide')}
             >
               <FaInfoCircle aria-hidden="true" />
-              <span className="hidden sm:inline">Guide</span>
+              <span className="hidden sm:inline">{t('Guide')}</span>
             </button>
             <button
               type="button"
               onClick={onClose}
               className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-              title="Close"
-              aria-label="Close game report"
+              title={t('Close')}
+              aria-label={t('Close game report')}
             >
               <FaTimes aria-hidden="true" />
             </button>
@@ -1027,9 +1039,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] text-xl text-[var(--ui-accent)] shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
                   <FaChartLine aria-hidden="true" />
                 </div>
-                <h3 className="mt-5 text-lg font-semibold text-[var(--ui-text)]">No moves to review</h3>
+                <h3 className="mt-5 text-lg font-semibold text-[var(--ui-text)]">{t('No moves to review')}</h3>
                 <p className="mt-2 text-sm leading-6 text-[var(--ui-text-muted)]">
-                  Play a game on the board or open an SGF with moves. Your analysis summary will appear here.
+                  {t('Play a game on the board or open an SGF with moves. Your analysis summary will appear here.')}
                 </p>
               </div>
             </div>
@@ -1040,10 +1052,13 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 const active = phaseFilter === b.key;
                 const counts = phaseCounts[b.key] ?? { analyzed: 0, total: 0 };
                 const disabled = b.key !== 'all' && counts.total === 0;
-                const moveWord = counts.total === 1 ? 'move' : 'moves';
                 const tabLabel = disabled
-                  ? `${b.label}, no moves`
-                  : `${b.label}, ${counts.analyzed} of ${counts.total} analyzed ${moveWord}`;
+                  ? t('{phase}, no moves', { phase: t(b.label) })
+                  : t('{phase}, {analyzed} of {count} analyzed', {
+                      phase: t(b.label),
+                      analyzed: counts.analyzed,
+                      count: counts.total,
+                    });
                 return (
                   <button
                     key={b.key}
@@ -1055,8 +1070,11 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     aria-label={tabLabel}
                     title={
                       disabled
-                        ? `No moves in ${b.label}`
-                        : `${counts.analyzed}/${counts.total} analyzed ${moveWord} in ${b.label}`
+                        ? t('No moves in {phase}', { phase: t(b.label) })
+                        : t('{count} analyzed moves in {phase}', {
+                            count: `${counts.analyzed}/${counts.total}`,
+                            phase: t(b.label),
+                          })
                     }
                     className={[
                       'min-h-11 min-w-0 inline-flex items-center justify-center gap-1 px-2 py-2 rounded-lg border text-sm font-semibold transition-colors sm:gap-2 sm:px-3',
@@ -1067,8 +1085,8 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                           : 'bg-[var(--ui-surface)] border-[var(--ui-border)] text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]',
                     ].join(' ')}
                   >
-                    <span className="min-w-0 sm:hidden">{b.compactLabel}</span>
-                    <span className="hidden min-w-0 sm:inline">{b.label}</span>
+                    <span className="min-w-0 sm:hidden">{t(b.compactLabel)}</span>
+                    <span className="hidden min-w-0 sm:inline">{t(b.label)}</span>
                     <span className="shrink-0 rounded-full border border-current/20 px-1.5 py-0.5 font-mono text-[0.6875rem] leading-none opacity-80">
                       {counts.analyzed}/{counts.total}
                     </span>
@@ -1079,7 +1097,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
           <div className="flex flex-wrap items-center gap-2 print-hide">
             {[
-              { key: 'all', label: 'All players' },
+              { key: 'all', label: t('All players') },
               { key: 'black', label: playerNames.black },
               { key: 'white', label: playerNames.white },
             ].map((opt) => (
@@ -1102,9 +1120,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 type="button"
                 onClick={() => setBucketFilter(null)}
                 className="inline-flex min-h-11 items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border bg-[var(--ui-accent-soft)] border-[var(--ui-accent)] text-[var(--ui-accent)]"
-                title="Clear loss bucket filter"
+                title={t('Clear loss bucket filter')}
               >
-                Loss {bucketFilterLabel} x
+                {t('Loss {bucket}', { bucket: bucketFilterLabel })} x
               </button>
             )}
             {policyFilter && policyFilterLabel && (
@@ -1115,9 +1133,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   'inline-flex min-h-11 items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border',
                   policyCategoryClass(policyFilter),
                 ].join(' ')}
-                title="Clear policy quality filter"
+                title={t('Clear policy quality filter')}
               >
-                Quality {policyFilterLabel} x
+                {t('Quality {quality}', { quality: policyFilterLabel })} x
               </button>
             )}
           </div>
@@ -1148,7 +1166,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
             <div
               className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--ui-surface-2)]"
               role="progressbar"
-              aria-label="Report analysis coverage"
+              aria-label={t('Report analysis coverage')}
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={coveragePercent}
@@ -1161,16 +1179,16 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           </div>
 
           {studyFocus && (
-            <div className={sectionClass} data-game-report-study-focus="true" aria-label="Study focus">
+            <div className={sectionClass} data-game-report-study-focus="true" aria-label={t('Study focus')}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <FaBookOpen className="text-[var(--ui-accent)]" aria-hidden="true" />
-                    <div className={sectionTitleClass}>Study Focus</div>
+                    <div className={sectionTitleClass}>{t('Study Focus')}</div>
                   </div>
                   <div className={`mt-2 text-lg font-semibold ${valueClass}`}>{studyFocus.issueLabel}</div>
                   <div className={`mt-1 text-xs ${mutedClass}`}>
-                    Suggested from the weakest phase/player slice in the current filters.
+                    {t('Suggested from the weakest phase/player slice in the current filters.')}
                   </div>
                 </div>
                 <span className="shrink-0 rounded-full border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-accent)]">
@@ -1180,26 +1198,26 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <div>
-                  <div className={faintClass}>Analyzed</div>
+                  <div className={faintClass}>{t('Analyzed')}</div>
                   <div className={`mt-1 font-mono text-sm ${valueClass}`}>{studyFocus.analyzedMoves}</div>
                 </div>
                 <div>
-                  <div className={faintClass}>Weighted loss</div>
+                  <div className={faintClass}>{t('Weighted loss')}</div>
                   <div className={`mt-1 font-mono text-sm ${valueClass}`}>{fmtNum(studyFocus.weightedPtLoss, 2)}</div>
                 </div>
                 <div>
-                  <div className={faintClass}>Mean loss</div>
+                  <div className={faintClass}>{t('Mean loss')}</div>
                   <div className={`mt-1 font-mono text-sm ${valueClass}`}>{fmtNum(studyFocus.meanPtLoss, 2)}</div>
                 </div>
                 <div>
-                  <div className={faintClass}>Policy</div>
+                  <div className={faintClass}>{t('Policy')}</div>
                   <div className={`mt-1 font-mono text-sm ${valueClass}`}>{fmtNum(studyFocus.policyAccuracy, 1)}</div>
                 </div>
               </div>
 
               {studyFocus.policyProblem && (
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                  <span className={mutedClass}>Policy pattern:</span>
+                  <span className={mutedClass}>{t('Policy pattern:')}</span>
                   <span className={[
                     'rounded-full border px-2 py-0.5 font-semibold',
                     policyCategoryClass(studyFocus.policyProblem.category),
@@ -1207,18 +1225,18 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     {policyCategoryLabel(studyFocus.policyProblem.category)}
                   </span>
                   <span className={`font-mono ${faintClass}`}>
-                    {studyFocus.policyProblem.count} moves · {fmtPct(studyFocus.policyProblem.ratio)}
+                    {t('{count} moves', { count: studyFocus.policyProblem.count })} · {fmtPct(studyFocus.policyProblem.ratio)}
                   </span>
                 </div>
               )}
 
               <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
                 <div>
-                  <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-[var(--ui-text-faint)]">Beginner next step</div>
+                  <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-[var(--ui-text-faint)]">{t('Beginner next step')}</div>
                   <div className={`mt-1 ${mutedClass}`}>{studyFocus.beginnerTip}</div>
                 </div>
                 <div>
-                  <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-[var(--ui-text-faint)]">Pro review</div>
+                  <div className="text-[0.6875rem] font-semibold uppercase tracking-wide text-[var(--ui-text-faint)]">{t('Pro review')}</div>
                   <div className={`mt-1 ${mutedClass}`}>{studyFocus.proTip}</div>
                 </div>
               </div>
@@ -1244,14 +1262,14 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       onClick={() => jumpToNode(studyFocus.topEntry!.node)}
                       className={`px-2 py-1 ${secondaryButtonClass}`}
                     >
-                      Jump
+                      {t('Jump')}
                     </button>
                     <button
                       type="button"
                       onClick={() => startPractice(studyFocus.topEntry!)}
                       className="rounded border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-2 py-1 font-semibold text-[var(--ui-accent)] hover:brightness-110"
                     >
-                      <span className="inline-flex items-center gap-1"><FaBullseye aria-hidden="true" /> Practice</span>
+                      <span className="inline-flex items-center gap-1"><FaBullseye aria-hidden="true" /> {t('Practice')}</span>
                     </button>
                   </div>
                 </div>
@@ -1260,9 +1278,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           )}
 
           <div className={sectionClass}>
-            <div className={sectionTitleClass}>Phase Accuracy</div>
+            <div className={sectionTitleClass}>{t('Phase Accuracy')}</div>
             <div className={['mt-3 grid gap-2 text-sm', statsPlayers.length === 2 ? 'grid-cols-3' : 'grid-cols-2'].join(' ')}>
-              <div className={`text-xs uppercase tracking-wide ${faintClass}`}>Phase</div>
+              <div className={`text-xs uppercase tracking-wide ${faintClass}`}>{t('Phase')}</div>
               {statsPlayers.map((player) => (
                 <div key={`phase-acc-head-${player}`} className={`min-w-0 truncate text-center text-xs font-semibold ${faintClass}`} title={playerNames[player]}>
                   {playerNames[player]}
@@ -1270,7 +1288,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               ))}
               {phaseAccuracyRows.map((row) => (
                 <React.Fragment key={`phase-acc-${row.key}`}>
-                  <div className={labelClass}>{row.label}</div>
+                  <div className={labelClass}>{t(row.label)}</div>
                   {statsPlayers.map((player) => {
                     const cell = row.players[player];
                     const acc = cell?.accuracy;
@@ -1295,25 +1313,25 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               ))}
             </div>
             <p className={`mt-3 text-xs ${faintClass}`}>
-              KaTrain-style accuracy per game phase; the small number is analyzed moves in that phase.
+              {t('KaTrain-style accuracy per game phase; the small number is analyzed moves in that phase.')}
             </p>
           </div>
 
           {timeInsights && (
             <div className={sectionClass}>
-              <div className={sectionTitleClass}>Time</div>
+              <div className={sectionTitleClass}>{t('Time')}</div>
               <div className={['mt-3 grid gap-2 text-sm', statsPlayers.length === 2 ? 'grid-cols-3' : 'grid-cols-2'].join(' ')}>
-                <div className={`text-xs uppercase tracking-wide ${faintClass}`}>Clock</div>
+                <div className={`text-xs uppercase tracking-wide ${faintClass}`}>{t('Clock')}</div>
                 {statsPlayers.map((player) => (
                   <div key={`time-head-${player}`} className={`min-w-0 truncate text-center text-xs font-semibold ${faintClass}`} title={playerNames[player]}>
                     {playerNames[player]}
                   </div>
                 ))}
                 {([
-                  ['Typical move', (i: PlayerTimeInsight) => (i.measuredMoves > 0 ? formatMoveTime(i.medianSeconds) : NO_VALUE)],
-                  ['Total', (i: PlayerTimeInsight) => (i.measuredMoves > 0 ? formatMoveTime(i.totalSeconds) : NO_VALUE)],
-                  ['Longest think', (i: PlayerTimeInsight) => (i.slowest ? `${formatMoveTime(i.slowest.seconds)} · #${i.slowest.moveNumber}` : NO_VALUE)],
-                  ['On mistakes', (i: PlayerTimeInsight) => (i.medianOnMistakes === null ? NO_VALUE : formatMoveTime(i.medianOnMistakes))],
+                  [t('Typical move'), (i: PlayerTimeInsight) => (i.measuredMoves > 0 ? formatMoveTime(i.medianSeconds) : NO_VALUE)],
+                  [t('Total'), (i: PlayerTimeInsight) => (i.measuredMoves > 0 ? formatMoveTime(i.totalSeconds) : NO_VALUE)],
+                  [t('Longest think'), (i: PlayerTimeInsight) => (i.slowest ? `${formatMoveTime(i.slowest.seconds)} · #${i.slowest.moveNumber}` : NO_VALUE)],
+                  [t('On mistakes'), (i: PlayerTimeInsight) => (i.medianOnMistakes === null ? NO_VALUE : formatMoveTime(i.medianOnMistakes))],
                 ] as const).map(([label, read]) => (
                   <React.Fragment key={`time-row-${label}`}>
                     <div className={labelClass}>{label}</div>
@@ -1335,17 +1353,15 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 );
               })}
               <div className={`mt-2 text-xs ${faintClass}`}>
-                From the clock recorded in the SGF. Moves the file does not
-                determine a time for — a renewed byo-yomi period, most often —
-                are left out rather than counted as instant.
+                {t('From the clock recorded in the SGF. Moves the file does not determine a time for — a renewed byo-yomi period, most often — are left out rather than counted as instant.')}
               </div>
             </div>
           )}
 
           <div className={sectionClass}>
-            <div className={sectionTitleClass}>Key Stats</div>
+            <div className={sectionTitleClass}>{t('Key Stats')}</div>
             <div className={['mt-3 grid gap-2 text-sm', statsPlayers.length === 2 ? 'grid-cols-3' : 'grid-cols-2'].join(' ')}>
-              <div className={`text-xs uppercase tracking-wide ${faintClass}`}>Metric</div>
+              <div className={`text-xs uppercase tracking-wide ${faintClass}`}>{t('Metric')}</div>
               {statsPlayers.map((player) => (
                 <div key={player} className={`min-w-0 truncate text-center text-xs font-semibold ${faintClass}`} title={playerNames[player]}>
                   {playerNames[player]}
@@ -1366,12 +1382,12 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               ))}
             </div>
             <p className={`mt-3 text-xs ${faintClass}`}>
-              Requires analysis on consecutive moves (both parent and child) to compute point loss.
+              {t('Requires analysis on consecutive moves (both parent and child) to compute point loss.')}
             </p>
           </div>
 
           <div className={sectionClass}>
-            <div className={sectionTitleClass}>Policy Quality</div>
+            <div className={sectionTitleClass}>{t('Policy Quality')}</div>
             <div className={['mt-3 grid gap-4', statsPlayers.length === 2 ? 'sm:grid-cols-2' : 'grid-cols-1'].join(' ')}>
               {statsPlayers.map((player) => {
                 const distribution = report.stats[player].policyDistribution;
@@ -1390,7 +1406,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         <span className="min-w-0 truncate" title={playerNames[player]}>{playerNames[player]}</span>
                       </div>
                       <div className="text-right">
-                        <div className={`text-[0.625rem] uppercase tracking-wide ${faintClass}`}>Policy accuracy</div>
+                        <div className={`text-[0.625rem] uppercase tracking-wide ${faintClass}`}>{t('Policy accuracy')}</div>
                         <div className={`font-mono text-sm ${valueClass}`}>{fmtNum(report.stats[player].policyAccuracy, 1)}</div>
                       </div>
                     </div>
@@ -1423,7 +1439,6 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         const active = policyFilter === category && (playerFilter === 'all' || playerFilter === player);
                         const playerLabel = playerNames[player];
                         const categoryLabel = policyCategoryLabel(category);
-                        const moveWord = count === 1 ? 'move' : 'moves';
                         return (
                           <button
                             type="button"
@@ -1436,13 +1451,18 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                             aria-pressed={active}
                             aria-label={
                               count === 0
-                                ? `${playerLabel} ${categoryLabel}: no moves`
-                                : `Filter ${playerLabel} policy quality ${categoryLabel}: ${count} ${moveWord}, ${pct}%`
+                                ? t('{player} {category}: no moves', { player: playerLabel, category: categoryLabel })
+                                : t('Filter {player} policy quality {category}: {count} moves, {pct}%', {
+                                    player: playerLabel,
+                                    category: categoryLabel,
+                                    count,
+                                    pct,
+                                  })
                             }
                             title={
                               count === 0
-                                ? `No ${categoryLabel} moves for ${playerLabel}`
-                                : `Filter ${playerLabel} mistakes to ${categoryLabel}`
+                                ? t('No {category} moves for {player}', { player: playerLabel, category: categoryLabel })
+                                : t('Filter {player} mistakes to {category}', { player: playerLabel, category: categoryLabel })
                             }
                             className={[
                               'inline-flex min-h-11 items-center gap-1 rounded-full border px-2 py-1 text-[0.625rem] transition-colors desktop-shell:min-h-0',
@@ -1472,46 +1492,46 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
           <div className={sectionClass}>
             <div className="flex items-center justify-between">
-              <div className={sectionTitleClass}>Board Snapshot</div>
+              <div className={sectionTitleClass}>{t('Board Snapshot')}</div>
               <button
                 type="button"
                 onClick={refreshSnapshot}
                 className={`px-3 py-1 text-xs font-semibold print-hide ${secondaryPillClass}`}
               >
-                Refresh
+                {t('Refresh')}
               </button>
             </div>
             <div className={`mt-3 p-3 flex items-center justify-center ${insetSurfaceClass}`}>
               {snapshotUrl ? (
                 <img
                   src={snapshotUrl}
-                  alt="Board snapshot"
+                  alt={t('Board snapshot')}
                   className="max-h-[260px] w-auto rounded-md border border-[var(--ui-border)]"
                 />
               ) : (
                 <div className={`text-sm ${mutedClass}`}>
-                  {snapshotError ?? 'Capturing board snapshot...'}
+                  {snapshotError ?? t('Capturing board snapshot...')}
                 </div>
               )}
             </div>
             <div className={`mt-2 text-xs print-muted ${mutedClass}`}>
-              Snapshot reflects the current board position and auto-updates on move.
+              {t('Snapshot reflects the current board position and auto-updates on move.')}
             </div>
           </div>
 
           {!showOutcome && (
             <div className={`${sectionClass} print-hide`}>
               <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <div className={sectionTitleClass}>Result hidden</div>
+                <div className={sectionTitleClass}>{t('Result hidden')}</div>
                 <p className={`max-w-sm text-sm ${mutedClass}`}>
-                  The win-rate graph, critical swings and highlights are hidden so you can review the moves without spoilers.
+                  {t('The win-rate graph, critical swings and highlights are hidden so you can review the moves without spoilers.')}
                 </p>
                 <button
                   type="button"
                   onClick={() => setOutcomeRevealed(true)}
                   className="min-h-11 rounded-lg px-4 py-2 text-sm font-semibold ui-accent-bg hover:brightness-110"
                 >
-                  Reveal result &amp; analysis
+                  {t('Reveal result & analysis')}
                 </button>
               </div>
             </div>
@@ -1521,20 +1541,20 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           <div className={sectionClass}>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <div className={sectionTitleClass}>Analysis Graph</div>
+                <div className={sectionTitleClass}>{t('Analysis Graph')}</div>
                 <span className="text-[0.625rem] uppercase tracking-wide px-2 py-0.5 rounded-full ui-accent-soft border print-hide">
-                  Live
+                  {t('Live')}
                 </span>
               </div>
               <div className="flex items-center gap-1">
                 <PanelHeaderButton
-                  label="Score"
+                  label={t('Score')}
                   colorClass="bg-blue-600/30"
                   active={reportGraph.score}
                   onClick={() => setReportGraph((prev) => ({ ...prev, score: !prev.score }))}
                 />
                 <PanelHeaderButton
-                  label="Win%"
+                  label={t('Win%')}
                   colorClass="bg-green-600/30"
                   active={reportGraph.winrate}
                   onClick={() => setReportGraph((prev) => ({ ...prev, winrate: !prev.winrate }))}
@@ -1544,7 +1564,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     worse than no toggle. */}
                 {hasMoveTimes && (
                   <PanelHeaderButton
-                    label="Time"
+                    label={t('Time')}
                     colorClass="bg-amber-600/30"
                     active={reportGraph.time}
                     onClick={() => setReportGraph((prev) => ({ ...prev, time: !prev.time }))}
@@ -1564,24 +1584,24 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   />
                 </div>
               ) : (
-                <div className={`h-20 flex items-center justify-center text-sm ${faintClass}`}>Graph hidden</div>
+                <div className={`h-20 flex items-center justify-center text-sm ${faintClass}`}>{t('Graph hidden')}</div>
               )}
             </div>
             <div className={`mt-2 text-xs ${mutedClass}`}>
-              Score lead and winrate are from the current analysis data.
-              {hasMoveTimes ? ' Time comes from the clock recorded in the SGF.' : ''}
+              {t('Score lead and winrate are from the current analysis data.')}
+              {hasMoveTimes ? ` ${t('Time comes from the clock recorded in the SGF.')}` : ''}
             </div>
           </div>
 
           <div className={sectionClass}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className={sectionTitleClass}>Critical Swings</div>
+              <div className={sectionTitleClass}>{t('Critical Swings')}</div>
               <span className={`rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-[0.625rem] font-semibold uppercase tracking-wide ${mutedClass}`}>
-                {turningPoints.length} over {CRITICAL_SWING_THRESHOLD} pts
+                {t('{count} over {max} pts', { count: turningPoints.length, max: CRITICAL_SWING_THRESHOLD })}
               </span>
             </div>
             {turningPoints.length === 0 ? (
-              <div className={`mt-2 text-sm ${faintClass}`}>No major score swings match these filters.</div>
+              <div className={`mt-2 text-sm ${faintClass}`}>{t('No major score swings match these filters.')}</div>
             ) : (
               <div className="mt-3 space-y-2">
                 {turningPoints.map((entry) => (
@@ -1597,7 +1617,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       {fmtSigned(entry.scoreBefore)} {'->'} {fmtSigned(entry.scoreAfter)}
                     </span>
                     <span className={['font-mono font-semibold', entry.winRateSwing >= 0 ? 'text-emerald-300' : 'text-rose-300'].join(' ')}>
-                      Win {fmtWinSwing(entry.winRateSwing)}
+                      {t('Win {value}', { value: fmtWinSwing(entry.winRateSwing) })}
                     </span>
                     <span className={['font-mono font-semibold', entry.scoreDelta >= 0 ? valueClass : mutedClass].join(' ')}>
                       {describeReportSwing(entry)}
@@ -1615,7 +1635,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       onClick={() => jumpToNode(entry.node)}
                       className={`ml-auto px-2 py-1 print-hide ${secondaryButtonClass}`}
                     >
-                      Jump
+                      {t('Jump')}
                     </button>
                   </div>
                 ))}
@@ -1625,13 +1645,13 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
           <div className={sectionClass}>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className={sectionTitleClass}>Best Recoveries</div>
+              <div className={sectionTitleClass}>{t('Best Recoveries')}</div>
               <span className={`rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-[0.625rem] font-semibold uppercase tracking-wide ${mutedClass}`}>
-                {recoveries.length} over {RECOVERY_THRESHOLD} pts
+                {t('{count} over {max} pts', { count: recoveries.length, max: RECOVERY_THRESHOLD })}
               </span>
             </div>
             {recoveries.length === 0 ? (
-              <div className={`mt-2 text-sm ${faintClass}`}>No point-gaining recovery moves match these filters.</div>
+              <div className={`mt-2 text-sm ${faintClass}`}>{t('No point-gaining recovery moves match these filters.')}</div>
             ) : (
               <div className="mt-3 space-y-2">
                 {recoveries.map((entry) => (
@@ -1647,7 +1667,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       {fmtSigned(entry.scoreBefore)} {'->'} {fmtSigned(entry.scoreAfter)}
                     </span>
                     <span className={['font-mono font-semibold', entry.winRateSwing >= 0 ? 'text-emerald-300' : 'text-rose-300'].join(' ')}>
-                      Win {fmtWinSwing(entry.winRateSwing)}
+                      {t('Win {value}', { value: fmtWinSwing(entry.winRateSwing) })}
                     </span>
                     <span className="font-mono font-semibold text-emerald-300">
                       {describeReportSwing(entry)}
@@ -1665,7 +1685,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       onClick={() => jumpToNode(entry.node)}
                       className={`ml-auto px-2 py-1 print-hide ${secondaryButtonClass}`}
                     >
-                      Jump
+                      {t('Jump')}
                     </button>
                   </div>
                 ))}
@@ -1679,14 +1699,14 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           <div className={sectionClass}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className={sectionTitleClass}>Biggest Mistakes</div>
+                <div className={sectionTitleClass}>{t('Biggest Mistakes')}</div>
                 <div
                   className="inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] p-0.5 print-hide"
-                  aria-label="Mistake sort order"
+                  aria-label={t('Mistake sort order')}
                 >
                   {[
-                    { key: 'loss', label: 'Loss', title: 'Sort by point loss' },
-                    { key: 'policy', label: 'Quality', title: 'Sort by policy severity' },
+                    { key: 'loss', label: t('Loss'), title: t('Sort by point loss') },
+                    { key: 'policy', label: t('Quality'), title: t('Sort by policy severity') },
                   ].map((option) => {
                     const active = mistakeSort === option.key;
                     return (
@@ -1716,9 +1736,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     onClick={() => setShowAllMistakes((prev) => !prev)}
                     aria-pressed={showAllMistakes}
                     className={`px-3 py-1 text-xs font-semibold ${secondaryPillClass}`}
-                    title={showAllMistakes ? 'Show only the top 10 mistakes' : `Show all ${allMistakes.length} mistakes`}
+                    title={showAllMistakes ? t('Show only the top 10 mistakes') : t('Show all {count} mistakes', { count: allMistakes.length })}
                   >
-                    {showAllMistakes ? 'Show top 10' : `Show all (${allMistakes.length})`}
+                    {showAllMistakes ? t('Show top 10') : t('Show all ({count})', { count: allMistakes.length })}
                   </button>
                 )}
                 <button
@@ -1727,7 +1747,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   disabled={topMistakes.length === 0}
                   className={`px-3 py-1 text-xs font-semibold disabled:opacity-40 ${secondaryPillClass}`}
                 >
-                  Review {topMistakes.length}
+                  {t('Review {count}', { count: topMistakes.length })}
                 </button>
                 {/* The review queue walks the mistakes and shows each answer;
                     the drill hides it and asks for the move instead. Closing
@@ -1740,22 +1760,22 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     startMistakeDrill(playerFilter === 'all' ? 'both' : playerFilter);
                   }}
                   disabled={allMistakes.length === 0}
-                  title="Replay each mistake with the answer hidden and find a better move"
+                  title={t('Replay each mistake with the answer hidden and find a better move')}
                   className={`px-3 py-1 text-xs font-semibold disabled:opacity-40 ${secondaryPillClass}`}
                 >
-                  Drill
+                  {t('Drill')}
                 </button>
               </div>
             </div>
             {activeReview && (
               <div className={`mt-3 p-3 print-hide ${insetSurfaceClass}`}>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className={sectionTitleClass}>Review Queue</span>
+                  <span className={sectionTitleClass}>{t('Review Queue')}</span>
                   <span className={`font-mono ${mutedClass}`}>
                     {reviewIndex + 1}/{reviewQueue.length}
                   </span>
                   <span className={mutedClass}>
-                    Move {activeReview.moveNumber} · {playerNames[activeReview.player]} · {activeReview.move}
+                    {t('Move {count}', { count: activeReview.moveNumber })} · {playerNames[activeReview.player]} · {activeReview.move}
                   </span>
                   <span className="font-mono text-rose-300">-{fmtNum(activeReview.pointsLost, 2)}</span>
                   {activeReview.policy && (
@@ -1772,7 +1792,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       onClick={() => startPractice(activeReview)}
                       className="px-2 py-1 rounded border border-[var(--ui-accent)] text-[var(--ui-accent)] hover:brightness-110"
                     >
-                      Practice
+                      {t('Practice')}
                     </button>
                     <button
                       type="button"
@@ -1780,7 +1800,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       disabled={reviewIndex === 0}
                       className={`px-2 py-1 disabled:opacity-40 ${secondaryButtonClass}`}
                     >
-                      Prev
+                      {t('Previous')}
                     </button>
                     <button
                       type="button"
@@ -1788,32 +1808,32 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       disabled={reviewIndex >= reviewQueue.length - 1}
                       className={`px-2 py-1 disabled:opacity-40 ${secondaryButtonClass}`}
                     >
-                      Next
+                      {t('Next')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setReviewQueue([])}
                       className={`px-2 py-1 ${secondaryButtonClass}`}
                     >
-                      Close
+                      {t('Close')}
                     </button>
                   </div>
                 </div>
                 <div className={`mt-2 text-xs ${mutedClass}`}>
-                  Played {activeReview.move}; engine preferred {activeReview.topMove ?? NO_VALUE}.
+                  {t('Played {move}; engine preferred {best}.', { move: activeReview.move, best: activeReview.topMove ?? NO_VALUE })}
                 </div>
               </div>
             )}
             {topMistakes.length === 0 ? (
-              <div className={`mt-2 text-sm ${faintClass}`}>No moves match these filters.</div>
+              <div className={`mt-2 text-sm ${faintClass}`}>{t('No moves match these filters.')}</div>
             ) : (
               <div className={`mt-3 grid grid-cols-12 gap-2 text-xs ${mutedClass}`}>
-                <div className="col-span-2 uppercase tracking-wide text-[0.625rem]">Move</div>
-                <div className="col-span-1 text-center uppercase tracking-wide text-[0.625rem]">P</div>
-                <div className="col-span-2 uppercase tracking-wide text-[0.625rem]">Played</div>
-                <div className="col-span-2 uppercase tracking-wide text-[0.625rem]">Top</div>
-                <div className="col-span-2 text-right uppercase tracking-wide text-[0.625rem]">Loss</div>
-                <div className="col-span-3 text-right uppercase tracking-wide text-[0.625rem]">Action</div>
+                <div className="col-span-2 uppercase tracking-wide text-[0.625rem]">{t('Move')}</div>
+                <div className="col-span-1 text-center uppercase tracking-wide text-[0.625rem]">{t('P')}</div>
+                <div className="col-span-2 uppercase tracking-wide text-[0.625rem]">{t('Played')}</div>
+                <div className="col-span-2 uppercase tracking-wide text-[0.625rem]">{t('Top')}</div>
+                <div className="col-span-2 text-right uppercase tracking-wide text-[0.625rem]">{t('Loss')}</div>
+                <div className="col-span-3 text-right uppercase tracking-wide text-[0.625rem]">{t('Action')}</div>
                 {renderMistakeRows(topMistakes, true)}
               </div>
             )}
@@ -1821,18 +1841,18 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
           <div className={sectionClass}>
             <div className="flex items-center justify-between">
-              <div className={sectionTitleClass}>Point Loss Histogram</div>
+              <div className={sectionTitleClass}>{t('Point Loss Histogram')}</div>
               <div className={`flex items-center gap-2 text-[0.625rem] ${mutedClass}`}>
-                <span className="inline-flex items-center gap-1"><span className="game-report-histogram-swatch game-report-histogram-bar--black" />Black</span>
-                <span className="inline-flex items-center gap-1"><span className="game-report-histogram-swatch game-report-histogram-bar--white" />White</span>
+                <span className="inline-flex items-center gap-1"><span className="game-report-histogram-swatch game-report-histogram-bar--black" />{t('Black')}</span>
+                <span className="inline-flex items-center gap-1"><span className="game-report-histogram-swatch game-report-histogram-bar--white" />{t('White')}</span>
               </div>
             </div>
             <div className="mt-3 space-y-2">
               {playerDistributions.map(({ player, total, segments }) => (
                 <div key={player}>
                   <div className={`mb-1 flex items-center justify-between text-[0.625rem] uppercase tracking-wide ${faintClass}`}>
-                    <span>{player === 'black' ? 'Black distribution' : 'White distribution'}</span>
-                    <span>{total} moves</span>
+                    <span>{player === 'black' ? t('Black distribution') : t('White distribution')}</span>
+                    <span>{t('{count} moves', { count: total })}</span>
                   </div>
                   <div className="h-3 rounded-full bg-[var(--ui-surface-2)] overflow-hidden flex border border-[var(--ui-border)]">
                     {total === 0 ? (
@@ -1863,12 +1883,12 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               ))}
             </div>
             <div className="mt-4 grid grid-cols-12 gap-2 text-xs">
-              <div className={`col-span-3 uppercase tracking-wide text-[0.625rem] ${faintClass}`}>Threshold</div>
-              <div className={`col-span-5 uppercase tracking-wide text-[0.625rem] ${faintClass}`}>Distribution</div>
+              <div className={`col-span-3 uppercase tracking-wide text-[0.625rem] ${faintClass}`}>{t('Threshold')}</div>
+              <div className={`col-span-5 uppercase tracking-wide text-[0.625rem] ${faintClass}`}>{t('Distribution')}</div>
               {playerFilter === 'all' ? (
                 <>
-                  <div className={`col-span-2 text-center uppercase tracking-wide text-[0.625rem] ${faintClass}`}>B</div>
-                  <div className={`col-span-2 text-center uppercase tracking-wide text-[0.625rem] ${faintClass}`}>W</div>
+                  <div className={`col-span-2 text-center uppercase tracking-wide text-[0.625rem] ${faintClass}`}>{t('B')}</div>
+                  <div className={`col-span-2 text-center uppercase tracking-wide text-[0.625rem] ${faintClass}`}>{t('W')}</div>
                 </>
               ) : (
                 <div className={`col-span-4 text-center uppercase tracking-wide text-[0.625rem] ${faintClass}`}>
@@ -1899,7 +1919,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                           type="button"
                           className="grid h-11 w-full place-items-center rounded-full hover:brightness-125 lg:h-6"
                           onClick={() => setBucketFilter(bucketFilter === idx ? null : idx)}
-                          aria-label={`Filter loss bucket ${label}`}
+                          aria-label={t('Filter loss bucket {bucket}', { bucket: label })}
                         >
                           <span
                             className={[
@@ -1949,8 +1969,8 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
             <div className="pdf-page">
               <div className="flex items-start justify-between gap-6">
                 <div>
-                  <div className="pdf-cover-subtitle">KaTrain Official Report</div>
-                  <div className="pdf-cover-title pdf-title">Game Analysis Summary</div>
+                  <div className="pdf-cover-subtitle">{t('KaTrain Official Report')}</div>
+                  <div className="pdf-cover-title pdf-title">{t('Game Analysis Summary')}</div>
                   <div className="mt-2 text-sm font-semibold text-slate-700">
                     {playerNames.black} vs {playerNames.white}
                   </div>
@@ -1963,27 +1983,31 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               </div>
               <div className="mt-5 grid grid-cols-3 gap-4 text-sm">
                 <div>
-                  <div className="pdf-section-title">Phase</div>
+                  <div className="pdf-section-title">{t('Phase')}</div>
                   <div className="text-base font-semibold text-slate-900">{phaseLabel}</div>
                 </div>
                 <div>
-                  <div className="pdf-section-title">Coverage</div>
+                  <div className="pdf-section-title">{t('Coverage')}</div>
                   <div className="text-base font-semibold text-slate-900">{fmtPct(coverage)}</div>
                 </div>
                 <div>
-                  <div className="pdf-section-title">Analyzed Moves</div>
+                  <div className="pdf-section-title">{t('Analyzed Moves')}</div>
                   <div className="text-base font-semibold text-slate-900">
                     {analyzedMoves}/{totalMoves || 0}
                   </div>
                 </div>
               </div>
               <div className="mt-6 text-sm text-slate-700">
-                Filters: {activeFilterLabels.join(' - ')} • Sort: {mistakeSortLabel} • Showing top {pdfMistakes.length} mistakes
+                {t('Filters: {filters} • Sort: {sort} • Showing top {count} mistakes', {
+                  filters: activeFilterLabels.join(' - '),
+                  sort: mistakeSortLabel,
+                  count: pdfMistakes.length,
+                })}
               </div>
               <div className="mt-6">
-                <div className="pdf-section-title">Key Stats</div>
+                <div className="pdf-section-title">{t('Key Stats')}</div>
                 <div className={['mt-2 grid gap-x-4 gap-y-1 text-xs', statsPlayers.length === 2 ? 'grid-cols-3' : 'grid-cols-2'].join(' ')}>
-                  <div className="font-semibold uppercase tracking-wide text-slate-500">Metric</div>
+                  <div className="font-semibold uppercase tracking-wide text-slate-500">{t('Metric')}</div>
                   {statsPlayers.map((player) => (
                     <div key={`pdf-stats-${player}`} className="truncate text-center font-semibold text-slate-500">
                       {playerNames[player]}
@@ -2002,7 +2026,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 </div>
               </div>
               <div className="mt-6">
-                <div className="pdf-section-title">Policy Quality</div>
+                <div className="pdf-section-title">{t('Policy Quality')}</div>
                 <div className={['mt-2 grid gap-3 text-xs', statsPlayers.length === 2 ? 'grid-cols-2' : 'grid-cols-1'].join(' ')}>
                   {statsPlayers.map((player) => {
                     const distribution = report.stats[player].policyDistribution;
@@ -2011,7 +2035,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       <div key={`pdf-policy-${player}`} className="rounded border border-slate-300 p-2">
                         <div className="flex items-center justify-between gap-3">
                           <div className="truncate font-semibold text-slate-900">{playerNames[player]}</div>
-                          <div className="font-mono text-slate-700">Policy acc. {fmtNum(report.stats[player].policyAccuracy, 1)}</div>
+                          <div className="font-mono text-slate-700">{t('Policy acc. {value}', { value: fmtNum(report.stats[player].policyAccuracy, 1) })}</div>
                         </div>
                         <div className="mt-2 flex h-2 overflow-hidden rounded bg-slate-200">
                           {total === 0 ? (
@@ -2054,9 +2078,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 </div>
               </div>
               <div className="mt-6">
-                <div className="pdf-section-title">Critical Swings</div>
+                <div className="pdf-section-title">{t('Critical Swings')}</div>
                 {turningPoints.length === 0 ? (
-                  <div className="mt-2 text-sm text-slate-600">No major score swings match these filters.</div>
+                  <div className="mt-2 text-sm text-slate-600">{t('No major score swings match these filters.')}</div>
                 ) : (
                   <div className="mt-2 space-y-2 text-sm">
                     {turningPoints.map((entry) => (
@@ -2065,7 +2089,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         className="flex items-center justify-between gap-4 rounded border border-slate-300 px-3 py-2"
                       >
                         <div>
-                          <span className="font-semibold text-slate-900">Move {entry.moveNumber}</span>
+                          <span className="font-semibold text-slate-900">{t('Move {count}', { count: entry.moveNumber })}</span>
                           <span className="text-slate-700">
                             {' '}
                             {playerNames[entry.player]} {entry.move}
@@ -2074,7 +2098,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         <div className="font-mono text-slate-700">
                           {fmtSigned(entry.scoreBefore)} {'->'} {fmtSigned(entry.scoreAfter)}
                         </div>
-                        <div className="font-mono text-slate-700">Win {fmtWinSwing(entry.winRateSwing)}</div>
+                        <div className="font-mono text-slate-700">{t('Win {value}', { value: fmtWinSwing(entry.winRateSwing) })}</div>
                         <div className="font-semibold text-slate-900">{describeReportSwing(entry)}</div>
                       </div>
                     ))}
@@ -2082,9 +2106,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 )}
               </div>
               <div className="mt-6">
-                <div className="pdf-section-title">Best Recoveries</div>
+                <div className="pdf-section-title">{t('Best Recoveries')}</div>
                 {recoveries.length === 0 ? (
-                  <div className="mt-2 text-sm text-slate-600">No point-gaining recovery moves match these filters.</div>
+                  <div className="mt-2 text-sm text-slate-600">{t('No point-gaining recovery moves match these filters.')}</div>
                 ) : (
                   <div className="mt-2 space-y-2 text-sm">
                     {recoveries.map((entry) => (
@@ -2093,7 +2117,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         className="flex items-center justify-between gap-4 rounded border border-slate-300 px-3 py-2"
                       >
                         <div>
-                          <span className="font-semibold text-slate-900">Move {entry.moveNumber}</span>
+                          <span className="font-semibold text-slate-900">{t('Move {count}', { count: entry.moveNumber })}</span>
                           <span className="text-slate-700">
                             {' '}
                             {playerNames[entry.player]} {entry.move}
@@ -2102,7 +2126,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         <div className="font-mono text-slate-700">
                           {fmtSigned(entry.scoreBefore)} {'->'} {fmtSigned(entry.scoreAfter)}
                         </div>
-                        <div className="font-mono text-slate-700">Win {fmtWinSwing(entry.winRateSwing)}</div>
+                        <div className="font-mono text-slate-700">{t('Win {value}', { value: fmtWinSwing(entry.winRateSwing) })}</div>
                         <div className="font-semibold text-slate-900">
                           {describeReportSwing(entry)}
                         </div>
@@ -2115,7 +2139,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
 
             {pdfMistakes.length === 0 ? (
               <div className="pdf-page">
-                <div className="text-sm text-slate-600">No analyzed moves in this range.</div>
+                <div className="text-sm text-slate-600">{t('No analyzed moves in this range.')}</div>
               </div>
             ) : (
               (pdfSnapshots.length > 0
@@ -2126,28 +2150,33 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   <div className="flex items-start justify-between gap-6">
                     <div>
                       <div className="pdf-section-title">
-                        Mistake {idx + 1} of {pdfMistakes.length}
+                        {t('Mistake {i} of {n}', { i: idx + 1, n: pdfMistakes.length })}
                       </div>
                       <div className="text-lg font-semibold text-slate-900">
-                        Move {entry.moveNumber} - {playerNames[entry.player]}
+                        {t('Move {count}', { count: entry.moveNumber })} - {playerNames[entry.player]}
                       </div>
                       <div className="text-sm text-slate-700">
-                        Played {entry.move} • Best {entry.topMove ?? NO_VALUE} • Loss {fmtNum(entry.pointsLost, 2)} • Win {fmtWinSwing(entry.winRateSwing)}
+                        {t('Played {move} • Best {best} • Loss {loss} • Win {win}', {
+                          move: entry.move,
+                          best: entry.topMove ?? NO_VALUE,
+                          loss: fmtNum(entry.pointsLost, 2),
+                          win: fmtWinSwing(entry.winRateSwing),
+                        })}
                       </div>
                     </div>
                     <div className="text-xs text-slate-600">
-                      Phase: {phaseLabel}
+                      {t('Phase: {phase}', { phase: phaseLabel })}
                     </div>
                   </div>
                   <div className="mt-4 pdf-board-wrap">
                     {dataUrl ? (
-                      <img src={dataUrl} alt={`Move ${entry.moveNumber} snapshot`} className="pdf-board" />
+                      <img src={dataUrl} alt={t('Move {count} snapshot', { count: entry.moveNumber })} className="pdf-board" />
                     ) : (
-                      <div className="text-[0.625rem] text-slate-500">Snapshot missing</div>
+                      <div className="text-[0.625rem] text-slate-500">{t('Snapshot missing')}</div>
                     )}
                   </div>
                   <div className="mt-4">
-                    <div className="pdf-section-title">Correct Move Tree</div>
+                    <div className="pdf-section-title">{t('Correct Move Tree')}</div>
                     <div className="mt-2">{renderPvTree(entry)}</div>
                   </div>
                 </div>
@@ -2169,8 +2198,8 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 disabled={isPreparingPdf}
               >
                 {isPreparingPdf
-                  ? 'Preparing print...'
-                  : 'Print / Save PDF'}
+                  ? t('Preparing print...')
+                  : t('Print / Save PDF')}
               </button>
             )}
           </div>
@@ -2179,7 +2208,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
             onClick={onClose}
             className="min-h-11 px-4 py-2 ui-accent-bg hover:brightness-110 rounded-lg font-semibold"
           >
-            Done
+            {t('Done')}
           </button>
         </div>
       </div>
@@ -2196,9 +2225,9 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           <div className="ui-panel flex max-h-[88dvh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border shadow-2xl">
             <div className="flex items-center justify-between gap-4 border-b border-[var(--ui-border)] px-5 py-4 ui-bar">
               <div>
-                <div className={sectionTitleClass}>Report Guide</div>
+                <div className={sectionTitleClass}>{t('Report Guide')}</div>
                 <h3 id="report-guide-title" className="text-lg font-semibold text-[var(--ui-text)]">
-                  Reading this report
+                  {t('Reading this report')}
                 </h3>
               </div>
               <button
@@ -2206,15 +2235,15 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 ref={reportGuideCloseRef}
                 onClick={closeReportGuide}
                 className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-                aria-label="Close report guide"
-                title="Close report guide"
+                aria-label={t('Close report guide')}
+                title={t('Close report guide')}
               >
                 <FaTimes aria-hidden="true" />
               </button>
             </div>
             <div className="space-y-5 overflow-y-auto px-5 py-4 text-sm">
               <section>
-                <div className={sectionTitleClass}>Policy Quality</div>
+                <div className={sectionTitleClass}>{t('Policy Quality')}</div>
                 <div className="mt-3 divide-y divide-[var(--ui-border)] rounded-lg border border-[var(--ui-border)]">
                   {POLICY_GUIDE.map(({ category, detail }) => (
                     <div key={category} className="grid gap-2 px-3 py-2 sm:grid-cols-[8rem_1fr]">
@@ -2226,14 +2255,14 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         />
                         {policyCategoryLabel(category)}
                       </div>
-                      <div className="text-[var(--ui-text-muted)]">{detail}</div>
+                      <div className="text-[var(--ui-text-muted)]">{t(detail)}</div>
                     </div>
                   ))}
                 </div>
               </section>
 
               <section>
-                <div className={sectionTitleClass}>Point Loss Buckets</div>
+                <div className={sectionTitleClass}>{t('Point Loss Buckets')}</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {lossBucketGuide.map(({ label, color }) => (
                     <span
@@ -2246,29 +2275,29 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   ))}
                 </div>
                 <p className="mt-2 text-xs text-[var(--ui-text-muted)]">
-                  Point loss uses consecutive analyzed positions, so gaps in analysis are excluded from the report.
+                  {t('Point loss uses consecutive analyzed positions, so gaps in analysis are excluded from the report.')}
                 </p>
               </section>
 
               <section>
-                <div className={sectionTitleClass}>Core Metrics</div>
+                <div className={sectionTitleClass}>{t('Core Metrics')}</div>
                 <dl className="mt-3 grid gap-3 sm:grid-cols-3">
                   <div>
-                    <dt className="font-semibold text-[var(--ui-text)]">Accuracy</dt>
+                    <dt className="font-semibold text-[var(--ui-text)]">{t('Accuracy')}</dt>
                     <dd className="mt-1 text-xs text-[var(--ui-text-muted)]">
-                      Score-loss accuracy weighted by position difficulty.
+                      {t('Score-loss accuracy weighted by position difficulty.')}
                     </dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-[var(--ui-text)]">Policy accuracy</dt>
+                    <dt className="font-semibold text-[var(--ui-text)]">{t('Policy accuracy')}</dt>
                     <dd className="mt-1 text-xs text-[var(--ui-text-muted)]">
-                      Average quality score from the policy category distribution.
+                      {t('Average quality score from the policy category distribution.')}
                     </dd>
                   </div>
                   <div>
-                    <dt className="font-semibold text-[var(--ui-text)]">Complexity</dt>
+                    <dt className="font-semibold text-[var(--ui-text)]">{t('Complexity')}</dt>
                     <dd className="mt-1 text-xs text-[var(--ui-text-muted)]">
-                      How much policy mass sits on point-losing alternatives.
+                      {t('How much policy mass sits on point-losing alternatives.')}
                     </dd>
                   </div>
                 </dl>

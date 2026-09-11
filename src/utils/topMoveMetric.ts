@@ -1,4 +1,5 @@
 import type { GameSettings } from '../types';
+import { t } from '../i18n';
 
 export type TopMoveMetric = GameSettings['trainerTopMovesShow'];
 export type PolicyHeatmapMetric = GameSettings['analysisPolicyMetric'];
@@ -35,7 +36,7 @@ export const POLICY_HEATMAP_METRIC_SELECT_OPTIONS: Array<{ value: PolicyHeatmapM
 
 export function getTopMoveMetricLabel(metric: TopMoveMetric, variant: 'long' | 'short' = 'long'): string {
   const option = TOP_MOVE_METRIC_OPTIONS.find((item) => item.value === metric) ?? TOP_MOVE_METRIC_OPTIONS[0]!;
-  return variant === 'short' ? option.shortLabel : option.label;
+  return variant === 'short' ? t(option.shortLabel) : t(option.label);
 }
 
 export function nextTopMoveMetric(metric: TopMoveMetric): TopMoveMetric {
@@ -48,7 +49,7 @@ export function getPolicyHeatmapMetricLabel(
   variant: 'long' | 'short' = 'long'
 ): string {
   const option = POLICY_HEATMAP_METRIC_OPTIONS.find((item) => item.value === metric) ?? POLICY_HEATMAP_METRIC_OPTIONS[0]!;
-  return variant === 'short' ? option.shortLabel : option.label;
+  return variant === 'short' ? t(option.shortLabel) : t(option.label);
 }
 
 export function nextPolicyHeatmapMetric(metric: PolicyHeatmapMetric | undefined): PolicyHeatmapMetric {

@@ -4,6 +4,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { StaticBoard, type StaticBoardMarker } from './StaticBoard';
 import { LESSONS, boardFromRows } from '../data/lessons';
+import { useT } from '../i18n';
 
 interface LessonsModalProps {
   onClose: () => void;
@@ -12,6 +13,7 @@ interface LessonsModalProps {
 export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
@@ -48,9 +50,9 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
     setClickMark({ x, y, ok });
     if (ok) {
       setSolved(true);
-      setFeedback({ tone: 'var(--ui-success,#38a169)', text: step.successText ?? 'Correct!' });
+      setFeedback({ tone: 'var(--ui-success,#38a169)', text: t(step.successText ?? 'Correct!') });
     } else {
-      setFeedback({ tone: 'var(--ui-warning,#d69e2e)', text: step.hint ?? 'Not quite — try again.' });
+      setFeedback({ tone: 'var(--ui-warning,#d69e2e)', text: t(step.hint ?? 'Not quite — try again.') });
     }
   };
 
@@ -84,13 +86,13 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
       >
         <div className="lessons-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="lessons-title" className="inline-flex items-center gap-2 text-lg font-semibold text-[var(--ui-text)]">
-            <FaGraduationCap aria-hidden="true" /> {lesson ? lesson.title : 'Lessons'}
+            <FaGraduationCap aria-hidden="true" /> {lesson ? t(lesson.title) : t('Lessons')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close lessons"
+            aria-label={t('Close lessons')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -100,7 +102,7 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
           {!lesson ? (
             <>
               <p className="lessons-intro text-sm text-[var(--ui-text-muted)]">
-                Short, interactive lessons on the fundamentals. Read each step, then play on the board when asked.
+                {t('Short, interactive lessons on the fundamentals. Read each step, then play on the board when asked.')}
               </p>
               <ul className="lessons-list space-y-2">
                 {LESSONS.map((l) => (
@@ -111,10 +113,10 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
                       className="w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 text-left hover:bg-[var(--ui-surface-2)]"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-[var(--ui-text)]">{l.title}</span>
-                        <span className="rounded-full border border-[var(--ui-border)] px-2 py-0.5 text-xs text-[var(--ui-text-muted)]">{l.level}</span>
+                        <span className="font-semibold text-[var(--ui-text)]">{t(l.title)}</span>
+                        <span className="rounded-full border border-[var(--ui-border)] px-2 py-0.5 text-xs text-[var(--ui-text-muted)]">{t(l.level)}</span>
                       </div>
-                      <div className="mt-1 text-xs text-[var(--ui-text-muted)]">{l.summary}</div>
+                      <div className="mt-1 text-xs text-[var(--ui-text-muted)]">{t(l.summary)}</div>
                     </button>
                   </li>
                 ))}
@@ -123,7 +125,7 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
           ) : (
             <>
               <div className="lessons-step text-xs font-semibold uppercase tracking-wide text-[var(--ui-text-muted)]">
-                Step {stepIndex + 1} of {lesson.steps.length}
+                {t('Step {current} of {total}', { current: stepIndex + 1, total: lesson.steps.length })}
               </div>
               <div className="lessons-board mx-auto w-full max-w-[320px]">
                 {board && (
@@ -132,13 +134,13 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
                     markers={markers}
                     maxPx={320}
                     onPointClick={isInteractive ? handlePoint : undefined}
-                    ariaLabel={lesson.title}
+                    ariaLabel={t(lesson.title)}
                   />
                 )}
               </div>
-              <p className="lessons-copy text-sm leading-6 text-[var(--ui-text)]">{step?.text}</p>
+              <p className="lessons-copy text-sm leading-6 text-[var(--ui-text)]">{step ? t(step.text) : null}</p>
               {isInteractive && !solved && !feedback && (
-                <p className="lessons-hint text-xs italic text-[var(--ui-text-muted)]">Choose a point on the board.</p>
+                <p className="lessons-hint text-xs italic text-[var(--ui-text-muted)]">{t('Choose a point on the board.')}</p>
               )}
               {feedback && (
                 <div
@@ -161,7 +163,7 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
               onClick={() => (stepIndex > 0 ? setStepIndex((i) => i - 1) : setActiveId(null))}
               className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
             >
-              <span className="inline-flex items-center gap-2"><FaChevronLeft aria-hidden="true" /> {stepIndex > 0 ? 'Back' : 'Lessons'}</span>
+              <span className="inline-flex items-center gap-2"><FaChevronLeft aria-hidden="true" /> {stepIndex > 0 ? t('Back') : t('Lessons')}</span>
             </button>
             <button
               type="button"
@@ -170,7 +172,7 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
               className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-2">
-                {isLastStep ? 'Finish' : 'Next'} <FaChevronRight aria-hidden="true" />
+                {isLastStep ? t('Finish') : t('Next')} <FaChevronRight aria-hidden="true" />
               </span>
             </button>
           </div>

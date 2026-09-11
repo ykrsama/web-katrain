@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { BoardState } from '../types';
 import { getHoshiPoints, normalizeBoardSize } from '../utils/boardSize';
+import { t } from '../i18n';
 
 export type StaticBoardMarker = {
   x: number;
@@ -40,7 +41,7 @@ export const StaticBoard: React.FC<StaticBoardProps> = ({
   showCoordinates = false,
   maxPx = 420,
   className,
-  ariaLabel = 'Go board position',
+  ariaLabel = t('Go board position'),
   onPointClick,
 }) => {
   const size = normalizeBoardSize(board.length, 19);

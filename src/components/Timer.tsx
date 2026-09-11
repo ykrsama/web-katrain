@@ -4,8 +4,10 @@ import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
 import { formatKaTrainClockSeconds, stepKaTrainTimer, type KaTrainTimerDisplay } from '../utils/katrainTimer';
 import { getAnimationNow } from '../utils/animationFrame';
+import { useT } from '../i18n';
 
 export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 'default' }) => {
+  const t = useT();
   const timerPaused = useGameStore((s) => s.timerPaused);
   const toggleTimerPaused = useGameStore((s) => s.toggleTimerPaused);
   const timerSettings = useGameStore(
@@ -87,7 +89,7 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
     ? { timeSeconds: 0, periodsRemaining: null, timeout: false, isAiTurn: false }
     : display;
   const timeText = useMemo(
-    () => (isTimerDisabled ? 'Off' : formatKaTrainClockSeconds(effectiveDisplay.timeSeconds)),
+    () => (isTimerDisabled ? t('Off') : formatKaTrainClockSeconds(effectiveDisplay.timeSeconds)),
     [effectiveDisplay.timeSeconds, isTimerDisabled]
   );
   const timeoutClass = isTimerDisabled
@@ -109,7 +111,7 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
       <div className="status-bar-timer">
         <div
           className={['status-bar-item font-mono', compactTimeoutClass].join(' ')}
-          title={effectiveDisplay.isAiTurn ? 'AI to play' : undefined}
+          title={effectiveDisplay.isAiTurn ? t('AI to play') : undefined}
         >
           {timeText}
           {effectiveDisplay.periodsRemaining !== null ? ` ×${effectiveDisplay.periodsRemaining}` : ''}
@@ -118,8 +120,8 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
           type="button"
           className="status-bar-button"
           onClick={() => toggleTimerPaused()}
-          title={timerPaused ? 'Resume timer' : 'Pause timer'}
-          aria-label={timerPaused ? 'Resume timer' : 'Pause timer'}
+          title={timerPaused ? t('Resume timer') : t('Pause timer')}
+          aria-label={timerPaused ? t('Resume timer') : t('Pause timer')}
         >
           {timerPaused ? <FaPlay size={10} /> : <FaPause size={10} />}
         </button>
@@ -130,7 +132,7 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
   return (
     <div className="ui-surface border border-[var(--ui-border)] rounded px-4 py-3 flex items-center gap-3">
       <div className="flex items-baseline gap-2 font-mono">
-        <div className={['text-2xl leading-none', timeoutClass].join(' ')} title={effectiveDisplay.isAiTurn ? 'AI to play' : undefined}>
+        <div className={['text-2xl leading-none', timeoutClass].join(' ')} title={effectiveDisplay.isAiTurn ? t('AI to play') : undefined}>
           {timeText}
         </div>
         {!isTimerDisabled && effectiveDisplay.periodsRemaining !== null && (
@@ -149,8 +151,8 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
               'bg-[var(--ui-surface-2)] border-[var(--ui-border)] text-[var(--ui-text)] hover:bg-[var(--ui-surface)]',
             ].join(' ')}
             onClick={() => toggleTimerPaused()}
-            title={timerPaused ? 'Resume timer' : 'Pause timer'}
-            aria-label={timerPaused ? 'Resume timer' : 'Pause timer'}
+            title={timerPaused ? t('Resume timer') : t('Pause timer')}
+            aria-label={timerPaused ? t('Resume timer') : t('Pause timer')}
           >
             {timerPaused ? <FaPlay /> : <FaPause />}
           </button>

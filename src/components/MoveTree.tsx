@@ -38,6 +38,7 @@ import {
 import { getMoveTreeCommandFromEvent, MOVE_TREE_COMMAND_EVENT } from '../utils/moveTreeCommands';
 import { hasCollapsedMoveTreeBranches } from '../utils/moveTreeCollapse';
 import { useShortcutLabels } from '../hooks/useShortcutLabels';
+import { useT } from '../i18n';
 
 type LayoutWorkerResponse =
   | { requestId: number; ok: true; layout: MoveTreeLayout }
@@ -123,6 +124,7 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
   });
   const [keyboardFocusedNodeId, setKeyboardFocusedNodeId] = useState<string | null>(null);
   const shortcutLabels = useShortcutLabels(MOVE_TREE_SHORTCUT_IDS);
+  const t = useT();
   const withShortcut = (label: string, id: MoveTreeShortcutId) => `${label} (${shortcutLabels[id]})`;
 
   // Strict ancestors of the current move: a collapsed branch we are standing
@@ -455,16 +457,16 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
   };
   const nextLayoutDirection = layoutDirection === 'horizontal' ? 'vertical' : 'horizontal';
   const layoutDirectionLabel =
-    layoutDirection === 'horizontal' ? 'Switch tree to vertical layout' : 'Switch tree to horizontal layout';
-  const centerCurrentLabel = withShortcut('Center current move', 'center-move-tree');
+    layoutDirection === 'horizontal' ? t('Switch tree to vertical layout') : t('Switch tree to horizontal layout');
+  const centerCurrentLabel = withShortcut(t('Center current move'), 'center-move-tree');
   const layoutShortcutLabel = withShortcut(layoutDirectionLabel, 'toggle-move-tree-layout');
-  const minimapLabel = withShortcut(showMinimap ? 'Hide tree map' : 'Show tree map', 'toggle-move-tree-map');
+  const minimapLabel = withShortcut(showMinimap ? t('Hide tree map') : t('Show tree map'), 'toggle-move-tree-map');
 
   if (!layout || !visible) {
     return (
       <div ref={setContainerRef} className="relative w-full h-full min-h-28 overflow-auto ui-surface">
         <div className="absolute inset-0 grid place-items-center text-[0.6875rem] uppercase tracking-wide ui-text-muted">
-          Laying out move tree
+          {t('Laying out move tree')}
         </div>
       </div>
     );
@@ -506,8 +508,8 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
             type="button"
             className="move-tree-control-button"
             onClick={() => expandAllBranches()}
-            title="Expand all collapsed branches"
-            aria-label="Expand all collapsed branches"
+            title={t('Expand all collapsed branches')}
+            aria-label={t('Expand all collapsed branches')}
           >
             <FaExpandArrowsAlt size={11} />
           </button>
@@ -535,7 +537,7 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
         height={layout.height}
         viewBox={`0 0 ${layout.width} ${layout.height}`}
         role="tree"
-        aria-label="Game tree"
+        aria-label={t('Game tree')}
         data-move-tree="true"
       >
         {visible.edges.map((l) => (
@@ -574,16 +576,16 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
           const collapsedCount = layoutNode.collapsedCount;
           const isCollapsed = collapsedCount > 0;
           const collapsedLabel = isCollapsed
-            ? `Expand ${collapsedCount} hidden move${collapsedCount === 1 ? '' : 's'}`
+            ? t('Expand {count} hidden moves', { count: collapsedCount })
             : '';
           const stubLength = Math.max(10, layout.xStep * 0.62);
           const stubX = layoutDirection === 'horizontal' ? layoutNode.x + stubLength : layoutNode.x;
           const stubY = layoutDirection === 'horizontal' ? layoutNode.y : layoutNode.y + stubLength;
           const keyboardLabel = [
-            isRoot ? 'Root' : isSetupNode ? layoutNode.label : `Move ${layoutNode.label}`,
+            isRoot ? t('Root') : isSetupNode ? layoutNode.label : t('Move {label}', { label: layoutNode.label }),
             markerTitle,
-            isCurrent ? 'current move' : '',
-            isCollapsed ? `${collapsedCount} hidden move${collapsedCount === 1 ? '' : 's'}` : '',
+            isCurrent ? t('current move') : '',
+            isCollapsed ? t('{count} hidden moves', { count: collapsedCount }) : '',
           ].filter(Boolean).join(', ');
 
           const handleKeyDown = (event: React.KeyboardEvent<SVGGElement>) => {
@@ -652,7 +654,7 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
                 stroke={stroke}
                 strokeWidth="1"
               >
-                <title>{markerTitle ? `${layoutNode.label} - ${markerTitle}` : layoutNode.label}</title>
+                <title>{markerTitle ? t('{label} - {markers}', { label: layoutNode.label, markers: markerTitle }) : layoutNode.label}</title>
               </circle>
               {markers.map((marker, index) => (
                 <circle
@@ -712,15 +714,15 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
         <div className="move-tree-empty-state" data-move-tree-empty-state="true">
           <div className="move-tree-empty-state-content">
             <FaProjectDiagram size={22} aria-hidden="true" />
-            <div className="move-tree-empty-state-title">No moves yet</div>
-            <p>Play on the board to start the game tree.</p>
+            <div className="move-tree-empty-state-title">{t('No moves yet')}</div>
+            <p>{t('Play on the board to start the game tree.')}</p>
             {onSelectNode && (
               <button
                 type="button"
                 className="move-tree-empty-state-action"
                 onClick={() => onSelectNode(rootNode)}
               >
-                Play first move
+                {t('Play first move')}
               </button>
             )}
           </div>
@@ -734,7 +736,7 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
       <div className="move-tree-overlay-strip">
       {layoutStatus === 'working' && (
         <div className="move-tree-layout-notice">
-          Laying out {flatTree.length} nodes
+          {t('Laying out {count} nodes', { count: flatTree.length })}
         </div>
       )}
       {showMinimap && shouldRenderMinimap && minimapViewport && minimapTransform && (
@@ -751,8 +753,8 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
             onKeyDown={handleMinimapKeyDown}
             tabIndex={0}
             role="group"
-            aria-roledescription="interactive minimap"
-            aria-label="Move tree minimap. Arrow keys pan, Enter centers current move."
+            aria-roledescription={t('interactive minimap')}
+            aria-label={t('Move tree minimap. Arrow keys pan, Enter centers current move.')}
           >
             <rect x="0" y="0" width={MINIMAP_SIZE.width} height={MINIMAP_SIZE.height} rx="6" className="move-tree-minimap-bg" />
             <g transform={`translate(${minimapTransform.offsetX} ${minimapTransform.offsetY}) scale(${minimapTransform.scale})`}>

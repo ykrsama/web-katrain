@@ -1,4 +1,5 @@
 import type { GameRules } from '../types';
+import { t } from '../i18n';
 import { rulesLabel } from './goRules';
 
 export type SgfRootProperties = Record<string, string[] | undefined>;
@@ -41,9 +42,13 @@ export const formatGameInfoTitle = (rootProps: SgfRootProperties): string => {
 
   const blackName = readRootInfoValue(rootProps, 'PB');
   const whiteName = readRootInfoValue(rootProps, 'PW');
-  if (blackName || whiteName) return `${blackName || 'Black'} vs ${whiteName || 'White'}`;
+  if (blackName || whiteName) {
+    const blackLabel = blackName || t('Black');
+    const whiteLabel = whiteName || t('White');
+    return t('{black} vs {white}', { black: blackLabel, white: whiteLabel });
+  }
 
-  return readRootInfoValue(rootProps, 'EV') || 'Untitled game';
+  return readRootInfoValue(rootProps, 'EV') || t('Untitled game');
 };
 
 export const formatRulesLabel = (rules: GameRules): string => rulesLabel(rules);
@@ -54,7 +59,7 @@ export const formatKomiLabel = (komi: number): string =>
 export const getVisibleGameInfoDetails = (rootProps: SgfRootProperties): GameInfoDetail[] =>
   detailFieldLabels.flatMap(({ key, label }) => {
     const value = readRootInfoValue(rootProps, key);
-    return value ? [{ key, label, value }] : [];
+    return value ? [{ key, label: t(label), value }] : [];
   });
 
 export const getFirstGameInfoLink = (rootProps: SgfRootProperties): GameInfoLink | null => {

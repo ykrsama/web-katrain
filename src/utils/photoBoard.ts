@@ -1,4 +1,5 @@
 import type { BoardSize, BoardState, Player } from '../types';
+import { t } from '../i18n';
 import { coordinateToSgf } from './sgf';
 
 export type PhotoBoardStone = Player | null;
@@ -6,7 +7,7 @@ export type PhotoBoardTraceTool = Player | 'erase';
 export type PhotoBoardTraceTransform = 'rotate-left' | 'rotate-right' | 'flip-horizontal' | 'flip-vertical';
 
 export const PHOTO_BOARD_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'] as const;
-export const PHOTO_BOARD_SUPPORTED_IMAGE_LABEL = 'JPG, PNG, WebP, or BMP';
+export const PHOTO_BOARD_SUPPORTED_IMAGE_LABEL = t('JPG, PNG, WebP, or BMP');
 
 const PHOTO_BOARD_CLIPBOARD_EXTENSION_BY_MIME: Record<string, string> = {
   'image/bmp': 'bmp',
@@ -22,8 +23,9 @@ export const PHOTO_BOARD_IMAGE_ACCEPT = [
   ...PHOTO_BOARD_IMAGE_EXTENSIONS,
   ...Object.keys(PHOTO_BOARD_CLIPBOARD_EXTENSION_BY_MIME),
 ].join(',');
-export const PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE =
-  `Board photos must be ${PHOTO_BOARD_SUPPORTED_IMAGE_LABEL}.`;
+export const PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE = t('Board photos must be {label}.', {
+  label: PHOTO_BOARD_SUPPORTED_IMAGE_LABEL,
+});
 
 export interface PhotoBoardClipboardItemLike {
   kind?: string;
@@ -205,7 +207,7 @@ export function summarizePhotoBoardDelta(
 
 export function photoBoardStonesFromBoard(board: BoardState, boardSize: BoardSize): PhotoBoardStone[] {
   if (board.length !== boardSize || board.some((row) => row.length !== boardSize)) {
-    throw new Error(`Expected a ${boardSize}x${boardSize} board.`);
+    throw new Error(t('Expected a {size}x{size} board.', { size: boardSize }));
   }
 
   const stones: PhotoBoardStone[] = [];
@@ -277,7 +279,12 @@ export function buildPhotoBoardSetupSgf({
   sourceName,
 }: PhotoBoardSetup): string {
   if (stones.length !== boardSize * boardSize) {
-    throw new Error(`Expected ${boardSize * boardSize} intersections for a ${boardSize}x${boardSize} board.`);
+    throw new Error(
+      t('Expected {count} intersections for a {size}x{size} board.', {
+        count: boardSize * boardSize,
+        size: boardSize,
+      })
+    );
   }
 
   const black: string[] = [];

@@ -6,6 +6,7 @@ import {
   FaThLarge,
 } from 'react-icons/fa';
 import { mobileTabId, tabPanelId, type MobileTab } from './mobileTabs';
+import { useT } from '../../i18n';
 
 export type { MobileTab } from './mobileTabs';
 
@@ -28,6 +29,7 @@ export const MobileTabBar: React.FC<MobileTabBarProps> = ({
   commentBadge,
   hasControlBarAbove,
 }) => {
+  const t = useT();
   const [pointerFocusedTab, setPointerFocusedTab] = React.useState<MobileTab | null>(null);
 
   /**
@@ -63,24 +65,24 @@ export const MobileTabBar: React.FC<MobileTabBarProps> = ({
   const tabs: TabConfig[] = [
     {
       id: 'board',
-      label: 'Board',
+      label: t('Board'),
       icon: <FaThLarge size={18} />,
     },
     {
       id: 'tree',
-      label: 'Tree',
+      label: t('Tree'),
       icon: <FaProjectDiagram size={18} />,
     },
     {
       id: 'info',
-      label: 'Review',
+      label: t('Review'),
       icon: <FaInfoCircle size={18} />,
     },
   ];
 
   tabs.push({
     id: 'library',
-    label: 'Library',
+    label: t('Library'),
     icon: <FaBook size={18} />,
   });
 
@@ -93,7 +95,7 @@ export const MobileTabBar: React.FC<MobileTabBarProps> = ({
         hasControlBarAbove ? 'bg-transparent' : 'ui-bar border-t border-[var(--ui-border)]'
       ].filter(Boolean).join(' ')}
       role="tablist"
-      aria-label="Main sections"
+      aria-label={t('Main sections')}
       onKeyDown={handleTabListKeyDown}
     >
       <div

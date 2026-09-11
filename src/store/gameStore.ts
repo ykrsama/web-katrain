@@ -3859,7 +3859,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     {
       const nextPlayerToMove: Player = state.currentPlayer === 'black' ? 'white' : 'black';
       if (lineViolatesSuperko(state.currentNode, newBoard, nextPlayerToMove, koRule)) {
-        set({ notification: { message: superkoRejectionMessage(koRule), type: 'error' } });
+        set({ notification: { message: superkoRejectionMessage(koRule, get().settings.appLocale), type: 'error' } });
         return;
       }
     }
@@ -4170,7 +4170,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   return {
                     x: pick.x,
                     y: pick.y,
-                    thoughts: describeHumanBotPick(pick, settings.humanSlProfile, boardSize),
+                    thoughts: describeHumanBotPick(pick, settings.humanSlProfile, boardSize, get().settings.appLocale),
                   };
                 }
               }

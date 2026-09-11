@@ -1,4 +1,5 @@
 import { formatResultScoreLead } from './manualScore';
+import { t } from '../i18n';
 
 /**
  * The one glyph the app shows where a value has not been computed yet. Three
@@ -15,8 +16,8 @@ export function formatAnalysisWinRate(winRate: number | null | undefined): strin
 
 export function formatWinRateFavorLabel(winRate: number | null | undefined): string {
   if (typeof winRate !== 'number' || !Number.isFinite(winRate)) return '';
-  if (winRate >= 0.48 && winRate <= 0.52) return 'Even';
-  return `${winRate > 0.5 ? 'Black' : 'White'} favored`;
+  if (winRate >= 0.48 && winRate <= 0.52) return t('Even');
+  return t(winRate > 0.5 ? 'Black favored' : 'White favored');
 }
 
 export function formatAnalysisScoreLead(scoreLead: number | null | undefined): string {
@@ -27,8 +28,8 @@ export function formatAnalysisScoreLead(scoreLead: number | null | undefined): s
 
 export function formatReadableScoreLead(scoreLead: number | null | undefined): string {
   if (typeof scoreLead !== 'number' || !Number.isFinite(scoreLead)) return NO_VALUE;
-  if (Math.abs(scoreLead) < 0.05) return 'Even';
-  return `${scoreLead > 0 ? 'Black' : 'White'} +${Math.abs(scoreLead).toFixed(1)}`;
+  if (Math.abs(scoreLead) < 0.05) return t('Even');
+  return `${t(scoreLead > 0 ? 'Black' : 'White')} +${Math.abs(scoreLead).toFixed(1)}`;
 }
 
 export type PointsLostSummary = {
@@ -42,10 +43,11 @@ export function summarizePointsLost(pointsLost: number | null | undefined): Poin
   }
 
   const absolute = Math.abs(pointsLost);
-  if (absolute < 0.05) return { label: 'Best', tone: 'success' };
-  if (pointsLost < 0) return { label: `Gain ${absolute.toFixed(1)}`, tone: 'success' };
-  if (pointsLost < 1) return { label: `Lost ${absolute.toFixed(1)}`, tone: 'warning' };
-  return { label: `Lost ${absolute.toFixed(1)}`, tone: 'danger' };
+  const points = absolute.toFixed(1);
+  if (absolute < 0.05) return { label: t('Best'), tone: 'success' };
+  if (pointsLost < 0) return { label: t('Gain {points}', { points }), tone: 'success' };
+  if (pointsLost < 1) return { label: t('Lost {points}', { points }), tone: 'warning' };
+  return { label: t('Lost {points}', { points }), tone: 'danger' };
 }
 
 /** The one sentence every quality readout leans on; it used to be defined nowhere. */

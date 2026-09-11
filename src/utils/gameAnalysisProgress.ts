@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 export interface GameAnalysisProgressSummary {
   countLabel: string;
   percentLabel: string;
@@ -46,13 +48,17 @@ export function summarizeGameAnalysisProgress(args: {
     etaLabel = formatDuration(remaining);
   }
 
-  const captionParts = [countLabel, percentLabel, etaLabel ? `ETA ${etaLabel}` : null].filter(Boolean);
+  const captionParts = [
+    countLabel,
+    percentLabel,
+    etaLabel ? t('ETA {eta}', { eta: etaLabel }) : null,
+  ].filter(Boolean);
   return {
     countLabel,
     percentLabel,
     etaLabel,
     buttonLabel: countLabel,
     captionLabel: captionParts.join(' · '),
-    title: `Game review progress: ${captionParts.join(', ')}`,
+    title: t('Game review progress: {caption}', { caption: captionParts.join(', ') }),
   };
 }

@@ -4,6 +4,7 @@ import { KOMI, type BoardSize, type Player } from '../types';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { useTournamentStore } from '../store/tournamentStore';
+import { useT } from '../i18n';
 import { formatKyuRank, type LadderState } from '../utils/tournament';
 import {
   GAUNTLET_PRESETS,
@@ -39,6 +40,7 @@ const boardButtonClass = (active: boolean) =>
 export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPlayGame, onPlayGauntletGame }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
 
   const ladder = useTournamentStore((s) => s.ladder);
   const startLadder = useTournamentStore((s) => s.startLadder);
@@ -84,13 +86,13 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
       >
         <div className="tournament-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="tournament-title" className="inline-flex items-center gap-2 text-lg font-semibold text-[var(--ui-text)]">
-            <FaTrophy aria-hidden="true" /> Play a series
+            <FaTrophy aria-hidden="true" /> {t('Play a series')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close series"
+            aria-label={t('Close series')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -110,7 +112,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                   : 'text-[var(--ui-text-muted)] hover:text-[var(--ui-text)]',
               ].join(' ')}
             >
-              {m === 'ladder' ? 'Rank ladder' : 'Gauntlet'}
+              {m === 'ladder' ? t('Rank ladder') : t('Gauntlet')}
             </button>
           ))}
         </div>
@@ -120,39 +122,44 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
             isLadderActive && ladder ? (
               <>
                 <p className="text-sm text-[var(--ui-text-muted)]">
-                  Climb the ranks: beat each opponent to face a stronger one. Lose and you stay to try again.
+                  {t('Climb the ranks: beat each opponent to face a stronger one. Lose and you stay to try again.')}
                 </p>
 
                 <div className="rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] p-4 text-center">
-                  <div className="text-xs uppercase tracking-wide text-[var(--ui-text-muted)]">Next opponent</div>
+                  <div className="text-xs uppercase tracking-wide text-[var(--ui-text-muted)]">{t('Next opponent')}</div>
                   <div className="text-3xl font-bold text-[var(--ui-text)]">{formatKyuRank(ladder.currentKyu)}</div>
                   <div className="text-xs text-[var(--ui-text-muted)]">
-                    {ladder.boardSize}×{ladder.boardSize} · you play {ladder.userColor}
+                    {t('{size}×{size} · you play {color}', {
+                      size: ladder.boardSize,
+                      color: t(ladder.userColor),
+                    })}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 text-sm text-[var(--ui-text)]">
                   <div className={statClass}>
                     <div className="text-lg font-semibold">{ladder.wins}–{ladder.losses}</div>
-                    <div className="text-xs text-[var(--ui-text-muted)]">W–L</div>
+                  <div className="text-xs text-[var(--ui-text-muted)]">{t('W–L')}</div>
                   </div>
                   <div className={statClass}>
                     <div className="text-lg font-semibold">{ladder.streak}</div>
-                    <div className="text-xs text-[var(--ui-text-muted)]">Win streak</div>
+                    <div className="text-xs text-[var(--ui-text-muted)]">{t('Win streak')}</div>
                   </div>
                   <div className={statClass}>
                     <div className="text-lg font-semibold">
                       {Number.isFinite(ladder.bestKyu) ? formatKyuRank(ladder.bestKyu) : '—'}
                     </div>
-                    <div className="text-xs text-[var(--ui-text-muted)]">Best beaten</div>
+                    <div className="text-xs text-[var(--ui-text-muted)]">{t('Best beaten')}</div>
                   </div>
                 </div>
 
                 {ladder.awaitingResult ? (
                   <div className="space-y-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3 text-sm">
-                    <div className="font-semibold text-[var(--ui-text)]">Game in progress vs {formatKyuRank(ladder.currentKyu)}</div>
+                    <div className="font-semibold text-[var(--ui-text)]">
+                      {t('Game in progress vs {rank}', { rank: formatKyuRank(ladder.currentKyu) })}
+                    </div>
                     <p className="text-[var(--ui-text-muted)]">
-                      Resign results are detected automatically. If you counted the game out, report it below.
+                      {t('Resign results are detected automatically. If you counted the game out, report it below.')}
                     </p>
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
@@ -160,14 +167,14 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                         onClick={() => recordResult('win')}
                         className="min-h-11 rounded-lg border border-[var(--ui-success,#38a169)] bg-[var(--ui-surface)] px-3 py-2 font-semibold text-[var(--ui-success,#38a169)] hover:bg-[var(--ui-surface-2)]"
                       >
-                        I won
+                        {t('I won')}
                       </button>
                       <button
                         type="button"
                         onClick={() => recordResult('loss')}
                         className="min-h-11 rounded-lg border border-[var(--ui-danger)] bg-[var(--ui-surface)] px-3 py-2 font-semibold text-[var(--ui-danger)] hover:bg-[var(--ui-surface-2)]"
                       >
-                        I lost
+                        {t('I lost')}
                       </button>
                     </div>
                     <button
@@ -175,7 +182,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                       onClick={onClose}
                       className="mt-1 min-h-11 w-full text-center text-xs text-[var(--ui-text-muted)] underline hover:text-[var(--ui-text)]"
                     >
-                      Resume game
+                      {t('Resume game')}
                     </button>
                   </div>
                 ) : null}
@@ -184,15 +191,18 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
               <>
                 {ladder && ladder.status === 'ended' && (
                   <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3 text-sm text-[var(--ui-text)]">
-                    <div className="font-semibold">Run complete</div>
+                    <div className="font-semibold">{t('Run complete')}</div>
                     <div className="text-[var(--ui-text-muted)]">
-                      Record {ladder.wins}–{ladder.losses}. Strongest opponent beaten:{' '}
-                      {Number.isFinite(ladder.bestKyu) ? formatKyuRank(ladder.bestKyu) : '—'}.
+                      {t('Record {wins}–{losses}. Strongest opponent beaten: {rank}.', {
+                        wins: ladder.wins,
+                        losses: ladder.losses,
+                        rank: Number.isFinite(ladder.bestKyu) ? formatKyuRank(ladder.bestKyu) : '—',
+                      })}
                     </div>
                   </div>
                 )}
                 <p className="tournament-setup-intro text-sm text-[var(--ui-text-muted)]">
-                  Play a series of calibrated bots that get one rank stronger every time you win. How high can you climb?
+                  {t('Play a series of calibrated bots that get one rank stronger every time you win. How high can you climb?')}
                 </p>
                 {renderSetup()}
               </>
@@ -200,7 +210,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
           ) : isGauntletActive && gauntlet ? (
             <>
               <p className="text-sm text-[var(--ui-text-muted)]">
-                Four games. Lose any one and the gauntlet ends. Win all four to clear it.
+                {t('Four games. Lose any one and the gauntlet ends. Win all four to clear it.')}
               </p>
               <div className="flex items-center justify-center gap-2">
                 {gauntlet.opponents.map((kyu, i) => {
@@ -218,33 +228,42 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                             : 'border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)]',
                       ].join(' ')}
                     >
-                      <span className="text-[0.625rem] uppercase">{done ? 'Won' : `G${i + 1}`}</span>
+                      <span className="text-[0.625rem] uppercase">{done ? t('Won') : t('G{game}', { game: i + 1 })}</span>
                       <span>{formatKyuRank(kyu)}</span>
                     </div>
                   );
                 })}
               </div>
               <div className="text-center text-sm text-[var(--ui-text-muted)]">
-                {gauntlet.boardSize}×{gauntlet.boardSize} · you play {gauntlet.userColor} · {gauntlet.wins}/{GAUNTLET_ROUNDS} won
+                {t('{size}×{size} · you play {color} · {wins}/{total} won', {
+                  size: gauntlet.boardSize,
+                  color: t(gauntlet.userColor),
+                  wins: gauntlet.wins,
+                  total: GAUNTLET_ROUNDS,
+                })}
               </div>
               {gauntlet.awaitingResult ? (
                 <div className="space-y-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3 text-sm">
-                  <div className="font-semibold text-[var(--ui-text)]">Game in progress vs {formatKyuRank(currentGauntletOpponentKyu(gauntlet))}</div>
-                  <p className="text-[var(--ui-text-muted)]">Resign results are detected automatically; report a counted game below.</p>
+                  <div className="font-semibold text-[var(--ui-text)]">
+                    {t('Game in progress vs {rank}', { rank: formatKyuRank(currentGauntletOpponentKyu(gauntlet)) })}
+                  </div>
+                  <p className="text-[var(--ui-text-muted)]">
+                    {t('Resign results are detected automatically; report a counted game below.')}
+                  </p>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => recordGauntletResult('win')}
                       className="min-h-11 rounded-lg border border-[var(--ui-success,#38a169)] bg-[var(--ui-surface)] px-3 py-2 font-semibold text-[var(--ui-success,#38a169)] hover:bg-[var(--ui-surface-2)]"
                     >
-                      I won
+                      {t('I won')}
                     </button>
                     <button
                       type="button"
                       onClick={() => recordGauntletResult('loss')}
                       className="min-h-11 rounded-lg border border-[var(--ui-danger)] bg-[var(--ui-surface)] px-3 py-2 font-semibold text-[var(--ui-danger)] hover:bg-[var(--ui-surface-2)]"
                     >
-                      I lost
+                      {t('I lost')}
                     </button>
                   </div>
                   <button
@@ -252,7 +271,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                     onClick={onClose}
                     className="mt-1 min-h-11 w-full text-center text-xs text-[var(--ui-text-muted)] underline hover:text-[var(--ui-text)]"
                   >
-                    Resume game
+                    {t('Resume game')}
                   </button>
                 </div>
               ) : null}
@@ -268,16 +287,18 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                       : 'border-[var(--ui-danger)] bg-[var(--ui-surface-2)] text-[var(--ui-text)]',
                   ].join(' ')}
                 >
-                  <div className="font-semibold">{gauntlet.status === 'won' ? 'Gauntlet cleared! 🏆' : 'Gauntlet ended'}</div>
-                  <div className="text-[var(--ui-text-muted)]">Won {gauntlet.wins} of {GAUNTLET_ROUNDS} games.</div>
+                  <div className="font-semibold">{gauntlet.status === 'won' ? t('Gauntlet cleared! 🏆') : t('Gauntlet ended')}</div>
+                  <div className="text-[var(--ui-text-muted)]">
+                    {t('Won {wins} of {total} games.', { wins: gauntlet.wins, total: GAUNTLET_ROUNDS })}
+                  </div>
                 </div>
               )}
               <p className="tournament-setup-intro text-sm text-[var(--ui-text-muted)]">
-                A four-game gauntlet. Pick a difficulty and try to run the table — one loss ends it.
+                {t('A four-game gauntlet. Pick a difficulty and try to run the table — one loss ends it.')}
               </p>
               {renderSetup()}
               <div>
-                <div className="mb-1 text-sm font-semibold text-[var(--ui-text)]">Difficulty</div>
+                <div className="mb-1 text-sm font-semibold text-[var(--ui-text)]">{t('Difficulty')}</div>
                 <div className="grid gap-2">
                   {GAUNTLET_PRESETS.map((p) => (
                     <button
@@ -292,13 +313,13 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                           : 'border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-surface-2)]',
                       ].join(' ')}
                     >
-                      <div className="text-sm font-semibold text-[var(--ui-text)]">{p.label}</div>
-                      <div className="text-xs text-[var(--ui-text-muted)]">{p.detail}</div>
+                      <div className="text-sm font-semibold text-[var(--ui-text)]">{t(p.label)}</div>
+                      <div className="text-xs text-[var(--ui-text-muted)]">{t(p.detail)}</div>
                     </button>
                   ))}
                 </div>
                 <div className="mt-2 text-center text-xs text-[var(--ui-text-muted)]">
-                  Opponents: {previewOpponents.map((k) => formatKyuRank(k)).join(' → ')}
+                  {t('Opponents: {list}', { list: previewOpponents.map((k) => formatKyuRank(k)).join(' → ') })}
                 </div>
               </div>
             </>
@@ -314,7 +335,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                   onClick={retire}
                   className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]"
                 >
-                  <span className="inline-flex items-center gap-2"><FaFlag aria-hidden="true" /> Retire</span>
+                  <span className="inline-flex items-center gap-2"><FaFlag aria-hidden="true" /> {t('Retire')}</span>
                 </button>
                 {!ladder.awaitingResult && (
                   <button
@@ -323,7 +344,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                     className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                   >
                     <span className="inline-flex items-center gap-2">
-                      <FaPlay aria-hidden="true" /> Play vs {formatKyuRank(ladder.currentKyu)}
+                      <FaPlay aria-hidden="true" /> {t('Play vs {rank}', { rank: formatKyuRank(ladder.currentKyu) })}
                     </span>
                   </button>
                 )}
@@ -336,7 +357,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                     onClick={reset}
                     className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]"
                   >
-                    Clear
+                    {t('Clear')}
                   </button>
                 )}
                 <button
@@ -344,7 +365,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                   onClick={handleStartLadder}
                   className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                 >
-                  <span className="inline-flex items-center gap-2"><FaTrophy aria-hidden="true" /> Start ladder</span>
+                  <span className="inline-flex items-center gap-2"><FaTrophy aria-hidden="true" /> {t('Start ladder')}</span>
                 </button>
               </>
             )
@@ -355,7 +376,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                 onClick={resetGauntlet}
                 className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]"
               >
-                <span className="inline-flex items-center gap-2"><FaFlag aria-hidden="true" /> Give up</span>
+                <span className="inline-flex items-center gap-2"><FaFlag aria-hidden="true" /> {t('Give up')}</span>
               </button>
               {!gauntlet.awaitingResult && (
                 <button
@@ -364,7 +385,11 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                   className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                 >
                   <span className="inline-flex items-center gap-2">
-                    <FaPlay aria-hidden="true" /> Play game {gauntlet.index + 1} vs {formatKyuRank(currentGauntletOpponentKyu(gauntlet))}
+                    <FaPlay aria-hidden="true" />{' '}
+                    {t('Play game {game} vs {rank}', {
+                      game: gauntlet.index + 1,
+                      rank: formatKyuRank(currentGauntletOpponentKyu(gauntlet)),
+                    })}
                   </span>
                 </button>
               )}
@@ -377,7 +402,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                   onClick={resetGauntlet}
                   className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]"
                 >
-                  Clear
+                  {t('Clear')}
                 </button>
               )}
               <button
@@ -385,7 +410,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
                 onClick={handleStartGauntlet}
                 className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
               >
-                <span className="inline-flex items-center gap-2"><FaBolt aria-hidden="true" /> Start gauntlet</span>
+                <span className="inline-flex items-center gap-2"><FaBolt aria-hidden="true" /> {t('Start gauntlet')}</span>
               </button>
             </>
           )}
@@ -398,7 +423,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
     return (
       <div className="tournament-setup space-y-3">
         <div>
-          <div className="mb-1 text-sm font-semibold text-[var(--ui-text)]">Board size</div>
+          <div className="mb-1 text-sm font-semibold text-[var(--ui-text)]">{t('Board size')}</div>
           <div className="tournament-board-sizes grid grid-cols-3 gap-2">
             {BOARD_OPTIONS.map((sz) => (
               <button key={sz} type="button" onClick={() => setBoardSize(sz)} aria-pressed={boardSize === sz} className={boardButtonClass(boardSize === sz)}>
@@ -409,11 +434,11 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
         </div>
 
         <div>
-          <div className="mb-1 text-sm font-semibold text-[var(--ui-text)]">Your color</div>
+          <div className="mb-1 text-sm font-semibold text-[var(--ui-text)]">{t('Your color')}</div>
           <div className="tournament-color-options grid grid-cols-2 gap-2">
             {(['black', 'white'] as Player[]).map((c) => (
               <button key={c} type="button" onClick={() => setUserColor(c)} aria-pressed={userColor === c} className={`${boardButtonClass(userColor === c)} capitalize`}>
-                {c}
+                {t(c)}
               </button>
             ))}
           </div>
@@ -421,7 +446,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({ onClose, onPla
 
         <label className="block">
           <span className="mb-1 block text-sm font-semibold text-[var(--ui-text)]">
-            {mode === 'gauntlet' ? 'Your rank' : 'Starting opponent'}
+            {mode === 'gauntlet' ? t('Your rank') : t('Starting opponent')}
           </span>
           <select
             value={startKyu}

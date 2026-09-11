@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaBug, FaExternalLinkAlt, FaTimes } from 'react-icons/fa';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { APP_COMMIT_URL, APP_INFO, APP_ISSUE_REPORT_URL, APP_REPOSITORY_URL } from '../utils/appInfo';
@@ -36,7 +37,8 @@ const AboutLink: React.FC<{ href: string; children: React.ReactNode; className?:
 );
 
 export const AboutDialog: React.FC<AboutDialogProps> = ({ onClose, returnFocus }) => {
-  const buildDate = APP_INFO.commitDate || 'unknown';
+  const t = useT();
+  const buildDate = APP_INFO.commitDate || t('unknown');
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, { returnFocus });
 
@@ -52,7 +54,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ onClose, returnFocus }
       // app itself, where every sibling dialog says what it is. Name it after
       // the command that opens it; the heading still reads as before, and the
       // accessible name contains it.
-      aria-label="About Web KaTrain"
+      aria-label={t('About Web KaTrain')}
       aria-labelledby="about-title"
       onClick={onClose}
     >
@@ -65,13 +67,13 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ onClose, returnFocus }
             <h2 id="about-title" className="text-lg font-semibold text-[var(--ui-text)]">
               Web KaTrain
             </h2>
-            <p className="mt-1 text-sm ui-text-muted">Browser Go review, training, and KataGo analysis.</p>
+            <p className="mt-1 text-sm ui-text-muted">{t('Browser Go review, training, and KataGo analysis.')}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close about dialog"
+            aria-label={t('Close about dialog')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -79,16 +81,16 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ onClose, returnFocus }
 
         <div className="about-dialog-body min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <div className="about-dialog-meta rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3">
-            <AboutRow label="Version">v{APP_INFO.version}</AboutRow>
-            <AboutRow label="Commit">
+            <AboutRow label={t('Version')}>v{APP_INFO.version}</AboutRow>
+            <AboutRow label={t('Commit')}>
               {APP_COMMIT_URL ? (
                 <AboutLink href={APP_COMMIT_URL}>{APP_INFO.commit}</AboutLink>
               ) : (
                 <span className="font-mono">{APP_INFO.commit}</span>
               )}
             </AboutRow>
-            <AboutRow label="Build Date">{buildDate}</AboutRow>
-            <AboutRow label="Repository">
+            <AboutRow label={t('Build Date')}>{buildDate}</AboutRow>
+            <AboutRow label={t('Repository')}>
               <AboutLink href={APP_REPOSITORY_URL}>Sir-Teo/web-katrain</AboutLink>
             </AboutRow>
           </div>
@@ -103,7 +105,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ onClose, returnFocus }
               {/* Preflight makes svg display:block, so the icon needs a flex row to
                   sit beside the label instead of stacking above it. */}
               <span className="inline-flex items-center gap-2">
-                <FaBug aria-hidden="true" /> Report Issue
+                <FaBug aria-hidden="true" /> {t('Report Issue')}
               </span>
             </AboutLink>
           </div>

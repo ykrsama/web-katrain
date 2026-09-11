@@ -1,4 +1,5 @@
 import { extractOgsGameId } from './ogs';
+import { t } from '../i18n';
 
 export type PasteSgfSubmitResult = 'loaded' | 'cancelled' | 'failed';
 
@@ -29,18 +30,18 @@ export const getPasteSgfInputInfo = (text: string): PasteSgfInputInfo => {
   if (!trimmed) {
     return {
       kind: 'empty',
-      helper: 'Paste raw SGF text or an Online-Go game URL. OGS links are downloaded as SGF before loading.',
-      submitStatus: 'Opening SGF...',
-      errorStatus: 'Paste raw SGF text or an Online-Go game URL.',
+      helper: t('Paste raw SGF text or an Online-Go game URL. OGS links are downloaded as SGF before loading.'),
+      submitStatus: t('Opening SGF...'),
+      errorStatus: t('Paste raw SGF text or an Online-Go game URL.'),
     };
   }
 
   if (trimmed.startsWith('(')) {
     return {
       kind: 'sgf',
-      helper: 'Detected SGF content. It will import directly from this text.',
-      submitStatus: 'Opening pasted SGF...',
-      errorStatus: 'Could not parse this SGF. Check that it starts with (; and contains a complete game tree.',
+      helper: t('Detected SGF content. It will import directly from this text.'),
+      submitStatus: t('Opening pasted SGF...'),
+      errorStatus: t('Could not parse this SGF. Check that it starts with (; and contains a complete game tree.'),
     };
   }
 
@@ -49,25 +50,25 @@ export const getPasteSgfInputInfo = (text: string): PasteSgfInputInfo => {
     return {
       kind: 'ogs',
       gameId,
-      helper: `Detected OGS game ${gameId}. It will download the public SGF from Online-Go.`,
-      submitStatus: `Downloading OGS game ${gameId}...`,
-      errorStatus: `Could not download or parse OGS game ${gameId}. Check that the game is public and the URL looks like online-go.com/game/12345.`,
+      helper: t('Detected OGS game {gameId}. It will download the public SGF from Online-Go.', { gameId }),
+      submitStatus: t('Downloading OGS game {gameId}...', { gameId }),
+      errorStatus: t('Could not download or parse OGS game {gameId}. Check that the game is public and the URL looks like online-go.com/game/12345.', { gameId }),
     };
   }
 
   if (looksLikeUrl(trimmed)) {
     return {
       kind: 'url',
-      helper: 'This looks like a URL. Only Online-Go game links are downloaded; paste raw SGF for other sites.',
-      submitStatus: 'Opening SGF text...',
-      errorStatus: 'Could not parse this as SGF. Paste raw SGF text or an Online-Go game URL.',
+      helper: t('This looks like a URL. Only Online-Go game links are downloaded; paste raw SGF for other sites.'),
+      submitStatus: t('Opening SGF text...'),
+      errorStatus: t('Could not parse this as SGF. Paste raw SGF text or an Online-Go game URL.'),
     };
   }
 
   return {
     kind: 'text',
-    helper: 'This will be parsed as SGF text. SGF usually starts with (;GM[1].',
-    submitStatus: 'Opening SGF text...',
-    errorStatus: 'Could not parse this as SGF. Paste raw SGF text or an Online-Go game URL.',
+    helper: t('This will be parsed as SGF text. SGF usually starts with (;GM[1].'),
+    submitStatus: t('Opening SGF text...'),
+    errorStatus: t('Could not parse this as SGF. Paste raw SGF text or an Online-Go game URL.'),
   };
 };

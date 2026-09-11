@@ -2,6 +2,7 @@ import type { CandidateMove, FloatArray, GameNode, Player } from '../types';
 import { isReportReadyAnalysis } from './analysisCoverage';
 import { getCurrentLineNodes, type ActiveBranchMap } from './branchNavigation';
 import { getEvaluationClass } from './nodeAnalysis';
+import { t } from '../i18n';
 
 const ADDITIONAL_MOVE_ORDER = 999; // KaTrain core/constants.py
 const KAYA_PHASE_THRESHOLDS: Record<number, { openingEnd: number; middleEnd: number }> = {
@@ -52,7 +53,7 @@ export const GAME_REPORT_PHASES: Array<{ key: GameReportPhaseFilter; label: stri
  * 0 counts as absent.
  */
 export function formatPolicyRank(rank: number | null | undefined): string {
-  return rank ? `#${rank}` : 'unranked';
+  return rank ? `#${rank}` : t('unranked');
 }
 
 export function getPhaseThresholds(boardSize: number): { openingEnd: number; middleEnd: number } {
@@ -73,7 +74,7 @@ export function getMovePhase(moveNumber: number, boardSize: number): GameReportP
 }
 
 export function getPhaseLabel(phase: GameReportPhaseFilter): string {
-  return GAME_REPORT_PHASES.find((item) => item.key === phase)?.label ?? 'Entire Game';
+  return t(GAME_REPORT_PHASES.find((item) => item.key === phase)?.label ?? 'Entire Game');
 }
 
 export function getPhaseMoveRange(
@@ -337,7 +338,7 @@ export type GameReportStudyFocus = {
 };
 
 function playerLabel(player: Player): string {
-  return player === 'black' ? 'Black' : 'White';
+  return player === 'black' ? t('Black') : t('White');
 }
 
 export function describeReportSwing(entry: MoveReportEntry): string {
@@ -349,13 +350,13 @@ export function describeReportSwing(entry: MoveReportEntry): string {
     (entry.player === 'black' && entry.scoreAfter > 0) ||
     (entry.player === 'white' && entry.scoreAfter < 0);
 
-  if (!wasLeadingBefore && isLeadingAfter) return `${player} takes the lead`;
-  if (wasLeadingBefore && !isLeadingAfter) return `${player} loses the lead`;
-  if (entry.pointsLost > 0) return `${player} loses ${entry.pointsLost.toFixed(1)} points`;
-  if (entry.pointsGained > 0) return `${player} gains ${entry.pointsGained.toFixed(1)} points`;
+  if (!wasLeadingBefore && isLeadingAfter) return t('{player} takes the lead', { player });
+  if (wasLeadingBefore && !isLeadingAfter) return t('{player} loses the lead', { player });
+  if (entry.pointsLost > 0) return t('{player} loses {points} points', { player, points: entry.pointsLost.toFixed(1) });
+  if (entry.pointsGained > 0) return t('{player} gains {points} points', { player, points: entry.pointsGained.toFixed(1) });
 
-  const side = entry.scoreDelta >= 0 ? 'Black' : 'White';
-  return `${side} gains ${entry.scoreSwing.toFixed(1)} points`;
+  const side = t(entry.scoreDelta >= 0 ? 'Black' : 'White');
+  return t('{side} gains {points} points', { side, points: entry.scoreSwing.toFixed(1) });
 }
 
 
@@ -380,13 +381,13 @@ export function describeStudyFocusEntry(entry: MoveReportEntry): {
   const lostPoints = entry.pointsLost >= 0.005;
   const isTopMove = entry.isTopMove === true || (!!entry.topMove && entry.topMove === entry.move);
   return {
-    lossLabel: lostPoints ? `\u2212${entry.pointsLost.toFixed(2)}` : 'No points lost',
+    lossLabel: lostPoints ? `\u2212${entry.pointsLost.toFixed(2)}` : t('No points lost'),
     lostPoints,
     engineLabel: isTopMove
-      ? "The engine's own move"
+      ? t("The engine's own move")
       : entry.topMove
-        ? `Engine preferred ${entry.topMove}`
-        : 'No engine preference recorded',
+        ? t('Engine preferred {move}', { move: entry.topMove })
+        : t('No engine preference recorded'),
   };
 }
 
@@ -490,19 +491,29 @@ function studyFocusIssueLabel(args: {
 }): string {
   const { topEntry, policyProblem, weightedPtLoss } = args;
   if (topEntry && topEntry.pointsLost >= 3) {
-    return `Review move ${topEntry.moveNumber}: ${topEntry.pointsLost.toFixed(1)} points lost`;
+    return t('Review move {move}: {points} points lost', {
+      move: topEntry.moveNumber,
+      points: topEntry.pointsLost.toFixed(1),
+    });
   }
   if (policyProblem && policyProblem.category !== 'inaccuracy') {
-    const label = policyProblem.category === 'blunder' ? 'blunders' : 'mistakes';
-    return `Fix candidate generation: ${policyProblem.count} ${label}`;
+    const label = policyProblem.category === 'blunder' ? t('blunders') : t('mistakes');
+    return t('Fix candidate generation: {count} {label}', { count: policyProblem.count, label });
   }
-  return `Tighten consistency: ${weightedPtLoss.toFixed(1)} weighted loss`;
+  return t('Tighten consistency: {loss} weighted loss', { loss: weightedPtLoss.toFixed(1) });
 }
 
 function studyFocusBeginnerTip(topEntry: MoveReportEntry | undefined): string {
-  if (!topEntry) return 'Review this phase slowly and explain each move before checking the engine.';
-  const topMove = topEntry.topMove ? `, then compare with ${topEntry.topMove}` : '';
-  return `Replay move ${topEntry.moveNumber} from the previous position, name two candidate moves${topMove}.`;
+  if (!topEntry) return t('Review this phase slowly and explain each move before checking the engine.');
+  const topMove = topEntry.topMove;
+  return topMove
+    ? t('Replay move {move} from the previous position, name two candidate moves, then compare with {best}.', {
+        move: topEntry.moveNumber,
+        best: topMove,
+      })
+    : t('Replay move {move} from the previous position, name two candidate moves.', {
+        move: topEntry.moveNumber,
+      });
 }
 
 function studyFocusProTip(args: {
@@ -510,12 +521,19 @@ function studyFocusProTip(args: {
   player: Player;
   policyProblem: GameReportStudyFocus['policyProblem'];
 }): string {
-  const phaseLabel = getPhaseLabel(args.phase).toLowerCase();
-  const playerLabel = args.player === 'black' ? 'Black' : 'White';
+  const phaseLabel = getPhaseLabel(args.phase);
+  const playerLabel = args.player === 'black' ? t('Black') : t('White');
   if (args.policyProblem) {
-    return `Filter ${playerLabel} in ${phaseLabel} by ${args.policyProblem.category} quality and check why the played prior fell behind.`;
+    return t('Filter {player} in {phase} by {category} quality and check why the played prior fell behind.', {
+      player: playerLabel,
+      phase: phaseLabel,
+      category: t(args.policyProblem.category),
+    });
   }
-  return `Filter ${playerLabel} in ${phaseLabel} by Loss and compare score lead before and after each swing.`;
+  return t('Filter {player} in {phase} by Loss and compare score lead before and after each swing.', {
+    player: playerLabel,
+    phase: phaseLabel,
+  });
 }
 
 export function getReportStudyFocus(args: {

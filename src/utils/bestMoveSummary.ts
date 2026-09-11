@@ -1,4 +1,5 @@
 import type { AnalysisResult, CandidateMove, GameNode } from '../types';
+import { t } from '../i18n';
 import { formatAnalysisScoreLead, formatAnalysisWinRate } from './analysisSummary';
 import { formatBoardMoveLabel } from './playedMoveQuality';
 import { formatVisitCount } from './visitPresets';
@@ -46,17 +47,20 @@ export function getBestMoveSummary(analysis: AnalysisResult | null | undefined, 
   const move = best.candidate;
   const moveLabel = formatBoardMoveLabel(move, boardSize);
   const policyPrior = formatPolicyPrior(move.prior);
-  const visitsLabel = `${formatVisitCount(move.visits)} visits`;
+  const visitsLabel = t('{visits} visits', { visits: formatVisitCount(move.visits) });
   const rankLabel = best.rank === 1 ? null : `#${best.rank}`;
-  const detailLabel = [rankLabel, policyPrior ? `${policyPrior} policy` : visitsLabel].filter(Boolean).join(' · ');
+  const detailLabel = [
+    rankLabel,
+    policyPrior ? t('{prior} policy', { prior: policyPrior }) : visitsLabel,
+  ].filter(Boolean).join(' · ');
 
   const titleParts = [
-    `Best move ${moveLabel}`,
-    rankLabel ? `candidate ${rankLabel}` : null,
+    t('Best move {move}', { move: moveLabel }),
+    rankLabel ? t('candidate {rank}', { rank: rankLabel }) : null,
     visitsLabel,
-    policyPrior ? `${policyPrior} policy prior` : null,
-    `score ${formatAnalysisScoreLead(move.scoreLead)}`,
-    `black win ${formatAnalysisWinRate(move.winRate)}`,
+    policyPrior ? t('{prior} policy prior', { prior: policyPrior }) : null,
+    t('score {value}', { value: formatAnalysisScoreLead(move.scoreLead) }),
+    t('black win {value}', { value: formatAnalysisWinRate(move.winRate) }),
   ].filter(Boolean);
 
   return {

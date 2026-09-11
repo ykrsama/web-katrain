@@ -7,6 +7,7 @@ import {
   TSUMEGO_FRAME_MIN_MARGIN,
   clampTsumegoFrameMargin,
 } from '../utils/tsumegoFrameOptions';
+import { useT } from '../i18n';
 
 interface TsumegoFrameModalProps {
   defaultMargin: number;
@@ -23,6 +24,7 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
   onApply,
   returnFocus,
 }) => {
+  const t = useT();
   const [margin, setMargin] = React.useState(() => clampTsumegoFrameMargin(defaultMargin));
   const [koAllowed, setKoAllowed] = React.useState(defaultKoAllowed);
   useEscapeToClose(onClose);
@@ -41,13 +43,13 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
       >
         <div className="ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="tsumego-frame-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Frame as Tsumego
+            {t('Frame as Tsumego')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close frame as tsumego"
+            aria-label={t('Close frame as tsumego')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -55,15 +57,13 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <p id="tsumego-frame-description" className="text-sm leading-6 text-[var(--ui-text-muted)]">
-            A problem alone in the corner looks like an almost empty board, and the engine reads it that way. This
-            walls the problem off and settles the rest of the board, so life and death is the only thing left to
-            decide — added as a new node, with the bare problem still in the tree.
+            {t('A problem alone in the corner looks like an almost empty board, and the engine reads it that way. This walls the problem off and settles the rest of the board, so life and death is the only thing left to decide — added as a new node, with the bare problem still in the tree.')}
           </p>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label htmlFor="tsumego-frame-margin" className="block text-sm text-[var(--ui-text-muted)]">
-                Distance of wall
+                {t('Distance of wall')}
               </label>
               <input
                 id="tsumego-frame-margin"
@@ -75,11 +75,11 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
                 onChange={(e) => setMargin(clampTsumegoFrameMargin(parseInt(e.target.value || '0', 10)))}
                 className="w-full rounded border ui-input px-2 py-2 text-sm text-[var(--ui-text)]"
               />
-              <p className="text-xs ui-text-faint">How much room to leave around the problem.</p>
+              <p className="text-xs ui-text-faint">{t('How much room to leave around the problem.')}</p>
             </div>
 
             <div className="space-y-1">
-              <span className="block text-sm text-[var(--ui-text-muted)]">Ko</span>
+              <span className="block text-sm text-[var(--ui-text-muted)]">{t('Ko')}</span>
               <label
                 htmlFor="tsumego-frame-ko"
                 className="flex min-h-11 items-center gap-2 rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 text-sm text-[var(--ui-text)]"
@@ -91,9 +91,9 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
                   onChange={(e) => setKoAllowed(e.target.checked)}
                   className="toggle"
                 />
-                <span>Ko allowed</span>
+                <span>{t('Ko allowed')}</span>
               </label>
-              <p className="text-xs ui-text-faint">Sets who holds the ko threat far from the problem.</p>
+              <p className="text-xs ui-text-faint">{t('Sets who holds the ko threat far from the problem.')}</p>
             </div>
           </div>
         </div>
@@ -104,7 +104,7 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
             onClick={onClose}
             className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
@@ -112,7 +112,7 @@ export const TsumegoFrameModal: React.FC<TsumegoFrameModalProps> = ({
             className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-[var(--ui-accent-contrast)] hover:brightness-110"
           >
             <span className="inline-flex items-center gap-2">
-              <FaBorderAll aria-hidden="true" /> Frame position
+              <FaBorderAll aria-hidden="true" /> {t('Frame position')}
             </span>
           </button>
         </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Player } from '../../types';
+import { useT } from '../../i18n';
 
 interface MobileMatchStripProps {
   currentPlayer: Player;
@@ -26,6 +27,7 @@ interface MatchPlayerProps {
 }
 
 const MatchPlayer: React.FC<MatchPlayerProps> = ({ color, name, rank, captures, toMove, fallback }) => {
+  const t = useT();
   const displayName = name.trim() || fallback;
   return (
     <div
@@ -37,16 +39,16 @@ const MatchPlayer: React.FC<MatchPlayerProps> = ({ color, name, rank, captures, 
         className={['mobile-bottom-stone', color === 'black' ? 'mobile-bottom-stone-black' : 'mobile-bottom-stone-white'].join(' ')}
         aria-hidden="true"
       />
-      <span className="mobile-match-name" title={rank ? `${displayName} (${rank})` : displayName}>
+      <span className="mobile-match-name" title={rank ? t('{name} ({rank})', { name: displayName, rank }) : displayName}>
         {displayName}
       </span>
       {rank ? <span className="mobile-match-rank">{rank}</span> : null}
       {captures > 0 ? (
-        <span className="mobile-match-captures" title={`${captures} captured`}>
-          +{captures}<span className="sr-only"> captured</span>
+        <span className="mobile-match-captures" title={t('{count} captured', { count: captures })}>
+          +{captures}<span className="sr-only">{t(' captured')}</span>
         </span>
       ) : null}
-      {toMove ? <span className="sr-only">to move</span> : null}
+      {toMove ? <span className="sr-only">{t('to move')}</span> : null}
     </div>
   );
 };
@@ -69,14 +71,14 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
   komi,
   handicap,
 }) => (
-  <div className="mobile-match-strip" role="group" aria-label="Match status" data-mobile-match-strip="true">
+  <div className="mobile-match-strip" role="group" aria-label={t('Match status')} data-mobile-match-strip="true">
     <MatchPlayer
       color="black"
       name={blackName}
       rank={blackRank}
       captures={capturedWhite}
       toMove={currentPlayer === 'black'}
-      fallback="Black"
+      fallback={t('Black')}
     />
     <MatchPlayer
       color="white"
@@ -84,7 +86,7 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
       rank={whiteRank}
       captures={capturedBlack}
       toMove={currentPlayer === 'white'}
-      fallback="White"
+      fallback={t('White')}
     />
     <div className="mobile-match-facts" aria-hidden="true">
       <span className="mobile-match-fact">{boardSize}×{boardSize}</span>

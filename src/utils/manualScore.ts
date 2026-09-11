@@ -1,4 +1,5 @@
-import type { BoardState } from '../types';
+import type { AppLocaleId, BoardState } from '../types';
+import { translate } from '../i18n/translate';
 
 const LO_THRESHOLD = 0.15;
 const HI_THRESHOLD = 0.85;
@@ -9,9 +10,11 @@ export function roundToHalf(x: number): number {
   return Math.round(x * 2) / 2;
 }
 
-export function formatResultScoreLead(scoreLead: number): string {
+export function formatResultScoreLead(scoreLead: number, locale?: AppLocaleId): string {
   const roundedScoreLead = Math.round(scoreLead * 10) / 10;
-  if (Object.is(roundedScoreLead, 0) || Object.is(roundedScoreLead, -0)) return 'Jigo';
+  if (Object.is(roundedScoreLead, 0) || Object.is(roundedScoreLead, -0)) {
+    return locale ? translate(locale, 'Jigo') : 'Jigo';
+  }
 
   const leadingPlayer = roundedScoreLead > 0 ? 'B' : 'W';
   return `${leadingPlayer}+${Math.abs(roundedScoreLead).toFixed(1)}`;

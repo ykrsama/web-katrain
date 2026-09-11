@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { AUTO_SAVE_MAX_LABEL } from './autoSave';
 
 export type AutoSaveStatus = {
@@ -31,9 +32,9 @@ export function getSaveStatusDisplay(
   if (!autoSaveStatus) {
     return {
       state: 'dirty',
-      label: 'Unsaved',
-      compactLabel: 'Unsaved',
-      title: 'Unsaved changes. Save to Library or download SGF to keep this game permanently.',
+      label: t('Unsaved'),
+      compactLabel: t('Unsaved'),
+      title: t('Unsaved changes. Save to Library or download SGF to keep this game permanently.'),
       tone: 'warning',
       role: 'status',
       ariaLive: 'polite',
@@ -43,9 +44,9 @@ export function getSaveStatusDisplay(
   if (autoSaveStatus.state === 'pending') {
     return {
       state: 'pending',
-      label: 'Recovery saving',
-      compactLabel: 'Saving',
-      title: 'Unsaved changes. Updating the recovery copy; save to Library or download SGF for a permanent copy.',
+      label: t('Recovery saving'),
+      compactLabel: t('Saving'),
+      title: t('Unsaved changes. Updating the recovery copy; save to Library or download SGF for a permanent copy.'),
       tone: 'accent',
       role: 'status',
       ariaLive: 'polite',
@@ -56,14 +57,14 @@ export function getSaveStatusDisplay(
     const detail = autoSaveStatus.savedAt ? formatSaveStatusTime(autoSaveStatus.savedAt) : undefined;
     return {
       state: 'saved',
-      label: 'Recovery saved',
+      label: t('Recovery saved'),
       // Keep the compact badge short and fixed-width; the save time stays in
       // the detail/title so narrow bottom bars never clip it mid-string.
-      compactLabel: 'Saved',
+      compactLabel: t('Saved'),
       detail,
       title: detail
-        ? `Recovery copy saved at ${detail}. This game is still unsaved until you save to Library or download SGF.`
-        : 'Recovery copy saved. This game is still unsaved until you save to Library or download SGF.',
+        ? t('Recovery copy saved at {detail}. This game is still unsaved until you save to Library or download SGF.', { detail })
+        : t('Recovery copy saved. This game is still unsaved until you save to Library or download SGF.'),
       tone: 'success',
       role: 'status',
       ariaLive: 'polite',
@@ -73,9 +74,9 @@ export function getSaveStatusDisplay(
   if (autoSaveStatus.state === 'too-large') {
     return {
       state: 'too-large',
-      label: 'Recovery skipped',
-      compactLabel: 'Too large',
-      title: `Game is too large for recovery auto-save (${AUTO_SAVE_MAX_LABEL}). Save to Library or download SGF to keep changes.`,
+      label: t('Recovery skipped'),
+      compactLabel: t('Too large'),
+      title: t('Game is too large for recovery auto-save ({max}). Save to Library or download SGF to keep changes.', { max: AUTO_SAVE_MAX_LABEL }),
       tone: 'warning',
       role: 'alert',
       ariaLive: 'assertive',
@@ -84,9 +85,9 @@ export function getSaveStatusDisplay(
 
   return {
     state: 'failed',
-    label: 'Recovery failed',
-    compactLabel: 'Save failed',
-    title: 'Recovery auto-save failed. Save to Library or download SGF to keep changes.',
+    label: t('Recovery failed'),
+    compactLabel: t('Save failed'),
+    title: t('Recovery auto-save failed. Save to Library or download SGF to keep changes.'),
     tone: 'danger',
     role: 'alert',
     ariaLive: 'assertive',

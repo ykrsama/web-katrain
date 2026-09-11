@@ -35,6 +35,7 @@ import {
 } from '../../utils/moveTreeNodeMarkers';
 import { SectionHeader } from './ui';
 import { formatMoveLabel, formatPositionSummary, panelCardBase, panelCardClosed, panelCardOpen, playerToShort } from './ui-utils';
+import { t as moduleT, useT } from '../../i18n';
 import {
   getBranchInfo,
   getCurrentLineMoveNumber,
@@ -60,13 +61,13 @@ const RIGHT_PANEL_SHORTCUT_IDS = [
 type RightPanelShortcutId = (typeof RIGHT_PANEL_SHORTCUT_IDS)[number];
 
 function getNoMoveNodeLabel(node: GameNode): string {
-  if (!node.parent) return 'Root';
-  if (isGameNodeStep(node)) return `Setup ${getCurrentLineMoveNumber(node)}`;
-  return 'Node';
+  if (!node.parent) return moduleT('Root');
+  if (isGameNodeStep(node)) return moduleT('Setup {n}', { n: getCurrentLineMoveNumber(node) });
+  return moduleT('Node');
 }
 
 function getNodeMoveNumberLabel(node: GameNode): string {
-  if (!node.parent) return 'Root';
+  if (!node.parent) return moduleT('Root');
   if (isGameNodeStep(node)) return String(getCurrentLineMoveNumber(node));
   return '-';
 }
@@ -199,6 +200,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   onToggleShapeCoach,
   noteFocusRequest = 0,
 }) => {
+  const t = useT();
   const showTree = !isMobile || activeMobileTab === 'tree';
   const showAnalysis = !isMobile || activeMobileTab === 'info';
   const showNotes = !isMobile || activeMobileTab === 'info';
@@ -210,7 +212,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
   const guardInsertMode = (action: () => void) => {
     if (isInsertMode) {
-      toast('Finish inserting before navigating.', 'error');
+      toast(t('Finish inserting before navigating.'), 'error');
       return;
     }
     action();
@@ -378,13 +380,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   }, [notesListOpen]);
 
   const treeViewControls = (
-    <div className="mobile-tree-view-controls flex items-center gap-2" role="group" aria-label="Game tree view">
+    <div className="mobile-tree-view-controls flex items-center gap-2" role="group" aria-label={t('Game tree view')}>
       <button
         type="button"
         className={treeViewTabClass(treeView === 'tree')}
         onClick={() => setTreeView('tree')}
-        title="Tree view"
-        aria-label="Tree view"
+        title={t('Tree view')}
+        aria-label={t('Tree view')}
         aria-pressed={treeView === 'tree'}
       >
         <FaSitemap size={12} />
@@ -393,8 +395,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
         type="button"
         className={treeViewTabClass(treeView === 'list')}
         onClick={() => setTreeView('list')}
-        title="List view"
-        aria-label="List view"
+        title={t('List view')}
+        aria-label={t('List view')}
         aria-pressed={treeView === 'list'}
       >
         <FaListUl size={12} />
@@ -403,7 +405,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   );
   const gameInfoSection = renderSection({
     show: showGameInfo,
-    title: 'Game Info',
+    title: t('Game Info'),
     icon: <FaInfoCircle size={12} />,
     open: modePanels.infoOpen,
     onToggle: () => updatePanels((current) => ({ infoOpen: !current.infoOpen })),
@@ -418,8 +420,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       <button
         type="button"
         className="panel-icon-button"
-        title={withShortcut('To start', 'nav-start')}
-        aria-label={withShortcut('To start', 'nav-start')}
+        title={withShortcut(t('To start'), 'nav-start')}
+        aria-label={withShortcut(t('To start'), 'nav-start')}
         onClick={() => guardInsertMode(navigateStart)}
         disabled={isInsertMode || !currentNode.parent}
       >
@@ -428,8 +430,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
       <button
         type="button"
         className="panel-icon-button"
-        title={withShortcut('To end', 'nav-end')}
-        aria-label={withShortcut('To end', 'nav-end')}
+        title={withShortcut(t('To end'), 'nav-end')}
+        aria-label={withShortcut(t('To end'), 'nav-end')}
         onClick={() => guardInsertMode(navigateEnd)}
         disabled={isInsertMode || currentNode.children.length === 0}
       >
@@ -497,15 +499,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               type="button"
               className="mobile-panel-back desktop-shell:hidden h-11 min-h-11 min-w-11 px-3 flex items-center gap-2 rounded-md hover:bg-[var(--ui-surface-2)] text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
               onClick={onClose}
-              title="Back to board"
+              title={t('Back to board')}
             >
               <FaChevronLeft size={12} />
-              <span className="mobile-panel-back-label text-sm font-medium">Board</span>
+              <span className="mobile-panel-back-label text-sm font-medium">{t('Board')}</span>
             </button>
           )}
           {isMobile ? (
             <div className="mobile-panel-title flex-1 text-sm font-semibold text-[var(--ui-text)]">
-              {activeMobileTab === 'tree' ? 'Game Tree' : 'Review'}
+              {activeMobileTab === 'tree' ? t('Game Tree') : t('Review')}
             </div>
           ) : (
             <div className="panel-tab-strip flex-1">
@@ -513,13 +515,13 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                 className={modeTabClass(mode === 'play')}
                 onClick={() => setMode('play')}
               >
-                Play
+                {t('Play')}
               </button>
               <button type="button"
                 className={modeTabClass(mode === 'analyze')}
                 onClick={() => setMode('analyze')}
               >
-                Review
+                {t('Review')}
               </button>
             </div>
           )}
@@ -550,7 +552,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             {/* Game Tree */}
             {renderSection({
               show: showTree,
-              title: 'Game Tree',
+              title: t('Game Tree'),
               icon: <FaSitemap size={12} />,
               open: isMobile || modePanels.treeOpen,
               onToggle: () => updatePanels((current) => ({ treeOpen: !current.treeOpen })),
@@ -567,7 +569,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <button
                       type="button"
                       className={branchToolbarActionClass}
-                      title={withShortcut('Previous branch', 'branch-prev')}
+                      title={withShortcut(t('Previous branch'), 'branch-prev')}
                       onClick={() => guardInsertMode(() => switchBranch(-1))}
                       disabled={isInsertMode || !branchInfo.hasBranches}
                     >
@@ -576,7 +578,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <button
                       type="button"
                       className={branchToolbarActionClass}
-                      title={withShortcut('Next branch', 'branch-next')}
+                      title={withShortcut(t('Next branch'), 'branch-next')}
                       onClick={() => guardInsertMode(() => switchBranch(1))}
                       disabled={isInsertMode || !branchInfo.hasBranches}
                     >
@@ -594,7 +596,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                             onKeyDown={handleBranchIndexKeyDown}
                             onBlur={handleBranchIndexBlur}
                             onFocus={(event) => event.currentTarget.select()}
-                            aria-label="Branch number"
+                            aria-label={t('Branch number')}
                             inputMode="numeric"
                             min={1}
                             max={branchInfo.totalBranches}
@@ -615,12 +617,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                           className="min-w-[4.75rem] rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-left text-[0.625rem] leading-none text-[var(--ui-text-muted)] hover:border-[var(--ui-border-strong)] hover:text-[var(--ui-text)] disabled:cursor-not-allowed disabled:opacity-50"
                           title={
                             branchInfo.isAtFork
-                              ? 'Set branch number'
-                              : `Set branch number, ${branchInfo.depthFromBranchRoot} move${branchInfo.depthFromBranchRoot === 1 ? '' : 's'} into this variation`
+                              ? t('Set branch number')
+                              : t('Set branch number, {depth} {unit} into this variation', {
+                                  depth: branchInfo.depthFromBranchRoot,
+                                  unit: t(branchInfo.depthFromBranchRoot === 1 ? 'move' : 'moves'),
+                                })
                           }
                           onClick={() => {
                             if (isInsertMode) {
-                              toast('Finish inserting before navigating.', 'error');
+                              toast(t('Finish inserting before navigating.'), 'error');
                               return;
                             }
                             setBranchIndexDraft(String(branchInfo.currentIndex));
@@ -628,7 +633,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                           }}
                           disabled={isInsertMode}
                         >
-                          <span className="uppercase tracking-wide">Branch</span>{' '}
+                          <span className="uppercase tracking-wide">{t('Branch')}</span>{' '}
                           <span className="font-mono text-[var(--ui-text)]">
                             {branchInfo.currentIndex}/{branchInfo.totalBranches}
                           </span>
@@ -645,7 +650,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <button
                       type="button"
                       className={branchToolbarActionClass}
-                      title={withShortcut('Back to branch point', 'undo-branch-point')}
+                      title={withShortcut(t('Back to branch point'), 'undo-branch-point')}
                       onClick={() => guardInsertMode(undoToBranchPoint)}
                       disabled={isInsertMode || !branchInfo.hasBranches}
                     >
@@ -654,7 +659,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <button
                       type="button"
                       className={branchToolbarActionClass}
-                      title={withShortcut('Back to main branch', 'undo-main-branch')}
+                      title={withShortcut(t('Back to main branch'), 'undo-main-branch')}
                       onClick={() => guardInsertMode(undoToMainBranch)}
                       disabled={isInsertMode || !branchInfo.hasBranches}
                     >
@@ -664,7 +669,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     <button
                       type="button"
                       className={promoteBranchActionClass}
-                      title={withShortcut('Make main branch', 'make-main-branch')}
+                      title={withShortcut(t('Make main branch'), 'make-main-branch')}
                       onClick={() => guardInsertMode(makeCurrentNodeMainBranch)}
                       disabled={isInsertMode || !branchInfo.hasBranches || branchInfo.currentIndex <= 1}
                     >
@@ -727,7 +732,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 })
                               }
                               disabled={isInsertMode}
-                              title={isInsertMode ? 'Finish inserting before navigating.' : 'Jump to move'}
+                              title={isInsertMode ? t('Finish inserting before navigating.') : t('Jump to move')}
                             >
                               {move ? (
                                 <>
@@ -747,11 +752,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 </>
                               ) : (
                                 <span className="text-xs font-medium">
-                                  {!node.parent ? 'Initial position' : label}
+                                  {!node.parent ? t('Initial position') : label}
                                 </span>
                               )}
                               {hasNote && (
-                                <span className="ml-auto text-[0.5625rem] uppercase tracking-wide text-[var(--ui-warning)]">note</span>
+                                <span className="ml-auto text-[0.5625rem] uppercase tracking-wide text-[var(--ui-warning)]">{t('note')}</span>
                               )}
                             </button>
                           );
@@ -760,15 +765,15 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                           <div className="move-tree-empty-state move-tree-list-split-full" data-move-tree-empty-state="true">
                             <div className="move-tree-empty-state-content">
                               <FaSitemap size={22} aria-hidden="true" />
-                              <div className="move-tree-empty-state-title">No moves yet</div>
-                              <p>Play on the board to start the game tree.</p>
+                              <div className="move-tree-empty-state-title">{t('No moves yet')}</div>
+                              <p>{t('Play on the board to start the game tree.')}</p>
                               {isMobile && (
                                 <button
                                   type="button"
                                   className="move-tree-empty-state-action"
                                   onClick={onClose}
                                 >
-                                  Play first move
+                                  {t('Play first move')}
                                 </button>
                               )}
                             </div>
@@ -784,7 +789,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             {/* Analysis */}
             {renderSection({
               show: showAnalysis && showAnalysisSection,
-              title: 'Analysis',
+              title: t('Analysis'),
               icon: <FaChartLine size={12} />,
               open: modePanels.analysisOpen,
               onToggle: () => updatePanels((current) => ({ analysisOpen: !current.analysisOpen })),
@@ -828,7 +833,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             {/* Candidates */}
             {renderSection({
               show: showAnalysis && showAnalysisSection,
-              title: 'Candidates',
+              title: t('Candidates'),
               icon: <FaListOl size={12} />,
               open: modePanels.candidatesOpen,
               onToggle: () => updatePanels((current) => ({ candidatesOpen: !current.candidatesOpen })),
@@ -840,7 +845,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             {/* Comment / Notes */}
             {renderSection({
               show: showNotes,
-              title: 'Comment',
+              title: t('Comment'),
               icon: <FaCommentDots size={12} />,
               open: modePanels.notesOpen,
               onToggle: () => updatePanels((current) => ({ notesOpen: !current.notesOpen })),
@@ -870,9 +875,9 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                           type="button"
                           className={noteToggleClass(shapeCoachEnabled)}
                           onClick={onToggleShapeCoach}
-                          title={shapeCoachEnabled ? 'Hide shape coach' : 'Show shape coach'}
+                          title={shapeCoachEnabled ? t('Hide shape coach') : t('Show shape coach')}
                           aria-pressed={shapeCoachEnabled}
-                          aria-label={shapeCoachEnabled ? 'Hide shape coach' : 'Show shape coach'}
+                          aria-label={shapeCoachEnabled ? t('Hide shape coach') : t('Show shape coach')}
                           data-panel-shape-coach-toggle="true"
                         >
                           <FaStar size={12} />
@@ -882,7 +887,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         type="button"
                         className={noteToggleClass(notesListOpen)}
                         onClick={() => setNotesListOpen((prev) => !prev)}
-                        title="Notes list"
+                        title={t('Notes list')}
                         aria-pressed={notesListOpen}
                       >
                         <FaListUl size={12} />
@@ -891,7 +896,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         type="button"
                         className={noteToggleClass(modePanels.notes.info)}
                         onClick={() => updatePanels((current) => ({ notes: { ...current.notes, info: !current.notes.info } }))}
-                        title="Info"
+                        title={t('Info')}
                         aria-pressed={modePanels.notes.info}
                       >
                         <FaInfoCircle size={12} />
@@ -902,7 +907,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         onClick={() =>
                           updatePanels((current) => ({ notes: { ...current.notes, infoDetails: !current.notes.infoDetails } }))
                         }
-                        title="Details"
+                        title={t('Details')}
                         aria-pressed={modePanels.notes.infoDetails}
                       >
                         <FaAlignLeft size={12} />
@@ -911,7 +916,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         type="button"
                         className={noteToggleClass(modePanels.notes.notes)}
                         onClick={() => updatePanels((current) => ({ notes: { ...current.notes, notes: !current.notes.notes } }))}
-                        title="Notes"
+                        title={t('Notes')}
                         aria-pressed={modePanels.notes.notes}
                       >
                         <FaStickyNote size={12} />
@@ -926,7 +931,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                   {notesListOpen && (
                     <div className="border-b border-[var(--ui-border)] max-h-40 overflow-y-auto">
                       {notesNodes.length === 0 ? (
-                        <div className="px-3 py-2 text-xs ui-text-faint">No notes yet.</div>
+                        <div className="px-3 py-2 text-xs ui-text-faint">{t('No notes yet.')}</div>
                       ) : (
                         notesNodes.map(({ node, label, snippet }) => {
                           const isCurrent = node.id === currentNode.id;
@@ -946,7 +951,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 })
                               }
                               disabled={isInsertMode}
-                              title={isInsertMode ? 'Finish inserting before navigating.' : 'Jump to noted move'}
+                              title={isInsertMode ? t('Finish inserting before navigating.') : t('Jump to noted move')}
                             >
                               <div className="flex items-center gap-2">
                                 <span className="font-mono ui-text-faint">{label}</span>

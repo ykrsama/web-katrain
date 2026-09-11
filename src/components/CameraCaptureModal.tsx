@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaCamera, FaTimes } from 'react-icons/fa';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 
@@ -20,6 +21,7 @@ const stopCameraStream = (stream: MediaStream | null) => {
 const makeCameraPhotoFileName = () => `board-photo-${Date.now()}.jpg`;
 
 export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({ onCapture, onClose }) => {
+  const t = useT();
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const closedRef = React.useRef(false);
@@ -123,13 +125,13 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({ onCaptur
         <div className="ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-3 py-2">
           <h3 id="camera-capture-title" className="flex items-center gap-2 text-base font-semibold text-[var(--ui-text)]">
             <FaCamera aria-hidden="true" />
-            Camera
+            {t('Camera')}
           </h3>
           <button
             type="button"
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
             onClick={handleClose}
-            aria-label="Close camera"
+            aria-label={t('Close camera')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -142,7 +144,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({ onCaptur
               role="alert"
               data-camera-capture-error="true"
             >
-              {error}
+              {t(error)}
             </div>
           ) : (
             <video
@@ -164,17 +166,17 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({ onCaptur
             className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
             onClick={handleClose}
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
             className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-[var(--ui-accent-contrast)] disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleCapture}
             disabled={!canCapture}
-            aria-label="Capture board photo"
+            aria-label={t('Capture board photo')}
             data-camera-capture-shutter="true"
           >
-            {capturing ? 'Capturing...' : 'Capture'}
+            {capturing ? t('Capturing...') : t('Capture')}
           </button>
         </div>
       </div>

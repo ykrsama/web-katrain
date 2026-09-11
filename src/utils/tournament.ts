@@ -1,5 +1,6 @@
 import type { BoardSize, Player } from '../types';
 import { readLocalStorage, removeLocalStorage, writeLocalStorage } from './storage';
+import { t } from '../i18n';
 
 export type GameResult = 'win' | 'loss';
 
@@ -30,8 +31,8 @@ const STORAGE_KEY = 'web-katrain:tournament:v1';
  */
 export const formatKyuRank = (kyu: number): string => {
   const rounded = Math.round(kyu);
-  if (rounded >= 1) return `${rounded}k`;
-  return `${1 - rounded}d`;
+  if (rounded >= 1) return t('{n}k', { n: rounded });
+  return t('{n}d', { n: 1 - rounded });
 };
 
 /** Stronger opponent = lower kyu number. */

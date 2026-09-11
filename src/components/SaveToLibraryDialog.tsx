@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FaSave, FaTimes } from 'react-icons/fa';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import type { LibraryFolderOption } from '../utils/library';
@@ -26,6 +27,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
   onSave,
   returnFocus,
 }) => {
+  const t = useT();
   const [name, setName] = useState(initialName);
   const [folderId, setFolderId] = useState<string | null>(initialFolderId);
   const [saving, setSaving] = useState(false);
@@ -65,14 +67,14 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
       >
         <div className="ui-bar border-b border-[var(--ui-border)] px-4 py-3 flex items-center justify-between">
           <h2 id="save-to-library-title" className="text-base font-semibold text-[var(--ui-text)]">
-            Save Copy to Library
+            {t('Save Copy to Library')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
             className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] disabled:cursor-wait disabled:opacity-50"
-            aria-label="Close save to Library"
+            aria-label={t('Close save to Library')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -80,7 +82,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
         <div className="p-4 space-y-3">
           <div className="block space-y-1">
             <label htmlFor={NAME_INPUT_ID} className="block text-sm font-medium text-[var(--ui-text-muted)]">
-              Name
+              {t('Name')}
             </label>
             <input
               id={NAME_INPUT_ID}
@@ -93,13 +95,13 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
                 if (event.key === 'Enter') void submit();
                 if (event.key === 'Escape') onClose();
               }}
-              placeholder="Game name"
+              placeholder={t('Game name')}
               className="min-h-11 w-full ui-input border rounded px-3 py-2 text-sm text-[var(--ui-text)] focus:border-[var(--ui-accent)] outline-none disabled:cursor-wait disabled:opacity-60 desktop-shell:min-h-0"
             />
           </div>
           <div className="block space-y-1">
             <label htmlFor={FOLDER_SELECT_ID} className="block text-sm font-medium text-[var(--ui-text-muted)]">
-              Save to folder
+              {t('Save to folder')}
             </label>
             <select
               id={FOLDER_SELECT_ID}
@@ -112,7 +114,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
               }}
               className="min-h-11 w-full ui-input border rounded px-3 py-2 text-sm text-[var(--ui-text)] focus:border-[var(--ui-accent)] outline-none disabled:cursor-wait disabled:opacity-60 desktop-shell:min-h-0"
             >
-              <option value="">Root</option>
+              <option value="">{t('Root')}</option>
               {folderOptions.map((option) => (
                 <option key={option.id} value={option.id}>
                   {`${'-- '.repeat(option.depth)}${option.name}`}
@@ -131,7 +133,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
             onClick={onClose}
             disabled={saving}
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
@@ -141,7 +143,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
           >
             <span className="inline-flex items-center gap-2">
               <FaSave aria-hidden="true" />
-              {saving ? 'Saving...' : 'Save copy'}
+              {saving ? t('Saving...') : t('Save copy')}
             </span>
           </button>
         </div>

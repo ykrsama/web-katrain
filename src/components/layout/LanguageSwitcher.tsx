@@ -3,6 +3,7 @@ import { FaCheck, FaChevronDown, FaGlobe } from 'react-icons/fa';
 import type { AppLocaleId } from '../../types';
 import { APP_LOCALE_OPTIONS, getAppLocaleOption, getAppLocaleShortLabel } from '../../utils/locales';
 import { getNextLanguageOptionIndex, isLanguageSwitcherNavigationKey } from '../../utils/languageSwitcherNavigation';
+import { useT } from '../../i18n';
 
 interface LanguageSwitcherProps {
   appLocale: AppLocaleId;
@@ -11,6 +12,7 @@ interface LanguageSwitcherProps {
 }
 
 export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ appLocale, onLocaleChange, className }) => {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [activeOptionIndex, setActiveOptionIndex] = React.useState(() =>
     Math.max(0, APP_LOCALE_OPTIONS.findIndex((locale) => locale.value === appLocale))
@@ -105,8 +107,12 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ appLocale, o
         type="button"
         className="h-8 min-w-[88px] px-2 rounded-lg bg-[var(--ui-surface)] border border-[var(--ui-border)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors whitespace-nowrap"
         onClick={() => setOpen((value) => !value)}
-        title={`Document language: ${activeLocale.label}${activeLocale.label === activeLocale.nativeLabel ? '' : ` (${activeLocale.nativeLabel})`}`}
-        aria-label={`Change document language: ${activeLocale.label}`}
+        title={t('Document language: {name}', {
+          name: activeLocale.label === activeLocale.nativeLabel
+            ? activeLocale.label
+            : `${activeLocale.label} (${activeLocale.nativeLabel})`,
+        })}
+        aria-label={t('Change document language: {label}', { label: activeLocale.label })}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -123,13 +129,13 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ appLocale, o
         <div
           id={menuId}
           role="listbox"
-          aria-label="Select document language metadata"
+          aria-label={t('Select document language metadata')}
           aria-activedescendant={activeOptionId}
           className="absolute right-0 top-full mt-2 w-[224px] ui-panel border rounded-lg shadow-xl overflow-hidden z-50"
           data-language-switcher-menu="true"
         >
           <div className="px-3 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider bg-[var(--ui-surface-2)] border-b border-[var(--ui-border)]">
-            Document language metadata
+            {t('Document language metadata')}
           </div>
           {APP_LOCALE_OPTIONS.map((locale, index) => {
             const active = locale.value === activeLocale.value;

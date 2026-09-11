@@ -18,6 +18,7 @@ import {
 } from '../utils/visitPresets';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
+import { useT } from '../i18n';
 
 interface GameAnalysisModalProps {
   onClose: () => void;
@@ -34,6 +35,7 @@ const DEPTH_PRESETS_LABEL_ID = 'game-analysis-depth-presets-label';
 export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
   const {
     currentNode,
     isGameAnalysisRunning,
@@ -96,13 +98,13 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
         aria-labelledby="game-analysis-title"
       >
         <div className="game-analysis-header flex items-center justify-between p-4 border-b border-[var(--ui-border)] ui-bar">
-          <h2 id="game-analysis-title" className="text-lg font-semibold text-[var(--ui-text)]">Re-analyze Game (KaTrain)</h2>
+          <h2 id="game-analysis-title" className="text-lg font-semibold text-[var(--ui-text)]">{t('Re-analyze Game (KaTrain)')}</h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            title="Close"
-            aria-label="Close game analysis"
+            title={t('Close')}
+            aria-label={t('Close game analysis')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -112,7 +114,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
           <div className="game-analysis-column space-y-4">
           <div className={['game-analysis-primary grid gap-3', isRunning ? 'grid-cols-2' : 'grid-cols-1'].join(' ')}>
             <div className="space-y-1">
-              <label htmlFor={MAX_VISITS_ID} className="text-[var(--ui-text-muted)] block text-sm">Max Visits</label>
+              <label htmlFor={MAX_VISITS_ID} className="text-[var(--ui-text-muted)] block text-sm">{t('Max visits')}</label>
               <input
                 id={MAX_VISITS_ID}
                 type="number"
@@ -122,12 +124,12 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
                 onChange={(e) => setVisits(clampAnalysisVisits(clampInt(e.target.value, defaultMaxVisits)))}
                 className="w-full ui-input rounded p-2 border focus:border-[var(--ui-accent)] outline-none text-sm font-mono"
               />
-              <p className="text-xs ui-text-faint">Defaults to engine Visits ({defaultMaxVisits}).</p>
+              <p className="text-xs ui-text-faint">{t('Defaults to engine visits ({n}).', { n: defaultMaxVisits })}</p>
             </div>
 
             {isRunning && (
               <div className="space-y-1" data-game-analysis-progress="true">
-                <div id={STATUS_LABEL_ID} className="text-[var(--ui-text-muted)] block text-sm">Progress</div>
+                <div id={STATUS_LABEL_ID} className="text-[var(--ui-text-muted)] block text-sm">{t('Progress')}</div>
                 <div
                   className="w-full ui-surface rounded p-2 border border-[var(--ui-border)] text-sm font-mono"
                   role="status"
@@ -141,7 +143,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
                     className="flex-1 px-3 py-2 rounded bg-[var(--ui-surface-2)] hover:brightness-110 text-sm font-semibold"
                     onClick={() => stopGameAnalysis()}
                   >
-                    Stop
+                    {t('Stop')}
                   </button>
                 </div>
               </div>
@@ -155,7 +157,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
             data-game-analysis-visit-presets="true"
           >
             <div className="flex items-center justify-between gap-2">
-              <div id={DEPTH_PRESETS_LABEL_ID} className="text-[var(--ui-text-muted)] text-sm">Analysis depth presets</div>
+              <div id={DEPTH_PRESETS_LABEL_ID} className="text-[var(--ui-text-muted)] text-sm">{t('Analysis depth presets')}</div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {visitPresets.map((preset) => {
@@ -175,7 +177,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
                   >
                     <span className="block font-mono text-sm">{preset}</span>
                     <span className="block text-[0.625rem] font-semibold uppercase tracking-wide">
-                      {visitPresetLabel(preset, defaultMaxVisits)}
+                      {t(visitPresetLabel(preset, defaultMaxVisits))}
                     </span>
                   </button>
                 );
@@ -189,8 +191,8 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
                 step={0.01}
                 value={visitCountToSliderValue(visits)}
                 className="analysis-command-bar__depth-slider"
-                aria-label="Game analysis depth slider"
-                aria-valuetext={`${visits} visits`}
+                aria-label={t('Game analysis depth slider')}
+                aria-valuetext={t('{n} visits', { n: visits })}
                 data-game-analysis-depth-slider="true"
                 style={{ '--analysis-depth-fill': `${visitSliderFillPercent(visits)}%` } as React.CSSProperties}
                 onChange={(event) => setVisits(sliderValueToVisitCount(Number.parseFloat(event.currentTarget.value)))}
@@ -210,7 +212,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
               htmlFor={LIMIT_MOVES_ID}
               className="flex min-h-11 cursor-pointer items-center justify-between text-[var(--ui-text-muted)] desktop-shell:min-h-0"
             >
-              <span>Limit to moves</span>
+              <span>{t('Limit to moves')}</span>
               <input
                 id={LIMIT_MOVES_ID}
                 type="checkbox"
@@ -222,7 +224,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
 
             <div className={['grid grid-cols-2 gap-3', useMoveRange ? '' : 'opacity-40'].join(' ')}>
               <div className="space-y-1">
-                <label htmlFor={START_MOVE_ID} className="text-[var(--ui-text-muted)] block text-sm">From move</label>
+                <label htmlFor={START_MOVE_ID} className="text-[var(--ui-text-muted)] block text-sm">{t('From move')}</label>
                 <input
                   id={START_MOVE_ID}
                   type="number"
@@ -235,7 +237,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
                 />
               </div>
               <div className="space-y-1">
-                <label htmlFor={END_MOVE_ID} className="text-[var(--ui-text-muted)] block text-sm">To move</label>
+                <label htmlFor={END_MOVE_ID} className="text-[var(--ui-text-muted)] block text-sm">{t('To move')}</label>
                 <input
                   id={END_MOVE_ID}
                   type="number"
@@ -249,7 +251,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
               </div>
             </div>
             <p className="text-xs ui-text-faint">
-              Matches KaTrain: moves are 0-indexed (0 = first move).
+              {t('Matches KaTrain: moves are 0-indexed (0 = first move).')}
             </p>
           </div>
 
@@ -258,7 +260,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
               htmlFor={MISTAKES_ONLY_ID}
               className="flex min-h-11 cursor-pointer items-center justify-between text-[var(--ui-text-muted)] desktop-shell:min-h-0"
             >
-              <span>Re-analyze mistakes only</span>
+              <span>{t('Re-analyze mistakes only')}</span>
               <input
                 id={MISTAKES_ONLY_ID}
                 type="checkbox"
@@ -268,7 +270,7 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
               />
             </label>
             <p className="text-xs ui-text-faint mt-2">
-              Uses KaTrain’s default mistake threshold (from trainer thresholds). Requires existing analysis to detect mistakes.
+              {t('Uses KaTrain’s default mistake threshold (from trainer thresholds). Requires existing analysis to detect mistakes.')}
             </p>
           </div>
           </div>
@@ -280,14 +282,14 @@ export const GameAnalysisModal: React.FC<GameAnalysisModalProps> = ({ onClose })
             onClick={onClose}
             className="px-4 py-2 bg-[var(--ui-surface-2)] hover:brightness-110 text-[var(--ui-text)] border border-[var(--ui-border)] rounded font-medium"
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
             onClick={onStart}
             className="px-4 py-2 ui-accent-bg hover:brightness-110 rounded font-medium"
           >
-            Analyze
+            {t('Analyze')}
           </button>
         </div>
       </div>

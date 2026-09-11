@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 /**
  * What to tell a reader when downloading model weights into the browser fails.
  *
@@ -15,10 +17,11 @@
  * The attempt is still worth making rather than hiding the button: if the host
  * ever sends CORS headers, it starts working with no change here.
  */
-export const MODEL_CORS_DOWNLOAD_HINT =
-  'Download blocked by the browser (CORS). Use "Copy URL" to fetch it yourself, then "Upload Weights".';
+export const MODEL_CORS_DOWNLOAD_HINT = t(
+  'Download blocked by the browser (CORS). Use "Copy URL" to fetch it yourself, then "Upload Weights".'
+);
 
 export function describeModelDownloadError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error ?? 'Download failed.');
+  const message = error instanceof Error ? error.message : String(error ?? t('Download failed.'));
   return message.toLowerCase().includes('failed to fetch') ? MODEL_CORS_DOWNLOAD_HINT : message;
 }

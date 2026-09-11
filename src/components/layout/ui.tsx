@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FaChevronRight } from 'react-icons/fa';
 import { mediaQueryMatches } from '../../utils/mediaQuery';
+import { useT } from '../../i18n';
 
 // Parse title like "Back (←)" into { label: "Back", shortcut: "←" }
 function parseTitle(title: string): { label: string; shortcut?: string } {
@@ -126,8 +127,10 @@ export const TogglePill: React.FC<{
   disabled?: boolean;
   onToggle: () => void;
 }> = ({ label, shortcut, active, disabled, onToggle }) => {
+  const t = useT();
   const [showTooltip, setShowTooltip] = useState(false);
   const isCoarsePointer = mediaQueryMatches('(pointer: coarse)');
+  const showHideLabel = `${active ? t('Hide') : t('Show')} ${label}`;
 
   return (
     <div className="relative">
@@ -139,7 +142,7 @@ export const TogglePill: React.FC<{
         onMouseLeave={() => setShowTooltip(false)}
         onFocus={() => setShowTooltip(true)}
         onBlur={() => setShowTooltip(false)}
-        aria-label={`${active ? 'Hide' : 'Show'} ${label}`}
+        aria-label={showHideLabel}
         aria-pressed={active}
         className={[
           'px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all border touch-manipulation',
@@ -159,7 +162,7 @@ export const TogglePill: React.FC<{
         <span className="whitespace-nowrap">{shortcut ? `${shortcut} ${label}` : label}</span>
       </button>
       <Tooltip
-        label={`${active ? 'Hide' : 'Show'} ${label}`}
+        label={showHideLabel}
         shortcut={shortcut}
         visible={showTooltip && !disabled && !isCoarsePointer}
       />
@@ -186,6 +189,7 @@ export const EngineStatusBadge: React.FC<{
   className,
   maxWidthClassName,
 }) => {
+  const t = useT();
   if (!label) return null;
   const toneClasses = tone === 'error'
     ? 'bg-[var(--ui-danger-soft)] border-[var(--ui-danger)] text-[var(--ui-danger)]'
@@ -198,14 +202,14 @@ export const EngineStatusBadge: React.FC<{
     <div
       className={['flex', baseClasses, className ?? ''].join(' ')}
       title={title}
-      aria-label={`Engine status: ${label}`}
+      aria-label={t('Engine status: {label}', { label })}
       data-engine-status-badge="true"
     >
       <span className={['inline-block h-2 w-2 rounded-full', dotClass].join(' ')} aria-hidden="true" />
       <span className={['truncate', maxWidthClassName ?? ''].join(' ')}>
         {label}
       </span>
-      {showErrorTag && <span className="text-[0.625rem] uppercase tracking-wide font-semibold">error</span>}
+      {showErrorTag && <span className="text-[0.625rem] uppercase tracking-wide font-semibold">{t('error')}</span>}
     </div>
   );
 };
@@ -216,8 +220,10 @@ export const PanelHeaderButton: React.FC<{
   active: boolean;
   onClick: () => void;
 }> = ({ label, colorClass, active, onClick }) => {
+  const t = useT();
   const [showTooltip, setShowTooltip] = useState(false);
   const isCoarsePointer = mediaQueryMatches('(pointer: coarse)');
+  const showHideLabel = `${active ? t('Hide') : t('Show')} ${label}`;
 
   return (
     <div className="relative">
@@ -228,7 +234,7 @@ export const PanelHeaderButton: React.FC<{
         onMouseLeave={() => setShowTooltip(false)}
         onFocus={() => setShowTooltip(true)}
         onBlur={() => setShowTooltip(false)}
-        aria-label={`${active ? 'Hide' : 'Show'} ${label}`}
+        aria-label={showHideLabel}
         aria-pressed={active}
         className={[
           'min-h-11 rounded border px-2 py-1 text-xs font-semibold touch-manipulation desktop-shell:min-h-0',
@@ -238,7 +244,7 @@ export const PanelHeaderButton: React.FC<{
         {label}
       </button>
       <Tooltip
-        label={`${active ? 'Hide' : 'Show'} ${label}`}
+        label={showHideLabel}
         visible={showTooltip && !isCoarsePointer}
       />
     </div>

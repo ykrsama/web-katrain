@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaCheck, FaCopy, FaExclamationTriangle, FaRedo, FaTimes } from 'react-icons/fa';
+import { t } from '../i18n';
 import { copyTextToClipboard } from '../utils/clipboard';
 import {
   clearStoredErrorReport,
@@ -80,7 +81,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
         <div className="flex items-start gap-3">
           <FaExclamationTriangle className="mt-0.5 shrink-0 text-[var(--ui-warning)]" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold">Recovered from a previous crash</div>
+            <div className="text-sm font-semibold">{t('Recovered from a previous crash')}</div>
             <div className="mt-1 line-clamp-2 text-xs text-[var(--ui-text-muted)]">{report.message}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button
@@ -89,7 +90,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
                 onClick={() => void this.copyReport(report, 'notice')}
               >
                 {copyState === 'copied' ? <FaCheck aria-hidden="true" /> : <FaCopy aria-hidden="true" />}
-                {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy details'}
+                {copyState === 'copied' ? t('Copied') : copyState === 'failed' ? t('Copy failed') : t('Copy details')}
               </button>
               <button
                 type="button"
@@ -97,7 +98,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
                 onClick={this.dismissPreviousReport}
               >
                 <FaTimes aria-hidden="true" />
-                Dismiss
+                {t('Dismiss')}
               </button>
             </div>
           </div>
@@ -125,12 +126,12 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
                   unexpected error misreads it: nothing is broken and reloading
                   fixes it. */}
               <h1 className="text-lg font-semibold">
-                {staleBuild ? 'Web KaTrain has been updated' : 'Web KaTrain hit an unexpected error'}
+                {staleBuild ? t('Web KaTrain has been updated') : t('Web KaTrain hit an unexpected error')}
               </h1>
               <p className="mt-2 text-sm text-[var(--ui-text-muted)]">
                 {staleBuild
-                  ? 'This tab was open while a new version shipped, so part of the app could no longer load. Reload to pick it up.'
-                  : 'Your browser captured diagnostics so the problem can be inspected without losing the trail.'}
+                  ? t('This tab was open while a new version shipped, so part of the app could no longer load. Reload to pick it up.')
+                  : t('Your browser captured diagnostics so the problem can be inspected without losing the trail.')}
               </p>
             </div>
           </div>
@@ -146,7 +147,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
               onClick={this.reload}
             >
               <FaRedo aria-hidden="true" />
-              Reload app
+              {t('Reload app')}
             </button>
             <button
               type="button"
@@ -154,7 +155,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
               onClick={() => void this.copyReport(report, 'fallback')}
             >
               {copyState === 'copied' ? <FaCheck aria-hidden="true" /> : <FaCopy aria-hidden="true" />}
-              {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy diagnostics'}
+              {copyState === 'copied' ? t('Copied') : copyState === 'failed' ? t('Copy failed') : t('Copy diagnostics')}
             </button>
           </div>
         </section>

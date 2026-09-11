@@ -24,6 +24,7 @@ import { evalColorToCss, getKaTrainEvalColors } from '../../utils/katrainTheme';
 import { ANALYSIS_VISIT_PRESETS, clampAnalysisVisits, visitPresetLabel } from '../../utils/visitPresets';
 import { formatRulesLabel } from '../../utils/gameInfoDisplay';
 import { formatReadableScoreLead, formatWinRateFavorLabel, POINTS_LOST_EXPLANATION } from '../../utils/analysisSummary';
+import { useT } from '../../i18n';
 
 type EngineState = 'ready' | 'running' | 'loading' | 'error';
 
@@ -164,14 +165,18 @@ function evalColorForPointsLost(pl: number, thresholds: readonly number[], theme
   return evalColorToCss(colors[index] ?? colors[colors.length - 1]!);
 }
 
-function evalLegendRows(thresholds: readonly number[], theme: unknown): Array<[string, string, string]> {
-  const t = thresholds.length > 0 ? thresholds : DEFAULT_EVAL_THRESHOLDS;
+function evalLegendRows(
+  thresholds: readonly number[],
+  theme: unknown,
+  tr: (text: string, vars?: Record<string, string | number>) => string,
+): Array<[string, string, string]> {
+  const thresholdList = thresholds.length > 0 ? thresholds : DEFAULT_EVAL_THRESHOLDS;
   const colors = getKaTrainEvalColors(theme);
-  const ranges = [`${t[0]}+`, `${t[1]}-${t[0]}`, `${t[2]}-${t[1]}`, `${t[3]}-${t[2]}`, `${t[4]}-${t[3]}`, `0-${t[4]}`];
+  const ranges = [`${thresholdList[0]}+`, `${thresholdList[1]}-${thresholdList[0]}`, `${thresholdList[2]}-${thresholdList[1]}`, `${thresholdList[3]}-${thresholdList[2]}`, `${thresholdList[4]}-${thresholdList[3]}`, `0-${thresholdList[4]}`];
   return EVAL_CLASS_LABELS.map((label, index) => [
-    label,
+    tr(label),
     evalColorToCss(colors[index] ?? colors[colors.length - 1]!),
-    `${ranges[index]} pt`,
+    tr('{n} pt', { n: ranges[index] }),
   ]);
 }
 
@@ -223,6 +228,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     onSettings, onCommandPalette, onKeyboardHelp, onAbout,
     toast, headerNotification,
   } = props;
+  const t = useT();
   const rulesLabel = formatRulesLabel(rules);
 
   const [sections, setSections] = useState({ info: true, tree: true, analysis: true, candidates: true, notes: true });
@@ -392,9 +398,9 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   // "Fast review" matches the command bar's name for the same operation;
   // avoid exposing MCTS jargon in one surface and not the other.
   const dashboardFastMctsTitle = isGameAnalysisRunning
-    ? `Stop ${gameAnalysisType ?? 'current'} analysis`
-    : 'Run a fast engine review of the current line';
-  const dashboardFastMctsLabel = isGameAnalysisRunning ? 'Stop game analysis' : 'Run fast review';
+    ? t('Stop {game} analysis', { game: t(gameAnalysisType ?? 'current') })
+    : t('Run a fast engine review of the current line');
+  const dashboardFastMctsLabel = isGameAnalysisRunning ? t('Stop game analysis') : t('Run fast review');
 
   const sectionHead = (
     key: keyof typeof sections,
@@ -427,10 +433,11 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     disabled?: boolean
   ) => {
     const on = !!settings[keyName];
-    const overlayActionLabel = on ? `Hide ${DASHBOARD_OVERLAY_NAMES[keyName]}` : `Show ${DASHBOARD_OVERLAY_NAMES[keyName]}`;
+    const overlayName = t(DASHBOARD_OVERLAY_NAMES[keyName]);
+    const overlayActionLabel = on ? t('Hide {overlay}', { overlay: overlayName }) : t('Show {overlay}', { overlay: overlayName });
     const topMovesHiddenByPolicy = keyName === 'analysisShowHints' && disabled;
     const overlayTitle = topMovesHiddenByPolicy
-      ? 'Move heatmap is showing; top move hints are hidden'
+      ? t('Move heatmap is showing; top move hints are hidden')
       : overlayActionLabel;
     // No aria-label: the accessible name is the visible chip text, so voice
     // control can act on the word the user reads, and aria-pressed carries the
@@ -454,16 +461,16 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   const renderStartActions = () => (
     <>
       <button type="button" className="tbtn primary" onClick={() => { dismissHero(); onNewGame(); }}>
-        <Icon name="plus" size={14} /> New game
+        <Icon name="plus" size={14} /> {t('New game')}
       </button>
       <button type="button" className="tbtn" onClick={() => { dismissHero(); onLoadSgf(); }}>
-        <Icon name="folder" size={14} /> Open SGF
+        <Icon name="folder" size={14} /> {t('Open SGF')}
       </button>
       <button type="button" className="tbtn" onClick={() => { dismissHero(); onPasteSgf(); }}>
-        <Icon name="clipboard" size={14} /> Paste SGF / OGS
+        <Icon name="clipboard" size={14} /> {t('Paste SGF / OGS')}
       </button>
       <button type="button" className="tbtn" onClick={() => { dismissHero(); onScanBoard(); }}>
-        <Icon name="camera" size={14} /> From photo
+        <Icon name="camera" size={14} /> {t('From photo')}
       </button>
     </>
   );
@@ -491,14 +498,14 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
         </div>
         <div className="header-divider" />
         <div className="iconcluster" id="wk-file-actions">
-          <button type="button" className="iconbtn" title="New game" aria-label="New game" onClick={onNewGame}><Icon name="plus" /></button>
-          <button type="button" className="iconbtn" title="Open SGF / photo / weights" aria-label="Load SGF, board photo, or model weights" onClick={onLoadSgf}><Icon name="folder" /></button>
-          <button type="button" className="iconbtn" title="Save SGF" aria-label="Save SGF" onClick={onSaveSgf}><Icon name="save" /></button>
+          <button type="button" className="iconbtn" title={t('New game')} aria-label={t('New game')} onClick={onNewGame}><Icon name="plus" /></button>
+          <button type="button" className="iconbtn" title={t('Open SGF / photo / weights')} aria-label={t('Load SGF, board photo, or model weights')} onClick={onLoadSgf}><Icon name="folder" /></button>
+          <button type="button" className="iconbtn" title={t('Save SGF')} aria-label={t('Save SGF')} onClick={onSaveSgf}><Icon name="save" /></button>
           <button
             type="button"
             className={`iconbtn${pop?.id === 'file' ? ' active' : ''}`}
-            title="More file actions"
-            aria-label="More file actions"
+            title={t('More file actions')}
+            aria-label={t('More file actions')}
             aria-haspopup="dialog"
             aria-expanded={pop?.id === 'file'}
             onClick={(e) => openPop('file', e)}
@@ -507,13 +514,13 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           </button>
         </div>
         <div className="iconcluster" id="wk-util-actions">
-          <button type="button" className="iconbtn" title="Command palette" aria-label="Command palette" onClick={onCommandPalette}><Icon name="search" /></button>
-          <button type="button" className="iconbtn" title="Settings" aria-label="Settings" onClick={onSettings}><Icon name="settings" /></button>
+          <button type="button" className="iconbtn" title={t('Command palette')} aria-label={t('Command palette')} onClick={onCommandPalette}><Icon name="search" /></button>
+          <button type="button" className="iconbtn" title={t('Settings')} aria-label={t('Settings')} onClick={onSettings}><Icon name="settings" /></button>
           <button
             type="button"
             className={`iconbtn${pop?.id === 'help' ? ' active' : ''}`}
-            title="Help"
-            aria-label="Help"
+            title={t('Help')}
+            aria-label={t('Help')}
             aria-haspopup="dialog"
             aria-expanded={pop?.id === 'help'}
             onClick={(e) => openPop('help', e)}
@@ -563,7 +570,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           }}
         >
           <span className="dot" />
-          Analyze
+          {t('Analyze')}
         </button>
         <button
           type="button"
@@ -573,7 +580,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           aria-expanded={pop?.id === 'view'}
           onClick={(e) => openPop('view', e)}
         >
-          <Icon name="sliders" size={14} /> <span className="vlabel">View</span>
+          <Icon name="sliders" size={14} /> <span className="vlabel">{t('View')}</span>
         </button>
       </header>
 
@@ -589,7 +596,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             rebuilt a search box and a row per saved game into the DOM on every
             render, one of which displayed the literal text "green". */}
         <aside
-          aria-label="Game library"
+          aria-label={t('Game library')}
           aria-hidden={!libraryOpen}
           inert={!libraryOpen}
           className={`library${libraryPanel ? ' full-library' : ''}${libDrawer ? ' drawer' : ''}${libraryOpen ? ' open' : ''}`}
@@ -602,14 +609,14 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           {gamestripOpen && (
           <div className={`gamestrip${showCompactStartStrip ? ' start-strip' : ''}`}>
             {showCompactStartStrip ? (
-              <div className="compact-start" role="region" aria-label="Get started" data-dashboard-compact-start="true">
-                <span className="compact-start-title">Start</span>
+              <div className="compact-start" role="region" aria-label={t('Get started')} data-dashboard-compact-start="true">
+                <span className="compact-start-title">{t('Start')}</span>
                 <div className="compact-start-actions">{renderStartActions()}</div>
                 <button
                   type="button"
                   className="iconbtn compact-start-close"
-                  title="Dismiss"
-                  aria-label="Dismiss get started"
+                  title={t('Dismiss')}
+                  aria-label={t('Dismiss get started')}
                   onClick={dismissHero}
                 >
                   <Icon name="x" size={13} />
@@ -620,38 +627,38 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 <div className="gs-players">
                   <div className={`gs-player${currentPlayer === 'black' ? ' to-move' : ''}`}>
                     <span className="stone-mini b" />
-                    <span className="nm" title={blackName || 'Black'}>{blackName || 'Black'}</span>
+                    <span className="nm" title={blackName || t('Black')}>{blackName || t('Black')}</span>
                     {blackRank ? <span className="rk">{blackRank}</span> : null}
                     {capturedWhite > 0 ? (
-                      <span className="cap" title={`${capturedWhite} captured`}>
-                        +{capturedWhite}<span className="sr-only"> captured</span>
+                      <span className="cap" title={t('{n} captured', { n: capturedWhite })}>
+                        +{capturedWhite}<span className="sr-only"> {t('captured')}</span>
                       </span>
                     ) : null}
                   </div>
                   <div className={`gs-player${currentPlayer === 'white' ? ' to-move' : ''}`}>
                     <span className="stone-mini w" />
-                    <span className="nm" title={whiteName || 'White'}>{whiteName || 'White'}</span>
+                    <span className="nm" title={whiteName || t('White')}>{whiteName || t('White')}</span>
                     {whiteRank ? <span className="rk">{whiteRank}</span> : null}
                     {capturedBlack > 0 ? (
-                      <span className="cap" title={`${capturedBlack} captured`}>
-                        +{capturedBlack}<span className="sr-only"> captured</span>
+                      <span className="cap" title={t('{n} captured', { n: capturedBlack })}>
+                        +{capturedBlack}<span className="sr-only"> {t('captured')}</span>
                       </span>
                     ) : null}
                   </div>
                 </div>
                 <span className="gs-sep" />
                 <span className="gs-fact gs-fact-primary">{boardSize}×{boardSize}</span>
-                <span className="gs-fact">komi <b>{komi}</b></span>
+                <span className="gs-fact">{t('komi')} <b>{komi}</b></span>
                 {handicap > 0 ? <span className="gs-fact">H{handicap}</span> : null}
-                <span className="gs-fact">{rulesLabel}</span>
+                <span className="gs-fact">{t(rulesLabel)}</span>
                 {result ? <span className="gs-result">{result}</span> : null}
                 <span className="gs-sep gs-sep-file" />
                 <div className="gs-file">
                   <Icon name="book" size={13} />
-                  <span className="fn" title={loadedFileName || 'Untitled'}>{loadedFileName || 'Untitled'}</span>
+                  <span className="fn" title={loadedFileName || t('Untitled')}>{loadedFileName || t('Untitled')}</span>
                 </div>
                 <span className={`gs-save ${dirty ? 'dirty' : 'saved'}`}>
-                  <Icon name={dirty ? 'alert' : 'check'} size={11} />{dirty ? 'Unsaved' : 'Saved'}
+                  <Icon name={dirty ? 'alert' : 'check'} size={11} />{dirty ? t('Unsaved') : t('Saved')}
                 </span>
                 {/* The clock belongs with the game facts; it renders nothing
                     when no time control is configured. */}
@@ -665,65 +672,65 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <button
               type="button"
               className={`edge-toggle left${libraryOpen ? ' open' : ''}`}
-              title={libraryOpen ? 'Hide library' : 'Show library'}
-              aria-label={libraryOpen ? 'Hide library' : 'Show library'}
+              title={libraryOpen ? t('Hide library') : t('Show library')}
+              aria-label={libraryOpen ? t('Hide library') : t('Show library')}
               aria-pressed={libraryOpen}
               onClick={toggleLibrary}
             >
               <Icon name={libraryOpen ? 'chevL' : 'chevR'} size={13} />
-              {!libraryOpen && <span className="edge-toggle-label">Library</span>}
+              {!libraryOpen && <span className="edge-toggle-label">{t('Library')}</span>}
             </button>
             <button
               type="button"
               className={`edge-toggle top${gamestripOpen ? ' open' : ''}`}
-              title={gamestripOpen ? 'Hide game info' : 'Show game info'}
-              aria-label={gamestripOpen ? 'Hide game info' : 'Show game info'}
+              title={gamestripOpen ? t('Hide game info') : t('Show game info')}
+              aria-label={gamestripOpen ? t('Hide game info') : t('Show game info')}
               aria-pressed={gamestripOpen}
               onClick={() => setGamestripOpen((v) => !v)}
             >
               <Icon name={gamestripOpen ? 'chevU' : 'chevD'} size={13} />
-              {!gamestripOpen && <span className="edge-toggle-label">Game info</span>}
+              {!gamestripOpen && <span className="edge-toggle-label">{t('Game info')}</span>}
             </button>
             <div className="board-wrap">
               <div className="goban-frame">{board}</div>
             </div>
             {showHero && !showCompactStartStrip && (
-              <div className="hero-card" data-dashboard-hero="true" role="region" aria-label="Get started">
+              <div className="hero-card" data-dashboard-hero="true" role="region" aria-label={t('Get started')}>
                 <button
                   type="button"
                   className="iconbtn hero-close"
-                  title="Dismiss"
-                  aria-label="Dismiss get started"
+                  title={t('Dismiss')}
+                  aria-label={t('Dismiss get started')}
                   onClick={dismissHero}
                 >
                   <Icon name="x" size={13} />
                 </button>
-                <div className="hero-title">Start here</div>
+                <div className="hero-title">{t('Start here')}</div>
                 <div className="hero-actions">{renderStartActions()}</div>
               </div>
             )}
             <button
               type="button"
               className={`edge-toggle right${sidebarOpen ? ' open' : ''}`}
-              title={sidebarOpen ? 'Hide analysis' : 'Show analysis'}
-              aria-label={sidebarOpen ? 'Hide analysis' : 'Show analysis'}
+              title={sidebarOpen ? t('Hide analysis') : t('Show analysis')}
+              aria-label={sidebarOpen ? t('Hide analysis') : t('Show analysis')}
               aria-pressed={sidebarOpen}
               onClick={toggleSidebar}
             >
               <Icon name={sidebarOpen ? 'chevR' : 'chevL'} size={13} />
-              {!sidebarOpen && <span className="edge-toggle-label">Analysis</span>}
+              {!sidebarOpen && <span className="edge-toggle-label">{t('Analysis')}</span>}
             </button>
             {showAnalysis && commandbarHasContent && (
               <button
                 type="button"
                 className={`edge-toggle bottom${commandbarOpen ? ' open' : ''}`}
-                title={commandbarOpen ? 'Hide metrics' : 'Show metrics'}
-                aria-label={commandbarOpen ? 'Hide metrics' : 'Show metrics'}
+                title={commandbarOpen ? t('Hide metrics') : t('Show metrics')}
+                aria-label={commandbarOpen ? t('Hide metrics') : t('Show metrics')}
                 aria-pressed={commandbarOpen}
                 onClick={() => setCommandbarOpen((v) => !v)}
               >
                 <Icon name={commandbarOpen ? 'chevD' : 'chevU'} size={13} />
-                {!commandbarOpen && <span className="edge-toggle-label">Metrics</span>}
+                {!commandbarOpen && <span className="edge-toggle-label">{t('Metrics')}</span>}
               </button>
             )}
           </div>
@@ -735,38 +742,38 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               {showAnalysis ? (
                 <>
                   <div className="cb-metric">
-                    <div className="k">Black win</div>
+                    <div className="k">{t('Black win')}</div>
                     <div className="v win">{winRate != null ? `${(winRate * 100).toFixed(1)}%` : '—'}</div>
                     <div className="sub">{formatWinRateFavorLabel(winRate)}</div>
                   </div>
                   <div className="cb-metric">
-                    <div className="k">Score</div>
+                    <div className="k">{t('Score')}</div>
                     <div className="v score">{formatReadableScoreLead(scoreLead)}</div>
                   </div>
                   <div className="cb-metric">
-                    <div className="k">Best move</div>
+                    <div className="k">{t('Best move')}</div>
                     <div className="v best">{bestMove ? formatMoveLabel(bestMove.x, bestMove.y, boardSize) : '—'}</div>
-                    <div className="sub" title={bestMove && isProDetail ? `${(bestMove.winRate * 100).toFixed(1)}% Black win rate · ${bestMove.visits} visits` : undefined}>
-                      {bestMove ? (isProDetail ? `${(bestMove.winRate * 100).toFixed(0)}% Black win · ${formatVisitCount(bestMove.visits)} visits` : "Engine's pick") : ''}
+                    <div className="sub" title={bestMove && isProDetail ? t('{pct}% Black win rate · {visits} visits', { pct: (bestMove.winRate * 100).toFixed(1), visits: bestMove.visits }) : undefined}>
+                      {bestMove ? (isProDetail ? t('{pct}% Black win · {visits} visits', { pct: (bestMove.winRate * 100).toFixed(0), visits: formatVisitCount(bestMove.visits) }) : t("Engine's pick")) : ''}
                     </div>
                   </div>
                   <div className="cb-metric">
-                    <div className="k">Played</div>
+                    <div className="k">{t('Played')}</div>
                     <div className="v">
                       {pointsLost != null ? (
                         <><span className="cb-quality-dot" style={{ background: evalColorForPointsLost(pointsLost, settings.trainerEvalThresholds, settings.trainerTheme) }} />{pointsLostLabel}</>
                       ) : '—'}
                     </div>
                     <div className={`sub ${pointsLost != null && pointsLost > 1.5 ? 'delta-bad' : 'delta-good'}`}>
-                      {pointsLost != null ? (pointsLost > 0.05 ? `−${pointsLost.toFixed(1)} pts` : 'optimal') : ''}
+                      {pointsLost != null ? (pointsLost > 0.05 ? `−${t('{n} pts', { n: pointsLost.toFixed(1) })}` : t('optimal')) : ''}
                     </div>
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="cb-metric"><div className="k">Analysis</div><div className="v">Off</div><div className="sub">enable to evaluate</div></div>
-                  <div className="cb-metric"><div className="k">Engine</div><div className="v">{engineState === 'ready' ? 'Idle' : enginePillLabel}</div><div className="sub">{enginePillLabel}</div></div>
-                  <div className="cb-metric"><div className="k">Captures</div><div className="v">{capturedBlack}·{capturedWhite}</div><div className="sub">B · W</div></div>
+                  <div className="cb-metric"><div className="k">{t('Analysis')}</div><div className="v">{t('Off')}</div><div className="sub">{t('enable to evaluate')}</div></div>
+                  <div className="cb-metric"><div className="k">{t('Engine')}</div><div className="v">{engineState === 'ready' ? t('Idle') : enginePillLabel}</div><div className="sub">{enginePillLabel}</div></div>
+                  <div className="cb-metric"><div className="k">{t('Captures')}</div><div className="v">{capturedBlack}·{capturedWhite}</div><div className="sub">{t('B · W')}</div></div>
                 </>
               )}
             </div>
@@ -775,23 +782,23 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
           {/* Nav bar */}
           <div className="navbar">
-            <button type="button" className="pass-btn" title="Pass (P)" onClick={passTurn}>Pass</button>
+            <button type="button" className="pass-btn" title={t('Pass (P)')} onClick={passTurn}>{t('Pass')}</button>
             <div className="navgroup">
-              <button type="button" className="navbtn navbtn-pair" title={canFindPreviousMistake ? 'Previous mistake' : 'No previous analyzed mistake'} aria-label="Previous mistake" onClick={() => findMistake(-1)} disabled={!canFindPreviousMistake}><Icon name="chevL" size={11} /><span className="mistake-dot" /></button>
+              <button type="button" className="navbtn navbtn-pair" title={canFindPreviousMistake ? t('Previous mistake') : t('No previous analyzed mistake')} aria-label={t('Previous mistake')} onClick={() => findMistake(-1)} disabled={!canFindPreviousMistake}><Icon name="chevL" size={11} /><span className="mistake-dot" /></button>
             </div>
             <span className="nav-divider" />
             <div className="navgroup">
-              <button type="button" className="navbtn" title="To start" aria-label="To start" onClick={navigateStart} disabled={!canNavigateBack}><Icon name="skipBack" size={15} /></button>
-              <button type="button" className="navbtn navbtn-skip" title="Back 10" aria-label="Back 10" onClick={jumpBack} disabled={!canNavigateBack}><Icon name="fastBack" size={15} /></button>
-              <button type="button" className="navbtn" title="Back" aria-label="Back" onClick={navigateBack} disabled={!canNavigateBack}><Icon name="chevL" size={15} /></button>
+              <button type="button" className="navbtn" title={t('To start')} aria-label={t('To start')} onClick={navigateStart} disabled={!canNavigateBack}><Icon name="skipBack" size={15} /></button>
+              <button type="button" className="navbtn navbtn-skip" title={t('Back 10')} aria-label={t('Back 10')} onClick={jumpBack} disabled={!canNavigateBack}><Icon name="fastBack" size={15} /></button>
+              <button type="button" className="navbtn" title={t('Back')} aria-label={t('Back')} onClick={navigateBack} disabled={!canNavigateBack}><Icon name="chevL" size={15} /></button>
             </div>
             <div className="move-counter">
-              <span className="mc-label">Move</span>
+              <span className="mc-label">{t('Move')}</span>
               <input
                 type="number"
                 value={moveInputValue}
-                aria-label="Move number"
-                title="Enter a move number to jump"
+                aria-label={t('Move number')}
+                title={t('Enter a move number to jump')}
                 inputMode="numeric"
                 min={0}
                 max={totalMoves}
@@ -820,38 +827,34 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               <span>/ {totalMoves}</span>
             </div>
             <div className="navgroup">
-              <button type="button" className="navbtn" title="Forward" aria-label="Forward" onClick={navigateForward} disabled={!canNavigateForward}><Icon name="chevR" size={15} /></button>
-              <button type="button" className="navbtn navbtn-skip" title="Forward 10" aria-label="Forward 10" onClick={jumpForward} disabled={!canNavigateForward}><Icon name="fastFwd" size={15} /></button>
-              <button type="button" className="navbtn" title="To end" aria-label="To end" onClick={navigateEnd} disabled={!canNavigateForward}><Icon name="skipFwd" size={15} /></button>
+              <button type="button" className="navbtn" title={t('Forward')} aria-label={t('Forward')} onClick={navigateForward} disabled={!canNavigateForward}><Icon name="chevR" size={15} /></button>
+              <button type="button" className="navbtn navbtn-skip" title={t('Forward 10')} aria-label={t('Forward 10')} onClick={jumpForward} disabled={!canNavigateForward}><Icon name="fastFwd" size={15} /></button>
+              <button type="button" className="navbtn" title={t('To end')} aria-label={t('To end')} onClick={navigateEnd} disabled={!canNavigateForward}><Icon name="skipFwd" size={15} /></button>
             </div>
             <span className="nav-divider" />
             <div className="navgroup">
-              <button type="button" className="navbtn navbtn-pair" title={canFindNextMistake ? 'Next mistake' : 'No next analyzed mistake'} aria-label="Next mistake" onClick={() => findMistake(1)} disabled={!canFindNextMistake}><span className="mistake-dot" /><Icon name="chevR" size={11} /></button>
-              <button type="button" className="navbtn" title="Rotate board" aria-label="Rotate board" onClick={rotateBoard}><Icon name="rotate" size={15} /></button>
+              <button type="button" className="navbtn navbtn-pair" title={canFindNextMistake ? t('Next mistake') : t('No next analyzed mistake')} aria-label={t('Next mistake')} onClick={() => findMistake(1)} disabled={!canFindNextMistake}><span className="mistake-dot" /><Icon name="chevR" size={11} /></button>
+              <button type="button" className="navbtn" title={t('Rotate board')} aria-label={t('Rotate board')} onClick={rotateBoard}><Icon name="rotate" size={15} /></button>
             </div>
             <span className="nav-divider" />
             <div className="board-tools">
               <button
                 type="button"
                 className={`board-chip${isSelectingRegionOfInterest ? ' on' : ''}`}
-                // Both of these switch the board into a different interaction
-                // mode and said so only with a CSS class. Every other toggle
-                // here — the overlay chips, the legend, the depth presets —
-                // carries its state; these two were the outliers.
                 aria-pressed={isSelectingRegionOfInterest}
-                title="Select a board region to analyze"
+                title={t('Select a board region to analyze')}
                 onClick={startSelectRegionOfInterest}
               >
-                <Icon name="target" size={13} /><span className="bc-label">Region</span>
+                <Icon name="target" size={13} /><span className="bc-label">{t('Region')}</span>
               </button>
               <button
                 type="button"
                 className={`board-chip${isInsertMode ? ' on' : ''}`}
                 aria-pressed={isInsertMode}
-                title="Insert moves into the game record"
+                title={t('Insert moves into the game record')}
                 onClick={toggleInsertMode}
               >
-                <Icon name="layers" size={13} /><span className="bc-label">Insert</span>
+                <Icon name="layers" size={13} /><span className="bc-label">{t('Insert')}</span>
               </button>
               {boardControls ? <div className="board-extra-tools">{boardControls}</div> : null}
             </div>
@@ -859,14 +862,14 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <div className="playactions">
               {mode === 'play' ? (
                 <>
-                  <button type="button" className="tbtn" title={canNavigateBack ? 'Undo' : 'No move to undo'} onClick={onUndo} disabled={!canNavigateBack}><Icon name="undo" size={14} /><span className="tbtn-label">Undo</span></button>
-                  <button type="button" className="tbtn" title="AI move" onClick={onAiMove}><Icon name="bot" size={14} /><span className="tbtn-label">AI move</span></button>
-                  <button type="button" className="tbtn" style={{ color: 'var(--red)', borderColor: '#f0c4c4' }} title="Resign" onClick={onResign}><Icon name="flag" size={14} /><span className="tbtn-label">Resign</span></button>
+                  <button type="button" className="tbtn" title={canNavigateBack ? t('Undo') : t('No move to undo')} onClick={onUndo} disabled={!canNavigateBack}><Icon name="undo" size={14} /><span className="tbtn-label">{t('Undo')}</span></button>
+                  <button type="button" className="tbtn" title={t('AI move')} onClick={onAiMove}><Icon name="bot" size={14} /><span className="tbtn-label">{t('AI move')}</span></button>
+                  <button type="button" className="tbtn" style={{ color: 'var(--red)', borderColor: '#f0c4c4' }} title={t('Resign')} onClick={onResign}><Icon name="flag" size={14} /><span className="tbtn-label">{t('Resign')}</span></button>
                 </>
               ) : (
                 <>
-                  <button type="button" className="tbtn" title="AI move" onClick={onAiMove}><Icon name="bot" size={14} /><span className="tbtn-label">AI move</span></button>
-                  <button type="button" className="tbtn primary" title="Play best" onClick={onPlayBest}><Icon name="play" size={14} /><span className="tbtn-label">Play best</span></button>
+                  <button type="button" className="tbtn" title={t('AI move')} onClick={onAiMove}><Icon name="bot" size={14} /><span className="tbtn-label">{t('AI move')}</span></button>
+                  <button type="button" className="tbtn primary" title={t('Play best')} onClick={onPlayBest}><Icon name="play" size={14} /><span className="tbtn-label">{t('Play best')}</span></button>
                 </>
               )}
             </div>
@@ -875,7 +878,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
         {/* Analysis sidebar */}
         <aside
-          aria-label="Analysis panel"
+          aria-label={t('Analysis panel')}
           className={`sidebar${sideDrawer ? ' drawer' : ''}${sidebarOpen ? ' open' : ''}`}
         >
           {/* aria-pressed, not just the active class: without it the pair reads
@@ -883,31 +886,26 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               underline. "Review" also distinguishes this workspace switch from
               the Analyze engine toggle and the Analysis disclosure below. */}
           <div className="mode-tabs">
-            <button type="button" className={`mode-tab${mode === 'play' ? ' active' : ''}`} aria-pressed={mode === 'play'} onClick={() => setMode('play')}>Play</button>
-            <button type="button" className={`mode-tab${mode === 'analyze' ? ' active' : ''}`} aria-pressed={mode === 'analyze'} onClick={() => setMode('analyze')}>Review</button>
-            <button type="button" className="iconbtn drawer-close" title="Close" style={{ margin: '6px 6px 6px 0' }} onClick={() => setSidebarOpen(false)}><Icon name="x" size={14} /></button>
+            <button type="button" className={`mode-tab${mode === 'play' ? ' active' : ''}`} aria-pressed={mode === 'play'} onClick={() => setMode('play')}>{t('Play')}</button>
+            <button type="button" className={`mode-tab${mode === 'analyze' ? ' active' : ''}`} aria-pressed={mode === 'analyze'} onClick={() => setMode('analyze')}>{t('Review')}</button>
+            <button type="button" className="iconbtn drawer-close" title={t('Close')} style={{ margin: '6px 6px 6px 0' }} onClick={() => setSidebarOpen(false)}><Icon name="x" size={14} /></button>
           </div>
           <div className="sidebar-scroll">
             {/* Game tree */}
             <div className={`section${sections.tree ? ' open' : ''}`}>
-              {sectionHead('tree', 'Game tree', 'sitemap')}
+              {sectionHead('tree', t('Game tree'), 'sitemap')}
               <div className="section-body flush">
-                {/* Branch switching only appears once the position actually has
-                    sibling branches; permanent disabled chevrons read as broken.
-                    The strip itself goes with them — every control inside is
-                    branch-only, so on a straight-line game it was a 30px empty
-                    band with a rule under it, sitting above the tree. */}
                 {branchInfo.hasBranches && (
                   <div className="panel-toolbar">
-                    <button type="button" className="pbtn pico" title="Previous branch" aria-label="Previous branch" onClick={() => switchBranch(-1)}><Icon name="chevD" size={12} /></button>
-                    <button type="button" className="pbtn pico" title="Next branch" aria-label="Next branch" onClick={() => switchBranch(1)}><Icon name="chevR" size={12} /></button>
+                    <button type="button" className="pbtn pico" title={t('Previous branch')} aria-label={t('Previous branch')} onClick={() => switchBranch(-1)}><Icon name="chevD" size={12} /></button>
+                    <button type="button" className="pbtn pico" title={t('Next branch')} aria-label={t('Next branch')} onClick={() => switchBranch(1)}><Icon name="chevR" size={12} /></button>
                     <span className="pbtn" style={{ pointerEvents: 'none' }}>
-                      <span style={{ color: 'var(--faint)' }}>Branch</span>{' '}
+                      <span style={{ color: 'var(--faint)' }}>{t('Branch')}</span>{' '}
                       <span className="mono" style={{ color: 'var(--ink)' }}>{branchInfo.currentIndex}/{branchInfo.totalBranches}</span>
                     </span>
-                    <button type="button" className="pbtn pico" title="Back to branch point" aria-label="Back to branch point" onClick={undoToBranchPoint}><Icon name="levelUp" size={12} /></button>
+                    <button type="button" className="pbtn pico" title={t('Back to branch point')} aria-label={t('Back to branch point')} onClick={undoToBranchPoint}><Icon name="levelUp" size={12} /></button>
                     {branchInfo.currentIndex > 1 ? (
-                      <button type="button" className="pbtn pico" title="Make main branch" aria-label="Make current move the main branch" onClick={() => { makeCurrentNodeMainBranch(); toast('Set as main branch', 'success'); }}><Icon name="star" size={12} /></button>
+                      <button type="button" className="pbtn pico" title={t('Make main branch')} aria-label={t('Make current move the main branch')} onClick={() => { makeCurrentNodeMainBranch(); toast(t('Set as main branch'), 'success'); }}><Icon name="star" size={12} /></button>
                     ) : null}
                   </div>
                 )}
@@ -919,14 +917,14 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
             {/* Analysis */}
             <div className={`section${sections.analysis ? ' open' : ''}`}>
-              {sectionHead('analysis', 'Analysis', 'chart', (
+              {sectionHead('analysis', t('Analysis'), 'chart', (
                 <div className="flex items-center gap-1">
                   <AnalysisExperienceToggle />
                   <button
                   type="button"
                   className={`pbtn pico${legendOpen ? ' on' : ''}`}
-                  title={legendOpen ? 'Hide move-quality legend' : 'Show move-quality legend'}
-                  aria-label={legendOpen ? 'Hide move-quality legend' : 'Show move-quality legend'}
+                  title={legendOpen ? t('Hide move-quality legend') : t('Show move-quality legend')}
+                  aria-label={legendOpen ? t('Hide move-quality legend') : t('Show move-quality legend')}
                   aria-expanded={legendOpen}
                   aria-controls={legendOpen ? 'dashboard-analysis-quality-legend' : undefined}
                   onClick={() => setLegendOpen((v) => !v)}
@@ -939,7 +937,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     <div className="progress-track">
                       <div className="progress-fill" style={{ width: `${gameAnalysisTotal ? Math.round((gameAnalysisDone / gameAnalysisTotal) * 100) : 0}%` }} />
                     </div>
-                    <div className="progress-label">{gameAnalysisDone}/{gameAnalysisTotal} positions · {gameAnalysisType ?? 'analysis'}</div>
+                    <div className="progress-label">{t('{done}/{total} positions · {type}', { done: gameAnalysisDone, total: gameAnalysisTotal, type: t(gameAnalysisType ?? 'analysis') })}</div>
                   </div>
                 )}
                 <div className="graph-wrap">
@@ -954,38 +952,35 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     type="button"
                     className={`lg${legend.winrate ? ' on' : ''}`}
                     aria-pressed={legend.winrate}
-                    aria-label={legend.winrate ? 'Hide win rate graph' : 'Show win rate graph'}
-                    title={legend.winrate ? 'Hide win rate graph' : 'Show win rate graph'}
+                    aria-label={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}
+                    title={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}
                     onClick={() => setLegend((l) => ({ ...l, winrate: !l.winrate }))}
                   >
                     <span className="lg-check" aria-hidden="true"><Icon name="check" size={10} /></span>
-                    <span className="sw" style={{ background: 'var(--green)' }} />Win rate
+                    <span className="sw" style={{ background: 'var(--green)' }} />{t('Win rate')}
                   </button>
                   <button
                     type="button"
                     className={`lg${legend.score ? ' on' : ''}`}
                     aria-pressed={legend.score}
-                    aria-label={legend.score ? 'Hide score graph' : 'Show score graph'}
-                    title={legend.score ? 'Hide score graph' : 'Show score graph'}
+                    aria-label={legend.score ? t('Hide score graph') : t('Show score graph')}
+                    title={legend.score ? t('Hide score graph') : t('Show score graph')}
                     onClick={() => setLegend((l) => ({ ...l, score: !l.score }))}
                   >
                     <span className="lg-check" aria-hidden="true"><Icon name="check" size={10} /></span>
-                    <span className="sw" style={{ background: 'var(--amber)' }} />Score
+                    <span className="sw" style={{ background: 'var(--amber)' }} />{t('Score')}
                   </button>
-                  {/* Only offered when the SGF carries a clock. Most local games
-                      have none, and a toggle that can only ever draw nothing is
-                      worse than no toggle. */}
                   {hasMoveTimes && (
                     <button
                       type="button"
                       className={`lg${legend.time ? ' on' : ''}`}
                       aria-pressed={legend.time}
-                      aria-label={legend.time ? 'Hide time graph' : 'Show time graph'}
-                      title={legend.time ? 'Hide time graph' : 'Show time graph'}
+                      aria-label={legend.time ? t('Hide time graph') : t('Show time graph')}
+                      title={legend.time ? t('Hide time graph') : t('Show time graph')}
                       onClick={() => setLegend((l) => ({ ...l, time: !l.time }))}
                     >
                       <span className="lg-check" aria-hidden="true"><Icon name="check" size={10} /></span>
-                      <span className="sw" style={{ background: 'var(--amber)', opacity: 0.55 }} />Time
+                      <span className="sw" style={{ background: 'var(--amber)', opacity: 0.55 }} />{t('Time')}
                     </button>
                   )}
                 </div>
@@ -993,19 +988,19 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     Play tab stays focused on the game itself. */}
                 {mode === 'analyze' && (
                 <div className="overlay-row overlay-row--toggles">
-                  {overlayBtn('analysisShowChildren', 'Children', 'sitemap')}
-                  {overlayBtn('analysisShowEval', 'Dots', 'circle')}
-                  {overlayBtn('analysisShowHints', 'Top moves', 'layers', settings.analysisShowPolicy)}
-                  {overlayBtn('analysisShowPolicy', 'Heatmap', 'grid')}
-                  {overlayBtn('analysisShowOwnership', 'Territory', 'map')}
+                  {overlayBtn('analysisShowChildren', t('Children'), 'sitemap')}
+                  {overlayBtn('analysisShowEval', t('Dots'), 'circle')}
+                  {overlayBtn('analysisShowHints', t('Top moves'), 'layers', settings.analysisShowPolicy)}
+                  {overlayBtn('analysisShowPolicy', t('Heatmap'), 'grid')}
+                  {overlayBtn('analysisShowOwnership', t('Territory'), 'map')}
                 </div>
                 )}
                 {legendOpen && (
                   <div id="dashboard-analysis-quality-legend" className="qlegend">
-                    <div className="eyebrow">Move quality · points lost</div>
-                    <p className="qlegend-note">{POINTS_LOST_EXPLANATION}</p>
+                    <div className="eyebrow">{t('Move quality · points lost')}</div>
+                    <p className="qlegend-note">{t(POINTS_LOST_EXPLANATION)}</p>
                     <div className="qgrid">
-                      {evalLegendRows(settings.trainerEvalThresholds, settings.trainerTheme).map(([label, color, range]) => (
+                      {evalLegendRows(settings.trainerEvalThresholds, settings.trainerTheme, t).map(([label, color, range]) => (
                         <div className="qi" key={label}>
                           <span className="qd" style={{ background: color }} />
                           <span className="ql">{label}</span>
@@ -1020,11 +1015,11 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                   <button
                     type="button"
                     className="pbtn"
-                    aria-label="Run quick graph analysis"
-                    title="Run quick graph analysis"
+                    aria-label={t('Run quick graph analysis')}
+                    title={t('Run quick graph analysis')}
                     onClick={startQuickGameAnalysis}
                   >
-                    <Icon name="chart" size={12} />Quick graph
+                    <Icon name="chart" size={12} />{t('Quick graph')}
                   </button>
                   <button
                     type="button"
@@ -1033,16 +1028,16 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     title={dashboardFastMctsTitle}
                     onClick={() => (isGameAnalysisRunning ? stopGameAnalysis() : startFastGameAnalysis())}
                   >
-                    <Icon name="gauge" size={12} />{isGameAnalysisRunning ? 'Stop' : 'Fast review'}
+                    <Icon name="gauge" size={12} />{isGameAnalysisRunning ? t('Stop') : t('Fast review')}
                   </button>
                   <button
                     type="button"
                     className="pbtn"
-                    aria-label="Open game report"
-                    title="Open game report"
+                    aria-label={t('Open game report')}
+                    title={t('Open game report')}
                     onClick={onOpenGameReport}
                   >
-                    <Icon name="file" size={12} />Report
+                    <Icon name="file" size={12} />{t('Report')}
                   </button>
                 </div>
                 )}
@@ -1050,26 +1045,20 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 {!showAnalysis && (
                   <div className="coach-card">
                     <div className="cc-head">
-                      <div className="cc-title">Live analysis is off</div>
+                      <div className="cc-title">{t('Live analysis is off')}</div>
                       <button
                         type="button"
                         className="pbtn"
-                        aria-label="Turn on live analysis"
+                        aria-label={t('Turn on live analysis')}
                         onClick={() => {
                           setMode('analyze');
                           if (!isContinuousAnalysis) toggleContinuousAnalysis();
                         }}
                       >
-                        <Icon name="chart" size={12} />Turn on
+                        <Icon name="chart" size={12} />{t('Turn on')}
                       </button>
                     </div>
-                    {/* Says only what stops — the per-move evaluation that follows
-                        the cursor. It used to add that a game review still charts
-                        the whole game, which the graph's own "Analyze game" button
-                        directly above already offers; with no claim left about the
-                        graph, the sentence had nothing to correct. */}
-                    Moves are not evaluated as you play them, and the board shows no
-                    hints or ownership.
+                    {t('Moves are not evaluated as you play them, and the board shows no hints or ownership.')}
                   </div>
                 )}
               </div>
@@ -1078,7 +1067,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             {/* Candidates: the engine's moves as rows, for reading five of them
                 against each other rather than one hovered circle at a time. */}
             <div className={`section${sections.candidates ? ' open' : ''}`}>
-              {sectionHead('candidates', 'Candidates', 'list')}
+              {sectionHead('candidates', t('Candidates'), 'list')}
               <div className="section-body flush">
                 <CandidateMoveList hoveredKey={hoveredCandidateKey} onHover={onHoverCandidate} />
               </div>
@@ -1086,7 +1075,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
             {/* Comment / notes */}
             <div className={`section${sections.notes ? ' open' : ''}`}>
-              {sectionHead('notes', 'Comment', 'comment')}
+              {sectionHead('notes', t('Comment'), 'comment')}
               <div className="section-body flush">
                 {/* "Lock AI details (Play mode)" is a teacher's setting; the
                     other shell honours it, this one used to show the PV and
@@ -1097,7 +1086,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
             {/* Game info */}
             <div className={`section${sections.info ? ' open' : ''}`}>
-              {sectionHead('info', 'Game info', 'info')}
+              {sectionHead('info', t('Game info'), 'info')}
               <div className="section-body">
                 <GameInfoPanel />
               </div>
@@ -1134,24 +1123,24 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="false"
-          aria-label="File actions"
+          aria-label={t('File actions')}
           tabIndex={-1}
           data-dashboard-popover="true"
         >
-          <div className="menu-section-label">Export</div>
+          <div className="menu-section-label">{t('Export')}</div>
           <button type="button" className="menu-item" onClick={() => { closePop(); onCopySgf(); }}>
-            <Icon name="copy" size={14} /><span className="mi-label">Copy SGF</span>
+            <Icon name="copy" size={14} /><span className="mi-label">{t('Copy SGF')}</span>
           </button>
           <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onSaveToLibrary(trigger); }}>
-            <Icon name="book" size={14} /><span className="mi-label">Save to library</span>
+            <Icon name="book" size={14} /><span className="mi-label">{t('Save to library')}</span>
           </button>
           <div className="menu-divider" />
-          <div className="menu-section-label">Import</div>
+          <div className="menu-section-label">{t('Import')}</div>
           <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onPasteSgf(trigger); }}>
-            <Icon name="clipboard" size={14} /><span className="mi-label">Paste SGF / OGS</span>
+            <Icon name="clipboard" size={14} /><span className="mi-label">{t('Paste SGF / OGS')}</span>
           </button>
-          <button type="button" className="menu-item" aria-label="Photo Board" onClick={() => { const trigger = popTriggerRef.current; closePop(); onScanBoard(trigger); }}>
-            <Icon name="camera" size={14} /><span className="mi-label">Board from photo</span>
+          <button type="button" className="menu-item" aria-label={t('Photo Board')} onClick={() => { const trigger = popTriggerRef.current; closePop(); onScanBoard(trigger); }}>
+            <Icon name="camera" size={14} /><span className="mi-label">{t('Board from photo')}</span>
           </button>
         </div>
       )}
@@ -1162,15 +1151,15 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="false"
-          aria-label="Help"
+          aria-label={t('Help')}
           tabIndex={-1}
           data-dashboard-popover="true"
         >
           <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onKeyboardHelp(trigger); }}>
-            <Icon name="keyboard" size={14} /><span className="mi-label">Keyboard shortcuts</span>
+            <Icon name="keyboard" size={14} /><span className="mi-label">{t('Keyboard shortcuts')}</span>
           </button>
           <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onAbout(trigger); }}>
-            <Icon name="info" size={14} /><span className="mi-label">About Web KaTrain</span>
+            <Icon name="info" size={14} /><span className="mi-label">{t('About Web KaTrain')}</span>
           </button>
           <div className="menu-divider" />
           <a
@@ -1178,13 +1167,13 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             href={APP_ISSUE_REPORT_URL}
             target="_blank"
             rel="noopener noreferrer"
-            title="Report an issue on GitHub"
-            aria-label="Report an issue on GitHub"
+            title={t('Report an issue on GitHub')}
+            aria-label={t('Report an issue on GitHub')}
             data-dashboard-report-issue="true"
             onClick={closePop}
           >
             <Icon name="bug" />
-            <span className="mi-label">Report an issue</span>
+            <span className="mi-label">{t('Report an issue')}</span>
           </a>
         </div>
       )}
@@ -1223,11 +1212,12 @@ const EnginePopover: React.FC<{
   onVisitsChange: (visits: number) => void;
   onClearCache: () => void;
 }> = ({ rect, engineState, backend, model, modelSource, cacheSize, visits, visitsDisabled, onVisitsChange, onClearCache }) => {
+  const t = useT();
   const states: Record<EngineState, [string, string]> = {
-    ready: ['Ready', 'var(--green)'],
-    running: ['Analyzing', 'var(--live)'],
-    loading: ['Loading', 'var(--live)'],
-    error: ['Error', 'var(--red)'],
+    ready: [t('Ready'), 'var(--green)'],
+    running: [t('Analyzing'), 'var(--live)'],
+    loading: [t('Loading'), 'var(--live)'],
+    error: [t('Error'), 'var(--red)'],
   };
   const [label, color] = states[engineState];
   const left = Math.max(8, Math.min(rect.left, window.innerWidth - 300 - 8));
@@ -1238,22 +1228,22 @@ const EnginePopover: React.FC<{
       onClick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="false"
-      aria-label="Engine details"
+      aria-label={t('Engine details')}
       tabIndex={-1}
       data-dashboard-popover="true"
     >
-      <div className="pop-head"><div className="pop-eyebrow">Engine</div><div className="pop-title">KataGo · in-browser</div></div>
+      <div className="pop-head"><div className="pop-eyebrow">{t('Engine')}</div><div className="pop-title">{t('KataGo · in-browser')}</div></div>
       <div className="engine-detail">
         <dl className="ed-grid">
-          <div><dt>State</dt><dd style={{ color }}>{label}</dd></div>
-          <div><dt>Backend</dt><dd>{formatEngineBackendLabel(backend)}</dd></div>
-          <div><dt>Model</dt><dd>{model || '—'}</dd></div>
-          <div><dt>Source</dt><dd>{modelSource}</dd></div>
+          <div><dt>{t('State')}</dt><dd style={{ color }}>{label}</dd></div>
+          <div><dt>{t('Backend')}</dt><dd>{formatEngineBackendLabel(backend)}</dd></div>
+          <div><dt>{t('Model')}</dt><dd>{model || '—'}</dd></div>
+          <div><dt>{t('Source')}</dt><dd>{modelSource}</dd></div>
         </dl>
         <div className="ed-row ed-row-depth" data-analysis-live-visit-presets="true">
           <div className="ed-depth-heading">
-            <span>Analysis depth</span>
-            <span>{clampAnalysisVisits(visits)} visits</span>
+            <span>{t('Analysis depth')}</span>
+            <span>{clampAnalysisVisits(visits)} {t('visits')}</span>
           </div>
           <div className="depth-presets">
             {ANALYSIS_VISIT_PRESETS.map((preset) => (
@@ -1265,7 +1255,7 @@ const EnginePopover: React.FC<{
                 disabled={visitsDisabled}
                 aria-pressed={clampAnalysisVisits(visits) === preset}
                 data-analysis-live-depth-option={preset}
-                title={visitsDisabled ? 'Stop game analysis before changing live visits' : `Set live analysis to ${preset} visits`}
+                title={visitsDisabled ? t('Stop game analysis before changing live visits') : t('Set live analysis to {visits} visits', { visits: preset })}
               >
                 <span className="dp-v">{preset}</span>
                 <span className="dp-l">{visitPresetLabel(preset)}</span>
@@ -1274,7 +1264,7 @@ const EnginePopover: React.FC<{
           </div>
         </div>
         <div className="ed-row">
-          <span style={{ color: 'var(--faint)', fontSize: 12 }}>Cached positions</span>
+          <span style={{ color: 'var(--faint)', fontSize: 12 }}>{t('Cached positions')}</span>
           <button type="button" className="pbtn" onClick={onClearCache}><Icon name="trash" size={12} /> {cacheSize}</button>
         </div>
       </div>
@@ -1291,6 +1281,7 @@ const ViewMenu: React.FC<{
   onToggleLibrary: () => void;
   onToggleSidebar: () => void;
 }> = ({ rect, showCoords, onToggleCoords, libraryOpen, sidebarOpen, onToggleLibrary, onToggleSidebar }) => {
+  const t = useT();
   const item = (label: string, on: boolean | null, kbd: string, onClick: () => void, iconName?: IconName) => (
     <button
       type="button"
@@ -1300,7 +1291,7 @@ const ViewMenu: React.FC<{
     >
       {iconName ? <Icon name={iconName} size={14} /> : null}
       <span className="mi-label">{label}</span>
-      {typeof on === 'boolean' ? <span className="mi-state">{on ? 'on' : 'off'}</span> : null}
+      {typeof on === 'boolean' ? <span className="mi-state">{on ? t('on') : t('off')}</span> : null}
       {kbd ? <span className="mi-kbd">{kbd}</span> : null}
     </button>
   );
@@ -1311,16 +1302,16 @@ const ViewMenu: React.FC<{
       onClick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="false"
-      aria-label="View options"
+      aria-label={t('View options')}
       tabIndex={-1}
       data-dashboard-popover="true"
     >
-      <div className="menu-section-label">Display</div>
-      {item('Coordinates', showCoords, 'C', onToggleCoords)}
+      <div className="menu-section-label">{t('Display')}</div>
+      {item(t('Coordinates'), showCoords, 'C', onToggleCoords)}
       <div className="menu-divider" />
-      <div className="menu-section-label">Layout</div>
-      {item('Library panel', libraryOpen, '[', onToggleLibrary, 'book')}
-      {item('Analysis panel', sidebarOpen, ']', onToggleSidebar, 'chart')}
+      <div className="menu-section-label">{t('Layout')}</div>
+      {item(t('Library panel'), libraryOpen, '[', onToggleLibrary, 'book')}
+      {item(t('Analysis panel'), sidebarOpen, ']', onToggleSidebar, 'chart')}
       <div className="menu-divider" />
       {/* The only place build metadata lives now that the header chip is gone. */}
       {APP_COMMIT_URL ? (
@@ -1329,8 +1320,8 @@ const ViewMenu: React.FC<{
           target="_blank"
           rel="noopener noreferrer"
           className="menu-build"
-          title={`Open build commit: ${APP_BUILD_LABEL}`}
-          aria-label={`Open build commit ${APP_BUILD_LABEL}`}
+          title={t('Open build commit: {label}', { label: APP_BUILD_LABEL })}
+          aria-label={t('Open build commit {label}', { label: APP_BUILD_LABEL })}
           data-dashboard-build-link="true"
         >
           <Icon name="info" size={12} />

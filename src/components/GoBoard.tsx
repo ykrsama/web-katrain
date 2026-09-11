@@ -56,6 +56,7 @@ import {
   type BoardKeyboardPoint,
 } from '../utils/boardKeyboardNavigation';
 import { boardToQaString, countBoardStones } from '../utils/boardQaSnapshot';
+import { useT } from '../i18n';
 
 const KATRAN_EVAL_THRESHOLDS = [12, 6, 3, 1.5, 0.5, 0] as const;
 const OWNERSHIP_COLORS = {
@@ -288,6 +289,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }),
     shallow
   );
+  const t = useT();
   const wheelDeltaRef = useRef(0);
   const wheelThrottleRef = useRef<number | null>(null);
   const tapConfirmTimerRef = useRef<number | null>(null);
@@ -1689,7 +1691,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const minUse = Math.max(0, Math.floor(settings.timerMinimalUseSeconds ?? 0));
         const used = Math.max(0, currentNode.timeUsedSeconds ?? 0);
         if (minUse > 0 && mainRemaining <= 0 && used < minUse) {
-          toast(`Think for at least ${minUse} seconds before playing.`, 'info');
+          toast(t('Think for at least {minUse} seconds before playing.', { minUse }), 'info');
           clearPendingTap();
           return false;
         }
@@ -1714,6 +1716,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       settings.timerMainTimeMinutes,
       settings.timerMinimalUseSeconds,
       toast,
+      t,
       uiMode,
     ]
   );
@@ -2996,7 +2999,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         onWheel={handleWheel}
         onAuxClick={handleAuxClick}
         tabIndex={0}
-        aria-label="Go board"
+        aria-label={t('Go board')}
       >
         {/* Region of interest (KaTrain-style) */}
         {roiRect && (
@@ -3038,7 +3041,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           >
             <div className="ui-panel flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xl">
               <span>
-                Variation {pvScrollHint.shown} / {pvScrollHint.total}
+                {t('Variation {shown} / {total}', { shown: pvScrollHint.shown, total: pvScrollHint.total })}
               </span>
               {onPvCommit && (
                 <button
@@ -3046,7 +3049,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                   className="min-h-11 shrink-0 rounded-md border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-3 font-semibold text-[var(--ui-accent)] hover:brightness-110 lg:min-h-8 lg:px-2.5"
                   onClick={onPvCommit}
                 >
-                  Keep in tree
+                  {t('Keep in tree')}
                 </button>
               )}
             </div>
@@ -3058,9 +3061,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           const best = currentNode.analysis?.moves?.find((move) => move.order === 0) ?? currentNode.analysis?.moves?.[0];
           const marks: Array<{ key: string; x: number; y: number; label: string; tone: 'best' | 'played' }> = [];
           if (best && best.x >= 0 && best.y >= 0) {
-            marks.push({ key: 'best', x: best.x, y: best.y, label: 'Engine', tone: 'best' });
+            marks.push({ key: 'best', x: best.x, y: best.y, label: t('Engine'), tone: 'best' });
           }
-          marks.push({ key: 'played', x: drillMistake.played.x, y: drillMistake.played.y, label: 'Played', tone: 'played' });
+          marks.push({ key: 'played', x: drillMistake.played.x, y: drillMistake.played.y, label: t('Played'), tone: 'played' });
           return marks.map((mark) => {
             const d = toDisplay(mark.x, mark.y);
             return (
@@ -3106,7 +3109,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 {mistakeDrill.phase === 'done'
                   ? drillSummaryText(mistakeDrill.solvedIds.length, mistakeDrill.mistakes.length)
                   : !drillOnThisPosition
-                    ? `Drill paused at position ${mistakeDrill.index + 1} of ${mistakeDrill.mistakes.length}.`
+                    ? t('Drill paused at position {index} of {total}.', {
+                        index: mistakeDrill.index + 1,
+                        total: mistakeDrill.mistakes.length,
+                      })
                     : mistakeDrill.phase === 'asking'
                       ? drillPromptText(drillMistake!, mistakeDrill.index, mistakeDrill.mistakes.length)
                       : mistakeDrill.revealed
@@ -3118,22 +3124,22 @@ export const GoBoard: React.FC<GoBoardProps> = ({
               <span className="ml-auto flex shrink-0 items-center gap-1">
               {mistakeDrill.phase !== 'done' && !drillOnThisPosition && (
                 <button type="button" className={DRILL_ACTION_CLASS} onClick={resumeMistakeDrill}>
-                  Resume
+                  {t('Resume')}
                 </button>
               )}
               {drillAsking && (
                 <button type="button" className={DRILL_ACTION_CLASS} onClick={revealMistakeDrill}>
-                  Show me
+                  {t('Show me')}
                 </button>
               )}
               {drillAnswered && (
                 <button type="button" className={DRILL_ACTION_CLASS} onClick={advanceMistakeDrill}>
-                  {mistakeDrill.index + 1 >= mistakeDrill.mistakes.length ? 'Finish' : 'Next'}
+                  {mistakeDrill.index + 1 >= mistakeDrill.mistakes.length ? t('Finish') : t('Next')}
                 </button>
               )}
               <button
                 type="button"
-                aria-label="End mistake drill"
+                aria-label={t('End mistake drill')}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface)] hover:text-[var(--ui-text)] desktop-shell:h-8 desktop-shell:w-8"
                 onClick={stopMistakeDrill}
               >
@@ -3163,15 +3169,15 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                   type="button"
                   className="min-h-11 shrink-0 rounded-md border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-3 font-semibold text-[var(--ui-accent)] hover:brightness-110 desktop-shell:min-h-8 lg:px-2.5"
                   onClick={() =>
-                    setPunishQuizResponse({ nodeId: currentNode.id, phase: 'armed', text: 'Choose the move you would play (hints hidden).' })
+                    setPunishQuizResponse({ nodeId: currentNode.id, phase: 'armed', text: t('Choose the move you would play (hints hidden).') })
                   }
                 >
-                  Try it
+                  {t('Try it')}
                 </button>
               )}
               <button
                 type="button"
-                aria-label="Dismiss quiz"
+                aria-label={t('Dismiss quiz')}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface)] hover:text-[var(--ui-text)] desktop-shell:h-8 desktop-shell:w-8"
                 onClick={dismissPunishQuiz}
               >
@@ -3453,7 +3459,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 fontWeight: 700,
               }}
             >
-              Pass
+              {t('Pass')}
             </div>
           </div>
         )}
@@ -3493,7 +3499,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 }}
                 data-stone-move-tooltip={hoveredStoneMoveNumber}
               >
-                <span className="font-semibold">Move {hoveredStoneMoveNumber}</span>
+                <span className="font-semibold">{t('Move {n}', { n: hoveredStoneMoveNumber })}</span>
                 {hoveredStonePointsLost !== null && (
                   <span
                     className="ui-text-faint"
@@ -3501,11 +3507,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                   >
                     {' · '}
                     {hoveredStonePointsLost >= 0.05
-                      ? `−${hoveredStonePointsLost.toFixed(1)} pts`
-                      : 'no loss'}
+                      ? t('−{pts} pts', { pts: hoveredStonePointsLost.toFixed(1) })
+                      : t('no loss')}
                   </span>
                 )}
-                <span className="ui-text-faint"> · Alt-click to jump</span>
+                <span className="ui-text-faint">{' · '}{t('Alt-click to jump')}</span>
               </div>
             );
           })()
@@ -3535,34 +3541,34 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                   maxWidth: tooltipPlacement.maxWidth,
                 }}
               >
-                <div className="font-bold mb-1">Move: {formatBoardMoveLabel(hoveredMove, boardSize)}</div>
-                <div>Win Rate: {(hoveredMove.winRate * 100).toFixed(1)}%</div>
-                <div>Score: {hoveredMove.scoreLead > 0 ? '+' : ''}{hoveredMove.scoreLead.toFixed(1)}</div>
+                <div className="font-bold mb-1">{t('Move: {move}', { move: formatBoardMoveLabel(hoveredMove, boardSize) })}</div>
+                <div>{t('Win Rate: {rate}%', { rate: (hoveredMove.winRate * 100).toFixed(1) })}</div>
+                <div>{t('Score: {score}', { score: `${hoveredMove.scoreLead > 0 ? '+' : ''}${hoveredMove.scoreLead.toFixed(1)}` })}</div>
                 {typeof hoveredMove.scoreStdev === 'number' && (
-                  <div>Score Stdev: {hoveredMove.scoreStdev.toFixed(1)}</div>
+                  <div>{t('Score Stdev: {value}', { value: hoveredMove.scoreStdev.toFixed(1) })}</div>
                 )}
-                <div>Points Lost: {hoveredMove.pointsLost.toFixed(1)}</div>
+                <div>{t('Points Lost: {value}', { value: hoveredMove.pointsLost.toFixed(1) })}</div>
                 {typeof hoveredMove.relativePointsLost === 'number' && (
-                  <div>Rel. Points Lost: {hoveredMove.relativePointsLost.toFixed(1)}</div>
+                  <div>{t('Rel. Points Lost: {value}', { value: hoveredMove.relativePointsLost.toFixed(1) })}</div>
                 )}
                 {typeof hoveredMove.winRateLost === 'number' && (
-                  <div>Winrate Lost: {(hoveredMove.winRateLost * 100).toFixed(1)}%</div>
+                  <div>{t('Winrate Lost: {value}%', { value: (hoveredMove.winRateLost * 100).toFixed(1) })}</div>
                 )}
                 {typeof hoveredMove.lcb === 'number' && (
-                  <div title="Lower confidence bound: how bad this move could still turn out to be">
-                    LCB: {(hoveredMove.lcb * 100).toFixed(1)}%
+                  <div title={t('Lower confidence bound: how bad this move could still turn out to be')}>
+                    {t('LCB: {value}%', { value: (hoveredMove.lcb * 100).toFixed(1) })}
                   </div>
                 )}
                 {typeof hoveredMove.prior === 'number' && (
-                  <div>Prior: {(hoveredMove.prior * 100).toFixed(1)}%</div>
+                  <div>{t('Prior: {value}%', { value: (hoveredMove.prior * 100).toFixed(1) })}</div>
                 )}
                 {typeof hoveredMove.humanPrior === 'number' && (
-                  <div>Human: {(hoveredMove.humanPrior * 100).toFixed(1)}%</div>
+                  <div>{t('Human: {value}%', { value: (hoveredMove.humanPrior * 100).toFixed(1) })}</div>
                 )}
-                <div>Visits: {hoveredMove.visits}</div>
+                <div>{t('Visits: {value}', { value: hoveredMove.visits })}</div>
                 {hoveredMove.pv && hoveredMove.pv.length > 0 && (
                   <div className="mt-1 whitespace-normal break-words">
-                    PV: {hoveredMove.pv.join(' ')}
+                    {t('PV: {pv}', { pv: hoveredMove.pv.join(' ') })}
                   </div>
                 )}
               </div>

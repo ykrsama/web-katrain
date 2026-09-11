@@ -29,6 +29,7 @@ import { getResizeObserverConstructor } from '../../utils/resizeObserver';
 import { parseIntegerDraft } from '../../utils/numberDraft';
 import type { BranchInfo } from '../../utils/branchNavigation';
 import { getSaveStatusDisplay, type AutoSaveStatus } from '../../utils/saveStatusDisplay';
+import { useT } from '../../i18n';
 
 const BOTTOM_CONTROL_SHORTCUT_IDS = [
   'pass',
@@ -142,6 +143,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   editShortcut,
   scoreShortcut,
 }) => {
+  const t = useT();
   const passBtnRef = useRef<HTMLButtonElement>(null);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const moreSheetRef = useRef<HTMLDivElement>(null);
@@ -163,17 +165,28 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   const branchDepthLabel = showBranchControl && branchInfo && !branchInfo.isAtFork ? `+${branchInfo.depthFromBranchRoot}` : null;
   const branchTitle = showBranchControl && branchInfo
     ? branchInfo.isAtFork
-      ? `Branch ${branchInfo.currentIndex} of ${branchInfo.totalBranches}`
-      : `Branch ${branchInfo.currentIndex} of ${branchInfo.totalBranches}, ${branchInfo.depthFromBranchRoot} move${branchInfo.depthFromBranchRoot === 1 ? '' : 's'} into variation`
+      ? t('Branch {current} of {total}', { current: branchInfo.currentIndex, total: branchInfo.totalBranches })
+      : t('Branch {current} of {total}, {depth} {unit} into variation', {
+          current: branchInfo.currentIndex,
+          total: branchInfo.totalBranches,
+          depth: branchInfo.depthFromBranchRoot,
+          unit: t(branchInfo.depthFromBranchRoot === 1 ? 'move' : 'moves'),
+        })
     : '';
-  const blackPlayerLabel = formatGameInfoPlayer(blackName, blackRank, 'Black');
-  const whitePlayerLabel = formatGameInfoPlayer(whiteName, whiteRank, 'White');
+  const blackPlayerLabel = formatGameInfoPlayer(blackName, blackRank, t('Black'));
+  const whitePlayerLabel = formatGameInfoPlayer(whiteName, whiteRank, t('White'));
   const blackCaptures = capturedWhite;
   const whiteCaptures = capturedBlack;
   const currentPlayerLabel = currentPlayer === 'black' ? blackPlayerLabel : whitePlayerLabel;
   const currentCaptureCount = currentPlayer === 'black' ? blackCaptures : whiteCaptures;
-  const currentPlayerName = currentPlayer === 'black' ? 'Black' : 'White';
-  const matchupSummary = `Black: ${blackPlayerLabel}, ${blackCaptures} captured. White: ${whitePlayerLabel}, ${whiteCaptures} captured. ${currentPlayerName} to play.`;
+  const currentPlayerName = currentPlayer === 'black' ? t('Black') : t('White');
+  const matchupSummary = t('Black: {black}, {blackCaptures} captured. White: {white}, {whiteCaptures} captured. {player} to play.', {
+    black: blackPlayerLabel,
+    blackCaptures,
+    white: whitePlayerLabel,
+    whiteCaptures,
+    player: currentPlayerName,
+  });
   const metaDividerClass = 'mobile-bottom-meta-divider text-[var(--ui-text-faint)]';
   const activePlayerClass = 'text-[var(--ui-accent)] font-semibold';
   const inactivePlayerClass = 'text-[var(--ui-text-faint)]';
@@ -376,7 +389,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
     if (isBranchIndexEditing) {
       return (
         <span className={compact ? 'inline-flex items-center gap-0.5' : 'inline-flex items-center gap-1'}>
-          <span className="ui-text-faint">{compact ? 'Br' : 'Branch'}</span>
+          <span className="ui-text-faint">{compact ? 'Br' : t('Branch')}</span>
           <input
             type="number"
             value={branchIndexDraft}
@@ -384,7 +397,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             onKeyDown={handleBranchIndexKeyDown}
             onBlur={handleBranchIndexBlur}
             onFocus={(event) => event.currentTarget.select()}
-            aria-label="Branch number"
+            aria-label={t('Branch number')}
             inputMode="numeric"
             min={1}
             max={branchInfo.totalBranches}
@@ -411,7 +424,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
         disabled={isInsertMode}
         data-bottom-branch-chip={compact ? 'true' : undefined}
       >
-        <span className="ui-text-faint">{compact ? 'Br' : 'Branch'}</span>
+        <span className="ui-text-faint">{compact ? 'Br' : t('Branch')}</span>
         <span className="font-mono text-[var(--ui-text)]">{branchInfo.currentIndex}/{branchInfo.totalBranches}</span>
         {branchDepthLabel && <span className="font-mono text-[var(--ui-accent)]">{branchDepthLabel}</span>}
       </button>
@@ -426,7 +439,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
       // matches the "Board controls" toggle that shows and hides it.
       <div
         role="region"
-        aria-label="Board controls"
+        aria-label={t('Board controls')}
         className="mobile-bottom-controls ui-bar ui-bar-height ui-bar-pad border-t flex items-center gap-1.5 sm:gap-2 select-none"
       >
         <div className="relative">
@@ -440,10 +453,10 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             ref={passBtnRef}
             className="relative min-h-11 min-w-11 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-transparent hover:bg-[var(--ui-surface-2)] rounded-md text-[0.6875rem] sm:text-xs font-medium text-[var(--ui-text)] transition-colors"
             onClick={passTurn}
-            aria-label="Pass turn"
-            title={withShortcut('Pass', 'pass')}
+            aria-label={t('Pass turn')}
+            title={withShortcut(t('Pass'), 'pass')}
           >
-            Pass
+            {t('Pass')}
           </button>
           {passPv && (
             <div
@@ -481,7 +494,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
         </div>
 
         <div className="mobile-bottom-navigation flex-1 min-w-0 flex items-center justify-center gap-1">
-          <IconButton title={withShortcut('Back', 'nav-back')} onClick={navigateBack} disabled={isInsertMode || !canNavigateBack}>
+          <IconButton title={withShortcut(t('Back'), 'nav-back')} onClick={navigateBack} disabled={isInsertMode || !canNavigateBack}>
             <FaChevronLeft />
           </IconButton>
           <div
@@ -498,7 +511,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                 {currentPlayerLabel}
               </span>
               {currentCaptureCount > 0 ? (
-                <span className="mobile-bottom-current-captures text-[var(--ui-text-faint)]">{currentCaptureCount} captured</span>
+                <span className="mobile-bottom-current-captures text-[var(--ui-text-faint)]">{t('{count} captured', { count: currentCaptureCount })}</span>
               ) : null}
             </span>
             <span className={`${metaDividerClass} mx-1`}>|</span>
@@ -520,7 +533,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                   onKeyDown={handleMoveNumberKeyDown}
                   onBlur={handleMoveNumberBlur}
                   onFocus={(event) => event.currentTarget.select()}
-                  aria-label="Move number"
+                  aria-label={t('Move number')}
                   inputMode="numeric"
                   min={0}
                   max={totalMovesInCurrentLine}
@@ -535,8 +548,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
               <button
                 type="button"
                 className="mobile-bottom-move-button inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 font-mono text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] disabled:opacity-50"
-                title="Set move number"
-                aria-label={`Move ${currentMoveNumber} of ${totalMovesInCurrentLine}. Tap to jump to a move.`}
+                title={t('Set move number')}
+                aria-label={t('Move {current} of {total}. Tap to jump to a move.', { current: currentMoveNumber, total: totalMovesInCurrentLine })}
                 onClick={openMoveNumberEditor}
                 disabled={isInsertMode}
               >
@@ -568,7 +581,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
               </>
             )}
           </div>
-          <IconButton title={withShortcut('Forward', 'nav-forward')} onClick={navigateForward} disabled={isInsertMode || !canNavigateForward}>
+          <IconButton title={withShortcut(t('Forward'), 'nav-forward')} onClick={navigateForward} disabled={isInsertMode || !canNavigateForward}>
             <FaChevronRight />
           </IconButton>
         </div>
@@ -581,8 +594,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                 onClick={onToggleEdit}
                 disabled={editDisabled}
                 aria-pressed={isEditMode}
-                aria-label={editShortcut ? `Edit position (${editShortcut})` : 'Edit position'}
-                title={editShortcut ? `Edit position (${editShortcut})` : 'Edit position'}
+                aria-label={editShortcut ? t('Edit position ({shortcut})', { shortcut: editShortcut }) : t('Edit position')}
+                title={editShortcut ? t('Edit position ({shortcut})', { shortcut: editShortcut }) : t('Edit position')}
                 data-bottom-edit-toggle="true"
                 className={[
                   'min-h-11 min-w-11 flex items-center justify-center rounded-md border-b-2 transition-colors touch-manipulation',
@@ -601,8 +614,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                 onClick={onToggleScore}
                 disabled={scoreDisabled}
                 aria-pressed={scoringMode}
-                aria-label={scoreShortcut ? `Score position (${scoreShortcut})` : 'Score position'}
-                title={scoreShortcut ? `Score position (${scoreShortcut})` : 'Score position'}
+                aria-label={scoreShortcut ? t('Score position ({shortcut})', { shortcut: scoreShortcut }) : t('Score position')}
+                title={scoreShortcut ? t('Score position ({shortcut})', { shortcut: scoreShortcut }) : t('Score position')}
                 data-bottom-score-toggle="true"
                 className={[
                   'min-h-11 min-w-11 flex items-center justify-center rounded-md border-b-2 transition-colors touch-manipulation',
@@ -624,7 +637,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           data-bottom-more-focus-origin={suppressMoreTriggerFocusRing ? 'pointer' : 'keyboard'}
         >
           <IconButton
-            title="More controls"
+            title={t('More controls')}
             onClick={() => {
               setSuppressMoreTriggerFocusRing(false);
               setMoreOpen((prev) => !prev);
@@ -657,12 +670,12 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                 className="fixed bottom-[var(--mobile-tabbar-height,60px)] left-0 right-0 max-h-[70dvh] ui-panel border-t rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.3)] overflow-y-auto z-50 overscroll-contain pb-safe animate-slide-up select-none touch-manipulation"
               >
                 <div className="sticky top-0 bg-[var(--ui-surface)]/95 backdrop-blur-md border-b border-[var(--ui-border)] px-4 py-2 flex items-center justify-between z-10">
-                  <div id={moreSheetTitleId} className="text-sm font-semibold">More Controls</div>
+                  <div id={moreSheetTitleId} className="text-sm font-semibold">{t('More Controls')}</div>
                   <button type="button"
                     ref={moreCloseRef}
                     onClick={(event) => closeMoreControls(event.detail === 0 ? 'keyboard' : 'pointer')}
-                    aria-label="Close more controls"
-                    title="Close more controls"
+                    aria-label={t('Close more controls')}
+                    title={t('Close more controls')}
                     data-bottom-more-close="true"
                     className="-mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] touch-manipulation"
                   >
@@ -684,7 +697,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                       <FaStepBackward size={14} />
                     </div>
-                    <div className="flex-1 font-medium">Start of game</div>
+                    <div className="flex-1 font-medium">{t('Start of game')}</div>
                   </button>
 
                   <button type="button"
@@ -698,7 +711,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                       <FaFastBackward size={14} />
                     </div>
-                    <div className="flex-1 font-medium">Back 10 moves</div>
+                    <div className="flex-1 font-medium">{t('Back 10 moves')}</div>
                   </button>
 
                   <button type="button"
@@ -712,7 +725,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                       <FaFastForward size={14} />
                     </div>
-                    <div className="flex-1 font-medium">Forward 10 moves</div>
+                    <div className="flex-1 font-medium">{t('Forward 10 moves')}</div>
                   </button>
 
                   <button type="button"
@@ -726,7 +739,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                       <FaStepForward size={14} />
                     </div>
-                    <div className="flex-1 font-medium">End of game</div>
+                    <div className="flex-1 font-medium">{t('End of game')}</div>
                   </button>
 
                   <div className="col-span-2 h-px bg-[var(--ui-border)] mx-2 my-1" />
@@ -734,7 +747,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                   {showBranchControl && branchInfo && switchBranch && (
                     <>
                       <div className="col-span-2 px-3 pt-1 pb-0.5 text-[0.6875rem] font-semibold uppercase tracking-wide ui-text-faint">
-                        Variation
+                        {t('Variation')}
                       </div>
                       <button type="button"
                         className={mobileMoreActionClass}
@@ -747,7 +760,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                           <FaChevronUp size={14} />
                         </div>
-                        <div className="flex-1 font-medium">Previous branch</div>
+                        <div className="flex-1 font-medium">{t('Previous branch')}</div>
                         <div className="text-xs ui-text-faint">{shortcutLabels['branch-prev']}</div>
                       </button>
 
@@ -762,7 +775,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                           <FaChevronDown size={14} />
                         </div>
-                        <div className="flex-1 font-medium">Next branch</div>
+                        <div className="flex-1 font-medium">{t('Next branch')}</div>
                         <div className="text-xs ui-text-faint">{shortcutLabels['branch-next']}</div>
                       </button>
 
@@ -771,7 +784,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         data-bottom-branch-control="true"
                       >
                         <div className="min-w-0">
-                          <div className="text-xs font-semibold ui-text-faint uppercase tracking-wide">Current branch</div>
+                          <div className="text-xs font-semibold ui-text-faint uppercase tracking-wide">{t('Current branch')}</div>
                           <div className="text-sm text-[var(--ui-text)]">{branchTitle}</div>
                         </div>
                         <div className="shrink-0 text-sm">{renderBranchIndexButton(false)}</div>
@@ -789,12 +802,12 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         closeMoreControlsFromAction(event);
                       }}
                       disabled={!canNavigateBack}
-                      title={canNavigateBack ? 'Undo last move' : 'No move to undo'}
+                      title={canNavigateBack ? t('Undo last move') : t('No move to undo')}
                     >
                       <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                         <FaUndo size={14} />
                       </div>
-                      <div className="flex-1 font-medium">Undo last move</div>
+                      <div className="flex-1 font-medium">{t('Undo last move')}</div>
                     </button>
                   )}
 
@@ -809,7 +822,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                       <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-teal-400">
                         <FaRobot size={14} />
                       </div>
-                      <div className="flex-1 font-medium text-teal-400">Request AI move</div>
+                      <div className="flex-1 font-medium text-teal-400">{t('Request AI move')}</div>
                     </button>
                   )}
 
@@ -824,7 +837,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                       <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500">
                         <FaFlag size={14} />
                       </div>
-                      <div className="flex-1 font-medium">Resign</div>
+                      <div className="flex-1 font-medium">{t('Resign')}</div>
                     </button>
                   )}
 
@@ -838,7 +851,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                       <FaSyncAlt size={14} />
                     </div>
-                    <div className="flex-1 font-medium">Rotate board</div>
+                    <div className="flex-1 font-medium">{t('Rotate board')}</div>
                   </button>
 
                   {(onToggleEdit || onToggleScore) && (
@@ -856,7 +869,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                           <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                             <FaEdit size={14} />
                           </div>
-                          <div className="flex-1 font-medium">Edit position</div>
+                          <div className="flex-1 font-medium">{t('Edit position')}</div>
                         </button>
                       )}
 
@@ -873,7 +886,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                           <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-text)]">
                             <FaCalculator size={14} />
                           </div>
-                          <div className="flex-1 font-medium">Score position</div>
+                          <div className="flex-1 font-medium">{t('Score position')}</div>
                         </button>
                       )}
                     </div>
@@ -888,7 +901,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                       closeMoreControlsFromAction(event);
                     }}
                     disabled={isInsertMode || !canFindPreviousMistake}
-                    title={canFindPreviousMistake ? 'Previous mistake' : 'No previous analyzed mistake'}
+                    title={canFindPreviousMistake ? t('Previous mistake') : t('No previous analyzed mistake')}
                   >
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface)] flex items-center justify-center">
                       <span className="inline-flex items-center gap-1" aria-hidden="true">
@@ -896,7 +909,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         <span className="h-2 w-2 rounded-full bg-[var(--eval-mistake)]" />
                       </span>
                     </div>
-                    <div className="flex-1 font-medium">Previous mistake</div>
+                    <div className="flex-1 font-medium">{t('Previous mistake')}</div>
                   </button>
 
                   <button type="button"
@@ -906,7 +919,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                       closeMoreControlsFromAction(event);
                     }}
                     disabled={isInsertMode || !canFindNextMistake}
-                    title={canFindNextMistake ? 'Next mistake' : 'No next analyzed mistake'}
+                    title={canFindNextMistake ? t('Next mistake') : t('No next analyzed mistake')}
                   >
                     <div className="w-8 h-8 rounded-full bg-[var(--ui-surface)] flex items-center justify-center">
                       <span className="inline-flex items-center gap-1" aria-hidden="true">
@@ -914,7 +927,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         <FaChevronRight size={9} />
                       </span>
                     </div>
-                    <div className="flex-1 font-medium">Next mistake</div>
+                    <div className="flex-1 font-medium">{t('Next mistake')}</div>
                   </button>
 
                   {/* Bottom padding for safe area */}
@@ -941,10 +954,10 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           ref={passBtnRef}
           className="relative px-4 py-2 bg-[var(--ui-surface-2)] hover:brightness-110 rounded-lg text-sm font-medium text-[var(--ui-text)] transition-colors"
           onClick={passTurn}
-          aria-label="Pass turn"
-          title={withShortcut('Pass', 'pass')}
+          aria-label={t('Pass turn')}
+          title={withShortcut(t('Pass'), 'pass')}
         >
-          Pass
+          {t('Pass')}
         </button>
         {passPv && (
           <div
@@ -984,7 +997,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
       {/* Navigation controls */}
       <div className="flex-1 flex items-center justify-center gap-1">
         <IconButton
-          title={canFindPreviousMistake ? withShortcut('Previous mistake', 'prev-mistake') : 'No previous analyzed mistake'}
+          title={canFindPreviousMistake ? withShortcut(t('Previous mistake'), 'prev-mistake') : t('No previous analyzed mistake')}
           onClick={() => findMistake('undo')}
           disabled={isInsertMode || !canFindPreviousMistake}
         >
@@ -996,13 +1009,13 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
 
         <div className="h-6 w-px bg-[var(--ui-border)] mx-0.5" />
 
-        <IconButton title={withShortcut('Start', 'nav-start')} onClick={navigateStart} disabled={isInsertMode || !canNavigateBack}>
+        <IconButton title={withShortcut(t('Start'), 'nav-start')} onClick={navigateStart} disabled={isInsertMode || !canNavigateBack}>
           <FaStepBackward />
         </IconButton>
-        <IconButton title={withShortcut('Back 10', 'nav-back-10')} onClick={() => jumpBack(10)} disabled={isInsertMode || !canNavigateBack}>
+        <IconButton title={withShortcut(t('Back 10'), 'nav-back-10')} onClick={() => jumpBack(10)} disabled={isInsertMode || !canNavigateBack}>
           <FaFastBackward />
         </IconButton>
-        <IconButton title={withShortcut('Back', 'nav-back')} onClick={navigateBack} disabled={!canNavigateBack}>
+        <IconButton title={withShortcut(t('Back'), 'nav-back')} onClick={navigateBack} disabled={!canNavigateBack}>
           <FaChevronLeft />
         </IconButton>
 
@@ -1012,13 +1025,13 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           title={matchupSummary}
           aria-label={matchupSummary}
         >
-          <span className={currentPlayer === 'black' ? activePlayerClass : inactivePlayerClass} title={`Black: ${blackPlayerLabel}, ${blackCaptures} captured`}>B</span>
+          <span className={currentPlayer === 'black' ? activePlayerClass : inactivePlayerClass} title={t('Black: {name}, {count} captured', { name: blackPlayerLabel, count: blackCaptures })}>B</span>
           <span className="text-[var(--ui-text-faint)]">·</span>
-          <span className={currentPlayer === 'white' ? activePlayerClass : inactivePlayerClass} title={`White: ${whitePlayerLabel}, ${whiteCaptures} captured`}>W</span>
+          <span className={currentPlayer === 'white' ? activePlayerClass : inactivePlayerClass} title={t('White: {name}, {count} captured', { name: whitePlayerLabel, count: whiteCaptures })}>W</span>
           <span className="text-[var(--ui-text-faint)] mx-1">|</span>
           {isMoveNumberEditing ? (
             <span className="inline-flex items-center gap-1">
-              <span className="ui-text-faint">Move</span>
+              <span className="ui-text-faint">{t('Move')}</span>
               <input
                 type="number"
                 value={moveNumberDraft}
@@ -1026,7 +1039,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                 onKeyDown={handleMoveNumberKeyDown}
                 onBlur={handleMoveNumberBlur}
                 onFocus={(event) => event.currentTarget.select()}
-                aria-label="Move number"
+                aria-label={t('Move number')}
                 inputMode="numeric"
                 min={0}
                 max={totalMovesInCurrentLine}
@@ -1039,11 +1052,11 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             <button
               type="button"
               className="inline-flex min-h-11 items-center gap-1 rounded px-2 text-left hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
-              title="Set move number"
+              title={t('Set move number')}
               onClick={openMoveNumberEditor}
               disabled={isInsertMode}
             >
-              <span className="ui-text-faint">Move</span>
+              <span className="ui-text-faint">{t('Move')}</span>
               <span className="text-[var(--ui-text)] font-semibold">{currentMoveNumber}</span>
               <span className="ui-text-faint">/{totalMovesInCurrentLine}</span>
             </button>
@@ -1058,8 +1071,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             <button
               type="button"
               className="ui-control flex items-center justify-center rounded hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
-              title={withShortcut('Previous branch', 'branch-prev')}
-              aria-label={withShortcut('Previous branch', 'branch-prev')}
+              title={withShortcut(t('Previous branch'), 'branch-prev')}
+              aria-label={withShortcut(t('Previous branch'), 'branch-prev')}
               onClick={() => switchBranch(-1)}
               disabled={isInsertMode}
             >
@@ -1069,8 +1082,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             <button
               type="button"
               className="ui-control flex items-center justify-center rounded hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
-              title={withShortcut('Next branch', 'branch-next')}
-              aria-label={withShortcut('Next branch', 'branch-next')}
+              title={withShortcut(t('Next branch'), 'branch-next')}
+              aria-label={withShortcut(t('Next branch'), 'branch-next')}
               onClick={() => switchBranch(1)}
               disabled={isInsertMode}
             >
@@ -1079,20 +1092,20 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           </div>
         )}
 
-        <IconButton title={withShortcut('Forward', 'nav-forward')} onClick={navigateForward} disabled={isInsertMode || !canNavigateForward}>
+        <IconButton title={withShortcut(t('Forward'), 'nav-forward')} onClick={navigateForward} disabled={isInsertMode || !canNavigateForward}>
           <FaChevronRight />
         </IconButton>
-        <IconButton title={withShortcut('Forward 10', 'nav-forward-10')} onClick={() => jumpForward(10)} disabled={isInsertMode || !canNavigateForward}>
+        <IconButton title={withShortcut(t('Forward 10'), 'nav-forward-10')} onClick={() => jumpForward(10)} disabled={isInsertMode || !canNavigateForward}>
           <FaFastForward />
         </IconButton>
-        <IconButton title={withShortcut('End', 'nav-end')} onClick={navigateEnd} disabled={isInsertMode || !canNavigateForward}>
+        <IconButton title={withShortcut(t('End'), 'nav-end')} onClick={navigateEnd} disabled={isInsertMode || !canNavigateForward}>
           <FaStepForward />
         </IconButton>
 
         <div className="h-6 w-px bg-[var(--ui-border)] mx-0.5" />
 
         <IconButton
-          title={canFindNextMistake ? withShortcut('Next mistake', 'next-mistake') : 'No next analyzed mistake'}
+          title={canFindNextMistake ? withShortcut(t('Next mistake'), 'next-mistake') : t('No next analyzed mistake')}
           onClick={() => findMistake('redo')}
           disabled={isInsertMode || !canFindNextMistake}
         >
@@ -1101,7 +1114,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             <FaChevronRight size={9} />
           </span>
         </IconButton>
-        <IconButton title={withShortcut('Rotate', 'rotate-board')} onClick={rotateBoard}>
+        <IconButton title={withShortcut(t('Rotate'), 'rotate-board')} onClick={rotateBoard}>
           <FaSyncAlt />
         </IconButton>
       </div>

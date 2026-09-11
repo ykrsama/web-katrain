@@ -1,4 +1,5 @@
 import type { GameNode, GameRules } from '../types';
+import { t } from '../i18n';
 import { rulesLabel } from './goRules';
 
 
@@ -13,5 +14,7 @@ export function formatRootInfoText(opts: {
 }): string {
   const rulesRaw = opts.rootNode.properties?.RU?.[0] ?? opts.currentNode.properties?.RU?.[0];
   const rules = typeof rulesRaw === 'string' && rulesRaw.trim() ? rulesRaw.trim() : rulesLabel(opts.gameRules);
-  return `Komi: ${formatInfoKomi(opts.currentNode.gameState.komi)}\nRuleset: ${rules}\n`;
+  const komiLabel = t('Komi: {value}', { value: formatInfoKomi(opts.currentNode.gameState.komi) });
+  const rulesetLabel = t('Ruleset: {value}', { value: rules });
+  return `${komiLabel}\n${rulesetLabel}\n`;
 }

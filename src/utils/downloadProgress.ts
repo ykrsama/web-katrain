@@ -1,5 +1,6 @@
-export type DownloadProgressUpdate = {
-  receivedBytes: number;
+import { t } from '../i18n';
+
+export type DownloadProgressUpdate = {  receivedBytes: number;
   totalBytes: number | null;
   percent: number | null;
 };
@@ -60,7 +61,7 @@ export async function fetchBlobWithProgress(
 ): Promise<Blob> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Download failed (${response.status})`);
+    throw new Error(t('Download failed ({status})', { status: response.status }));
   }
   return responseBlobWithProgress(response, onProgress);
 }

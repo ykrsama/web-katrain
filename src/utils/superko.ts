@@ -1,5 +1,6 @@
-import type { BoardState, Player } from '../types';
+import type { AppLocaleId, BoardState, Player } from '../types';
 import type { KoRule } from './goRules';
+import { translate } from '../i18n/translate';
 
 /**
  * Superko.
@@ -54,7 +55,10 @@ export const violatesSuperko = (args: {
 };
 
 /** Wording for the notification when a move is refused for repeating a position. */
-export const superkoRejectionMessage = (ko: KoRule): string =>
-  ko === 'situational'
-    ? 'Situational superko: that move repeats an earlier position with the same player to move.'
-    : 'Positional superko: that move repeats an earlier position.';
+export const superkoRejectionMessage = (ko: KoRule, locale?: AppLocaleId): string => {
+  const template =
+    ko === 'situational'
+      ? 'Situational superko: that move repeats an earlier position with the same player to move.'
+      : 'Positional superko: that move repeats an earlier position.';
+  return locale ? translate(locale, template) : template;
+};

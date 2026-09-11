@@ -1,6 +1,7 @@
 import React from 'react';
 import { BOT_PERSONAS, type BotPersona, type BotPersonaTraits } from '../data/botPersonas';
 import { formatKyuRank } from '../utils/tournament';
+import { useT } from '../i18n';
 
 interface BotPersonaPickerProps {
   selectedId: string | null;
@@ -27,11 +28,12 @@ const TraitBar: React.FC<{ label: string; value: number }> = ({ label, value }) 
 );
 
 export const BotPersonaPicker: React.FC<BotPersonaPickerProps> = ({ selectedId, onSelect }) => {
+  const t = useT();
   return (
-    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Choose a bot">
+    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t('Choose a bot')}>
       {BOT_PERSONAS.map((persona) => {
         const active = persona.id === selectedId;
-        const styleLabel = persona.styleTags.join(' · ');
+        const styleLabel = persona.styleTags.map((tag) => t(tag)).join(' · ');
         return (
           <button
             key={persona.id}
@@ -47,7 +49,7 @@ export const BotPersonaPicker: React.FC<BotPersonaPickerProps> = ({ selectedId, 
             ].join(' ')}
           >
             <div className="flex min-w-0 items-baseline justify-between gap-2">
-              <span className="truncate font-semibold text-[var(--ui-text)]">{persona.name}</span>
+              <span className="truncate font-semibold text-[var(--ui-text)]">{t(persona.name)}</span>
               <span className="shrink-0 rounded-full border border-[var(--ui-border)] px-2 py-0.5 font-mono text-[0.6875rem] text-[var(--ui-text-muted)]">
                 {formatKyuRank(persona.rankKyu)}
               </span>
@@ -60,10 +62,10 @@ export const BotPersonaPicker: React.FC<BotPersonaPickerProps> = ({ selectedId, 
             </div>
             {active && (
               <>
-                <p className="mt-2 text-xs leading-5 text-[var(--ui-text-muted)]">{persona.blurb}</p>
+                <p className="mt-2 text-xs leading-5 text-[var(--ui-text-muted)]">{t(persona.blurb)}</p>
                 <div className="mt-2 grid gap-1">
                   {TRAIT_LABELS.map(({ key, label }) => (
-                    <TraitBar key={key} label={label} value={persona.traits[key]} />
+                    <TraitBar key={key} label={t(label)} value={persona.traits[key]} />
                   ))}
                 </div>
               </>

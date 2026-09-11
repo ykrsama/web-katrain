@@ -1,5 +1,6 @@
 import type { GameSettings } from '../types';
 import { describeHumanProfile } from './humanProfileLabel';
+import { t } from '../i18n';
 
 /**
  * Estimated playing strength of an AI configuration.
@@ -103,7 +104,7 @@ export type AiStrengthEstimate = {
 /** KaTrain `rank_label`: 1 and up is dan, below that is kyu. */
 export const formatRankLabel = (rank: number | null): string | null => {
   if (rank === null || !Number.isFinite(rank)) return null;
-  return rank >= 0.5 ? `${Math.round(rank)}d` : `${Math.round(1 - rank)}k`;
+  return rank >= 0.5 ? t('{n}d', { n: Math.round(rank) }) : t('{n}k', { n: Math.round(1 - rank) });
 };
 
 /**
@@ -182,9 +183,11 @@ export const estimateAiRank = (
 
 /** One line for the settings panel. */
 export const describeAiStrength = (estimate: AiStrengthEstimate): string => {
-  if (estimate.imitates && estimate.label) return `Plays like a ${estimate.label} player, from KataGo's human network.`;
-  if (!estimate.label) return 'No calibrated strength for this style.';
+  if (estimate.imitates && estimate.label) {
+    return t("Plays like a {label} player, from KataGo's human network.", { label: estimate.label });
+  }
+  if (!estimate.label) return t('No calibrated strength for this style.');
   return estimate.calibrated
-    ? `Estimated strength: about ${estimate.label}.`
-    : `Estimated strength: ${estimate.label} (full strength).`;
+    ? t('Estimated strength: about {label}.', { label: estimate.label })
+    : t('Estimated strength: {label} (full strength).', { label: estimate.label });
 };

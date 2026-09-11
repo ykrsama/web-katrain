@@ -1,6 +1,7 @@
 import type { LibraryItem } from './library';
 import { downloadOgsSgf } from './ogs';
 import { fetchOgsResource, isOgsCancelledError } from './ogsQueue';
+import { t } from '../i18n';
 
 export type OgsPlayer = {
   id: number;
@@ -110,19 +111,24 @@ export const parseOgsGameList = (payload: unknown): OgsGameSummary[] => {
 const fetchJson = async (url: string): Promise<unknown> => {
   const response = await fetchOgsResource(url, { method: 'GET' });
   if (!response.ok) {
-    throw new Error(`OGS request failed (${response.status} ${response.statusText})`);
+    throw new Error(
+      t('OGS request failed ({status} {statusText})', {
+        status: response.status,
+        statusText: response.statusText,
+      })
+    );
   }
   return response.json();
 };
 
 export const resolveOgsPlayer = async (username: string): Promise<OgsPlayer> => {
   const trimmed = username.trim();
-  if (!trimmed) throw new Error('Enter an OGS username.');
+  if (!trimmed) throw new Error(t('Enter an OGS username.'));
   const payload = await fetchJson(
     `${OGS_API_BASE}/players/?username=${encodeURIComponent(trimmed)}`
   );
   const player = parseOgsPlayerSearch(payload, trimmed);
-  if (!player) throw new Error(`No OGS player named "${trimmed}" was found.`);
+  if (!player) throw new Error(t('No OGS player named "{username}" was found.', { username: trimmed }));
   return player;
 };
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { FaCheck, FaCheckCircle, FaCopy, FaExclamationTriangle, FaInfoCircle, FaTimes } from 'react-icons/fa';
 import { copyTextToClipboard } from '../../utils/clipboard';
+import { useT } from '../../i18n';
 
 export type NotificationToastType = 'info' | 'error' | 'success';
 
@@ -52,6 +53,7 @@ export function NotificationToast({
   onHoldChange,
   onUndo,
 }: NotificationToastProps) {
+  const t = useT();
   const meta = notificationMeta[notification.type];
   const Icon = meta.Icon;
   const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'failed'>('idle');
@@ -91,7 +93,7 @@ export function NotificationToast({
           <Icon size={16} />
         </span>
         <span className="notification-toast-message" title={notification.message}>
-          <span className="sr-only">{meta.label}: </span>
+          <span className="sr-only">{t(meta.label)}: </span>
           {notification.message}
         </span>
         {notification.undoable && onUndo && (
@@ -101,7 +103,7 @@ export function NotificationToast({
             onClick={onUndo}
             data-notification-undo="true"
           >
-            Undo
+            {t('Undo')}
           </button>
         )}
         {canCopy && (
@@ -111,12 +113,12 @@ export function NotificationToast({
             onClick={() => void handleCopy()}
             aria-label={
               copyState === 'copied'
-                ? 'Notification copied'
+                ? t('Notification copied')
                 : copyState === 'failed'
-                  ? 'Copy notification failed'
-                  : 'Copy notification'
+                  ? t('Copy notification failed')
+                  : t('Copy notification')
             }
-            title={copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy notification'}
+            title={copyState === 'copied' ? t('Copied') : copyState === 'failed' ? t('Copy failed') : t('Copy notification')}
             data-notification-copy="true"
           >
             {copyState === 'copied' ? <FaCheck size={13} /> : <FaCopy size={13} />}
@@ -126,8 +128,8 @@ export function NotificationToast({
           type="button"
           className="notification-toast-close"
           onClick={onClose}
-          aria-label="Dismiss notification"
-          title="Dismiss notification"
+          aria-label={t('Dismiss notification')}
+          title={t('Dismiss notification')}
         >
           <FaTimes size={13} />
         </button>

@@ -6,6 +6,7 @@ import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { StaticBoard } from './StaticBoard';
 import { evaluateNode } from '../utils/positionEval';
 import { collectQuizPositions, selectQuizJumpCandidates } from '../utils/scoreQuizPositions';
+import { useT } from '../i18n';
 
 interface ScoreQuizModalProps {
   onClose: () => void;
@@ -30,6 +31,7 @@ const ratingFor = (error: number): { label: string; tone: string } => {
 export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
 
   const currentNode = useGameStore((s) => s.currentNode);
   const rootNode = useGameStore((s) => s.rootNode);
@@ -77,7 +79,7 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
       }));
       setPhase('reveal');
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Evaluation failed. Is the engine loaded?');
+      setErrorMsg(err instanceof Error ? err.message : t('Evaluation failed. Is the engine loaded?'));
       setPhase('guess');
     }
   }, [currentNode, settings, winner, margin]);
@@ -124,13 +126,13 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
       >
         <div className="score-quiz-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="score-quiz-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Score Estimation Quiz
+            {t('Score Estimation Quiz')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close quiz"
+            aria-label={t('Close quiz')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -139,23 +141,23 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
         <div className="score-quiz-body flex-1 space-y-4 overflow-y-auto p-4">
           <p className="score-quiz-intro text-sm text-[var(--ui-text-muted)]">
             {quizPositions.length === 0
-              ? 'This is the starting position. Play some moves or open a game for a more meaningful score estimate.'
+              ? t('This is the starting position. Play some moves or open a game for a more meaningful score estimate.')
               : (
                   <>
-                    <span className="score-quiz-instructions">Read the position, then estimate who is ahead and by how many points.</span>{' '}
-                    Move {moveNumber}.
+                    <span className="score-quiz-instructions">{t('Read the position, then estimate who is ahead and by how many points.')}</span>{' '}
+                    {t('Move {n}.', { n: moveNumber })}
                   </>
                 )}
           </p>
 
           <div className="score-quiz-board mx-auto w-full max-w-[340px]">
-            <StaticBoard board={board} lastMove={lastMove} ariaLabel={`Quiz position at move ${moveNumber}`} />
+            <StaticBoard board={board} lastMove={lastMove} ariaLabel={t('Quiz position at move {n}', { n: moveNumber })} />
           </div>
 
           {phase !== 'reveal' ? (
             <div className="score-quiz-response space-y-3">
-              <div className="score-quiz-leader-label text-sm font-semibold text-[var(--ui-text)]">Who is ahead?</div>
-              <div className="grid grid-cols-2 gap-2" role="group" aria-label="Predicted leader">
+              <div className="score-quiz-leader-label text-sm font-semibold text-[var(--ui-text)]">{t('Who is ahead?')}</div>
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label={t('Predicted leader')}>
                 {(['black', 'white'] as Winner[]).map((w) => (
                   <button
                     key={w}
@@ -168,12 +170,12 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
                         : 'border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]'
                     }`}
                   >
-                    {w}
+                    {t(w === 'black' ? 'Black' : 'White')}
                   </button>
                 ))}
               </div>
               <label className="flex items-center justify-between gap-3 text-sm text-[var(--ui-text)]">
-                <span className="font-semibold">By how many points?</span>
+                <span className="font-semibold">{t('By how many points?')}</span>
                 <input
                   ref={marginInputRef}
                   type="number"
@@ -193,31 +195,31 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
             </div>
           ) : (
             <div className="score-quiz-response space-y-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3 text-sm">
-              <div className="text-base font-semibold" style={{ color: rating.tone }}>{rating.label}</div>
+              <div className="text-base font-semibold" style={{ color: rating.tone }}>{t(rating.label)}</div>
               <div className="flex justify-between text-[var(--ui-text)]">
-                <span>Actual</span>
+                <span>{t('Actual')}</span>
                 <span className="font-semibold">
                   {actualLeader === 'even'
-                    ? 'Even'
-                    : `${actualLeader === 'black' ? 'Black' : 'White'} +${Math.abs(actual ?? 0).toFixed(1)}`}
+                    ? t('Even')
+                    : `${t(actualLeader === 'black' ? 'Black' : 'White')} +${Math.abs(actual ?? 0).toFixed(1)}`}
                 </span>
               </div>
               <div className="flex justify-between text-[var(--ui-text-muted)]">
-                <span>Your guess</span>
-                <span>{`${winner === 'black' ? 'Black' : 'White'} +${Math.abs(Number(margin) || 0).toFixed(1)}`}</span>
+                <span>{t('Your guess')}</span>
+                <span>{`${t(winner === 'black' ? 'Black' : 'White')} +${Math.abs(Number(margin) || 0).toFixed(1)}`}</span>
               </div>
               <div className="flex justify-between text-[var(--ui-text-muted)]">
-                <span>Off by</span>
-                <span>{roundError.toFixed(1)} pts</span>
+                <span>{t('Off by')}</span>
+                <span>{t('{n} pts', { n: roundError.toFixed(1) })}</span>
               </div>
             </div>
           )}
 
           {stats.rounds > 0 && (
             <div className="score-quiz-stats flex justify-between text-xs text-[var(--ui-text-muted)]">
-              <span>Rounds: {stats.rounds}</span>
-              <span>Leader correct: {stats.leaderHits}/{stats.rounds}</span>
-              <span>Avg error: {avgError.toFixed(1)} pts</span>
+              <span>{t('Rounds: {n}', { n: stats.rounds })}</span>
+              <span>{t('Leader correct: {hits}/{rounds}', { hits: stats.leaderHits, rounds: stats.rounds })}</span>
+              <span>{t('Avg error: {n} pts', { n: avgError.toFixed(1) })}</span>
             </div>
           )}
         </div>
@@ -227,14 +229,14 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
             type="button"
             onClick={handleRandom}
             disabled={quizPositions.length === 0}
-            aria-label="Random position"
-            title={quizPositions.length === 0 ? 'This game has no positions to jump to yet' : 'Jump to another position in this game'}
+            aria-label={t('Random position')}
+            title={quizPositions.length === 0 ? t('This game has no positions to jump to yet') : t('Jump to another position in this game')}
             className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="inline-flex items-center gap-2">
               <FaDice aria-hidden="true" />
-              <span className="score-quiz-label-full">Random position</span>
-              <span className="score-quiz-label-compact">Random</span>
+              <span className="score-quiz-label-full">{t('Random position')}</span>
+              <span className="score-quiz-label-compact">{t('Random')}</span>
             </span>
           </button>
           {phase === 'reveal' ? (
@@ -243,27 +245,27 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
               onClick={() => { setPhase('guess'); setActual(null); }}
               className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
             >
-              Guess again
+              {t('Guess again')}
             </button>
           ) : (
             <button
               type="button"
               onClick={() => void handleReveal()}
               disabled={phase === 'evaluating'}
-              aria-label={phase === 'evaluating' ? 'Evaluating score' : 'Reveal score'}
+              aria-label={phase === 'evaluating' ? t('Evaluating score') : t('Reveal score')}
               className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-60"
             >
               <span className="inline-flex items-center gap-2">
                 <FaCheck aria-hidden="true" />
                 {phase === 'evaluating' ? (
                   <>
-                    <span className="score-quiz-label-full">Evaluating…</span>
-                    <span className="score-quiz-label-compact">Working…</span>
+                    <span className="score-quiz-label-full">{t('Evaluating…')}</span>
+                    <span className="score-quiz-label-compact">{t('Working…')}</span>
                   </>
                 ) : (
                   <>
-                    <span className="score-quiz-label-full">Reveal score</span>
-                    <span className="score-quiz-label-compact">Reveal</span>
+                    <span className="score-quiz-label-full">{t('Reveal score')}</span>
+                    <span className="score-quiz-label-compact">{t('Reveal')}</span>
                   </>
                 )}
               </span>

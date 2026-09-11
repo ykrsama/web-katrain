@@ -4,6 +4,7 @@ import { useGameStore } from '../store/gameStore';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { StaticBoard, type StaticBoardMarker } from './StaticBoard';
+import { useT } from '../i18n';
 import {
   buildGuessPositions,
   guessVerdict,
@@ -40,6 +41,7 @@ const toneColor = (tone: 'success' | 'warning' | 'danger'): string =>
 export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrowseProGames, onOpenSgf }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
 
   const rootNode = useGameStore((s) => s.rootNode);
   const treeVersion = useGameStore((s) => s.treeVersion);
@@ -140,13 +142,13 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
       >
         <div className="guess-move-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="guess-move-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Guess the Move
+            {t('Guess the Move')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close guess the move"
+            aria-label={t('Close guess the move')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -155,9 +157,9 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
         {positions.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
             <div className="space-y-1.5">
-              <h3 className="font-semibold text-[var(--ui-text)]">No moves to guess</h3>
+              <h3 className="font-semibold text-[var(--ui-text)]">{t('No moves to guess')}</h3>
               <p className="max-w-sm text-sm text-[var(--ui-text-muted)]">
-                Load a game with moves to practice predicting the next move.
+                {t('Load a game with moves to practice predicting the next move.')}
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
@@ -166,14 +168,14 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                 onClick={onBrowseProGames}
                 className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
               >
-                <span className="inline-flex items-center gap-2"><FaBook aria-hidden="true" /> Browse pro games</span>
+                <span className="inline-flex items-center gap-2"><FaBook aria-hidden="true" /> {t('Browse pro games')}</span>
               </button>
               <button
                 type="button"
                 onClick={onOpenSgf}
                 className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
               >
-                <span className="inline-flex items-center gap-2"><FaFolderOpen aria-hidden="true" /> Open SGF</span>
+                <span className="inline-flex items-center gap-2"><FaFolderOpen aria-hidden="true" /> {t('Open SGF')}</span>
               </button>
             </div>
           </div>
@@ -183,10 +185,13 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
               <div className="guess-move-toolbar flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-[var(--ui-text-muted)]" data-guess-move-prompt="true">
                   {phase === 'guess' && current
-                    ? `Where does ${playerLabel(current.expected.player)} play at move ${current.moveNumber}?`
-                    : 'Result'}
+                    ? t('Where does {player} play at move {n}?', {
+                        player: t(playerLabel(current.expected.player)),
+                        n: current.moveNumber,
+                      })
+                    : t('Result')}
                 </p>
-                <div className="inline-flex overflow-hidden rounded-lg border border-[var(--ui-border)]" role="group" aria-label="Which moves to guess">
+                <div className="inline-flex overflow-hidden rounded-lg border border-[var(--ui-border)]" role="group" aria-label={t('Which moves to guess')}>
                   {FILTERS.map((f) => (
                     <button
                       key={f.id}
@@ -199,7 +204,7 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                           : 'bg-[var(--ui-surface)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]'
                       }`}
                     >
-                      {f.label}
+                      {t(f.label)}
                     </button>
                   ))}
                 </div>
@@ -212,7 +217,7 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                     lastMove={current.lastMove}
                     markers={markers}
                     onPointClick={phase === 'guess' ? handleGuess : undefined}
-                    ariaLabel={`Guess move ${current.moveNumber}`}
+                    ariaLabel={t('Guess move {n}', { n: current.moveNumber })}
                   />
                 )}
               </div>
@@ -221,36 +226,36 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                 <div className="space-y-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3 text-sm" data-guess-move-result="true">
                   {verdict ? (
                     <div className="text-base font-semibold" style={{ color: toneColor(verdict.tone) }}>
-                      {verdict.label}
+                      {t(verdict.label)}
                     </div>
                   ) : (
-                    <div className="text-base font-semibold text-[var(--ui-text-muted)]">Answer revealed</div>
+                    <div className="text-base font-semibold text-[var(--ui-text-muted)]">{t('Answer revealed')}</div>
                   )}
                   <div className="flex justify-between text-[var(--ui-text)]">
-                    <span>Actual move</span>
+                    <span>{t('Actual move')}</span>
                     <span className="font-mono font-semibold">
-                      {playerLabel(current.expected.player)} {gtpLabel(current.expected.x, current.expected.y, size)}
+                      {t(playerLabel(current.expected.player))} {gtpLabel(current.expected.x, current.expected.y, size)}
                     </span>
                   </div>
                   {guess && (
                     <div className="flex justify-between text-[var(--ui-text-muted)]">
-                      <span>Your guess</span>
+                      <span>{t('Your guess')}</span>
                       <span className="font-mono">{gtpLabel(guess.x, guess.y, size)}</span>
                     </div>
                   )}
                   {outcome && !outcome.correct && (
                     <div className="flex justify-between text-[var(--ui-text-muted)]">
-                      <span>Distance</span>
-                      <span>{outcome.distance} line{outcome.distance === 1 ? '' : 's'}</span>
+                      <span>{t('Distance')}</span>
+                      <span>{t('{n} lines', { n: outcome.distance })}</span>
                     </div>
                   )}
                 </div>
               )}
 
               <div className="flex justify-between text-xs text-[var(--ui-text-muted)]" data-guess-move-stats="true">
-                <span>Position {safeIndex + 1} / {positions.length}</span>
+                <span>{t('Position {n} / {total}', { n: safeIndex + 1, total: positions.length })}</span>
                 {stats.attempts > 0 && (
-                  <span>Correct: {stats.correct}/{stats.attempts} ({accuracy}%)</span>
+                  <span>{t('Correct: {c}/{a} ({p}%)', { c: stats.correct, a: stats.attempts, p: accuracy })}</span>
                 )}
               </div>
             </div>
@@ -260,13 +265,13 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                 <button
                   type="button"
                   onClick={handleShowAnswer}
-                  aria-label="Show answer"
+                  aria-label={t('Show answer')}
                   className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                 >
                   <span className="inline-flex items-center gap-2">
                     <FaEye aria-hidden="true" />
-                    <span className="guess-move-label-full">Show answer</span>
-                    <span className="guess-move-label-compact">Answer</span>
+                    <span className="guess-move-label-full">{t('Show answer')}</span>
+                    <span className="guess-move-label-compact">{t('Answer')}</span>
                   </span>
                 </button>
               ) : null}
@@ -274,13 +279,13 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                 type="button"
                 onClick={handleNext}
                 disabled={isLast}
-                aria-label={isLast ? 'End of game' : 'Next move'}
+                aria-label={isLast ? t('End of game') : t('Next move')}
                 className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-60"
                 data-guess-move-next="true"
               >
                 <span className="inline-flex items-center gap-2">
-                  <span className="guess-move-label-full">{isLast ? 'End of game' : 'Next move'}</span>
-                  <span className="guess-move-label-compact">{isLast ? 'End' : 'Next'}</span>
+                  <span className="guess-move-label-full">{isLast ? t('End of game') : t('Next move')}</span>
+                  <span className="guess-move-label-compact">{isLast ? t('End') : t('Next')}</span>
                   <FaArrowRight aria-hidden="true" />
                 </span>
               </button>

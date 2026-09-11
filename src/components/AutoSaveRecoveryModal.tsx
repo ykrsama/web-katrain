@@ -1,4 +1,5 @@
 import React from 'react';
+import { useT } from '../i18n';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { formatLibraryTimestamp } from '../utils/library';
 import type { AutoSavedGame } from '../utils/autoSave';
@@ -14,9 +15,10 @@ export const AutoSaveRecoveryModal: React.FC<AutoSaveRecoveryModalProps> = ({
   onRestore,
   onDiscard,
 }) => {
+  const t = useT();
   // Shared minute-precision format: a recovery prompt needs the date, but not
   // the seconds a bare toLocaleString() was printing.
-  const savedAtLabel = formatLibraryTimestamp(snapshot.savedAt) || 'an earlier session';
+  const savedAtLabel = formatLibraryTimestamp(snapshot.savedAt) || t('an earlier session');
   const restoreButtonRef = React.useRef<HTMLButtonElement>(null);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, {
     focusContainer: false,
@@ -36,19 +38,19 @@ export const AutoSaveRecoveryModal: React.FC<AutoSaveRecoveryModalProps> = ({
       >
         <div className="ui-bar border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="auto-save-recovery-title" className="text-base font-semibold text-[var(--ui-text)]">
-            Restore Auto-Saved Game
+            {t('Restore Auto-Saved Game')}
           </h2>
         </div>
         <div className="p-4 space-y-4">
           <p id="auto-save-recovery-description" className="text-sm text-[var(--ui-text-muted)]">
-            An unsaved game from {savedAtLabel} is available. Restore it, or discard the auto-save and keep the game currently on the board.
+            {t('An unsaved game from {when} is available. Restore it, or discard the auto-save and keep the game currently on the board.', { when: savedAtLabel })}
           </p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" className="panel-action-button danger" onClick={onDiscard}>
-              Discard Auto-Save
+              {t('Discard Auto-Save')}
             </button>
             <button ref={restoreButtonRef} type="button" className="panel-action-button active" onClick={onRestore} autoFocus>
-              Restore Game
+              {t('Restore Game')}
             </button>
           </div>
         </div>

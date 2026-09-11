@@ -1,5 +1,6 @@
 import React from 'react';
 import { FaDownload, FaSave, FaTimes, FaTrash } from 'react-icons/fa';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 
@@ -11,6 +12,7 @@ interface UnsavedChangesModalProps {
 }
 
 export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onChoice, saveTarget = 'download' }) => {
+  const t = useT();
   const savesToLibrary = saveTarget === 'library';
   const SaveIcon = savesToLibrary ? FaSave : FaDownload;
   useEscapeToClose(() => onChoice('cancel'));
@@ -37,13 +39,13 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onChoi
       >
         <div className="ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="unsaved-changes-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Unsaved changes
+            {t('Unsaved changes')}
           </h2>
           <button
             type="button"
             onClick={() => onChoice('cancel')}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close unsaved changes dialog"
+            aria-label={t('Close unsaved changes dialog')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -52,8 +54,8 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onChoi
         <div className="space-y-3 p-4">
           <p id="unsaved-changes-description" className="text-sm leading-6 text-[var(--ui-text-muted)]">
             {savesToLibrary
-              ? 'The loaded library game has unsaved changes. Save it to Library before replacing it?'
-              : 'The current game has changes that are not saved. Save an SGF before replacing it?'}
+              ? t('The loaded library game has unsaved changes. Save it to Library before replacing it?')
+              : t('The current game has changes that are not saved. Save an SGF before replacing it?')}
           </p>
         </div>
 
@@ -65,21 +67,21 @@ export const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onChoi
             className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
             autoFocus
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="button"
             onClick={() => onChoice('discard')}
             className="min-h-11 rounded-lg border border-[var(--ui-danger)] bg-[var(--ui-danger-soft)] px-4 py-2 text-sm font-semibold text-[var(--ui-danger)] hover:bg-[var(--ui-surface-2)]"
           >
-            <span className="inline-flex items-center gap-2"><FaTrash /> Discard</span>
+            <span className="inline-flex items-center gap-2"><FaTrash /> {t('Discard')}</span>
           </button>
           <button
             type="button"
             onClick={() => onChoice('save')}
             className="col-span-2 min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-[var(--ui-accent-contrast)] sm:col-span-1"
           >
-            <span className="inline-flex items-center gap-2"><SaveIcon /> {savesToLibrary ? 'Save to Library' : 'Save SGF'}</span>
+            <span className="inline-flex items-center gap-2"><SaveIcon /> {savesToLibrary ? t('Save to Library') : t('Save SGF')}</span>
           </button>
         </div>
       </div>

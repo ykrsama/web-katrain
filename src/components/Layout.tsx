@@ -59,6 +59,7 @@ import {
 } from '../utils/modelUpload';
 import { cancelAnimationFrameSafe, getAnimationNow, requestAnimationFrameSafe, type AnimationFrameHandle } from '../utils/animationFrame';
 import { getAppLocaleHtmlLang } from '../utils/locales';
+import { useT } from '../i18n';
 
 // Layout components
 import { MenuDrawer } from './layout/MenuDrawer';
@@ -136,24 +137,27 @@ const KifuPrintModal = lazy(() => import('./KifuPrintModal').then((module) => ({
 const LibraryPanel = lazy(() => import('./LibraryPanel').then((module) => ({ default: module.LibraryPanel })));
 const DesktopDashboard = lazy(() => import('./dashboard/DesktopDashboard').then((module) => ({ default: module.DesktopDashboard })));
 
-const LibraryPanelLoading: React.FC<{ isMobile?: boolean }> = ({ isMobile = false }) => (
-  <div
-    {...(isMobile
-      ? { role: 'tabpanel', id: MOBILE_TAB_PANEL_IDS.library, 'aria-labelledby': mobileTabId('library') }
-      : { 'aria-label': 'Game library' })}
-    className={[
-      'library-panel ui-panel border-r flex flex-col overflow-hidden relative',
-      isMobile ? 'fixed inset-0 z-40 mobile-safe-bottom mobile-safe-inset' : 'h-full w-full',
-    ].join(' ')}
-  >
-    <div className="ui-bar ui-bar-height ui-bar-pad border-b border-[var(--ui-border)] flex items-center">
-      <div className="text-sm font-semibold text-[var(--ui-text)]">Library</div>
+const LibraryPanelLoading: React.FC<{ isMobile?: boolean }> = ({ isMobile = false }) => {
+  const t = useT();
+  return (
+    <div
+      {...(isMobile
+        ? { role: 'tabpanel', id: MOBILE_TAB_PANEL_IDS.library, 'aria-labelledby': mobileTabId('library') }
+        : { 'aria-label': t('Game library') })}
+      className={[
+        'library-panel ui-panel border-r flex flex-col overflow-hidden relative',
+        isMobile ? 'fixed inset-0 z-40 mobile-safe-bottom mobile-safe-inset' : 'h-full w-full',
+      ].join(' ')}
+    >
+      <div className="ui-bar ui-bar-height ui-bar-pad border-b border-[var(--ui-border)] flex items-center">
+        <div className="text-sm font-semibold text-[var(--ui-text)]">{t('Library')}</div>
+      </div>
+      <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--ui-text-muted)]" role="status">
+        {t('Loading game library…')}
+      </div>
     </div>
-    <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--ui-text-muted)]" role="status">
-      Loading game library…
-    </div>
-  </div>
-);
+  );
+};
 
 const MOBILE_HOME_DISMISSED_KEY = 'web-katrain:mobile_home_dismissed:v1';
 const mainFileInputAccept = ['.sgf', PHOTO_BOARD_IMAGE_ACCEPT, MODEL_UPLOAD_ACCEPT].join(',');
@@ -365,6 +369,7 @@ export const Layout: React.FC = () => {
     shallow
   );
 
+  const t = useT();
   const boardSize = normalizeBoardSize(board.length, DEFAULT_BOARD_SIZE);
   // Surfaces that would name the engine's move have to withhold it while a
   // drill is asking about the position they are describing.
@@ -573,7 +578,7 @@ export const Layout: React.FC = () => {
       if (Number.isFinite(scoreLead)) {
         return `${formatResultScoreLead(roundToHalf(scoreLead as number))}?`;
       }
-      return 'Game ended';
+      return t('Game ended');
     }
     return null;
   })();
@@ -701,12 +706,12 @@ export const Layout: React.FC = () => {
     setSoundInitErrorHandler((error) => {
       updateSettings({ soundEnabled: false });
       const soundDetails = [
-        `Sound error: ${error.message}`,
-        `Backend: ${error.backend}`,
-        `Platform: ${error.platform}`,
+        t('Sound error: {error}', { error: error.message }),
+        t('Backend: {backend}', { backend: error.backend }),
+        t('Platform: {platform}', { platform: error.platform }),
       ].join('\n');
 
-      toast('Sound disabled because browser audio is unavailable.', 'error', soundDetails);
+      toast(t('Sound disabled because browser audio is unavailable.'), 'error', soundDetails);
     });
 
     return () => setSoundInitErrorHandler(null);
@@ -718,7 +723,7 @@ export const Layout: React.FC = () => {
 
   const toggleScoringMode = useCallback(() => {
     if (!scoringMode && (isEditMode || isInsertMode || isSelectingRegionOfInterest)) {
-      toast('Finish editing before scoring.', 'error');
+      toast(t('Finish editing before scoring.'), 'error');
       return;
     }
     setScoringMode((prev) => !prev);
@@ -735,7 +740,7 @@ export const Layout: React.FC = () => {
 
   const autoEstimateDeadStones = useCallback(() => {
     if (!manualScoreOwnership && !canEstimateFromBoardShape) {
-      toast('Score a position with stones before auto-estimating dead stones.', 'info');
+      toast(t('Score a position with stones before auto-estimating dead stones.'), 'info');
       return;
     }
 
@@ -745,10 +750,11 @@ export const Layout: React.FC = () => {
     setManualDeadStones(nextDeadStones);
     setManualScoreMode('estimate');
     const sourceLabel = manualScoreOwnership ? 'ownership' : 'local playouts';
+    const stoneUnit = t(nextDeadStones.size === 1 ? 'stone' : 'stones');
     toast(
       nextDeadStones.size > 0
-        ? `Auto-marked ${nextDeadStones.size} dead ${nextDeadStones.size === 1 ? 'stone' : 'stones'} from ${sourceLabel}.`
-        : `No dead stones found from ${sourceLabel}.`,
+        ? t('Auto-marked {count} dead {unit} from {source}.', { count: nextDeadStones.size, unit: stoneUnit, source: sourceLabel })
+        : t('No dead stones found from {source}.', { source: sourceLabel }),
       'info'
     );
   }, [board, canEstimateFromBoardShape, currentPlayer, manualScoreOwnership, toast]);
@@ -833,9 +839,9 @@ export const Layout: React.FC = () => {
 
   const setLoadedLibraryFile = useCallback((id: string | null, name?: string | null) => {
     setLoadedLibraryFileId(id);
-    setLoadedLibraryFileName(id ? (name?.trim() || 'Library game') : null);
+    setLoadedLibraryFileName(id ? (name?.trim() || t('Library game')) : null);
     setLoadedExternalFile(null);
-  }, []);
+  }, [t]);
 
   const saveLoadedLibraryFile = useCallback(async (sgf: string): Promise<boolean> => {
     if (!loadedLibraryFileId) return false;
@@ -844,7 +850,7 @@ export const Layout: React.FC = () => {
       const loadedItem = items.find((item) => item.id === loadedLibraryFileId);
       if (!loadedItem || loadedItem.type !== 'file') {
         setLoadedLibraryFile(null);
-        toast('Loaded library file was not found. Downloading SGF instead.', 'info');
+        toast(t('Loaded library file was not found. Downloading SGF instead.'), 'info');
         return false;
       }
       const updatedAt = Date.now();
@@ -852,13 +858,13 @@ export const Layout: React.FC = () => {
       setExternalLibraryFileUpdate({ id: loadedLibraryFileId, sgf, updatedAt });
       setLibraryVersion((prev) => prev + 1);
       markCurrentGameCleanAndClearAutoSave(sgf);
-      toast(`Updated "${loadedItem.name}" in Library.`, 'success');
+      toast(t('Updated "{name}" in Library.', { name: loadedItem.name }), 'success');
       return true;
     } catch {
-      toast('Failed to update loaded library file. Downloading SGF instead.', 'error');
+      toast(t('Failed to update loaded library file. Downloading SGF instead.'), 'error');
       return false;
     }
-  }, [loadedLibraryFileId, markCurrentGameCleanAndClearAutoSave, setLoadedLibraryFile, toast]);
+  }, [loadedLibraryFileId, markCurrentGameCleanAndClearAutoSave, setLoadedLibraryFile, t, toast]);
 
 
   useLayoutEffect(() => {
@@ -915,9 +921,9 @@ export const Layout: React.FC = () => {
         setLoadedLibraryFile(null);
         navigateEnd();
         suppressRecoveryPrompt();
-        toast('Loaded shared game from link.', 'success');
+        toast(t('Loaded shared game from link.'), 'success');
       } catch {
-        toast('Could not load the shared game from this link.', 'error');
+        toast(t('Could not load the shared game from this link.'), 'error');
       } finally {
         try {
           window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -955,7 +961,7 @@ export const Layout: React.FC = () => {
               const file = await handle.getFile();
               await pwaOpenHandlersRef.current?.openFile(file);
             } catch {
-              toast('Could not open the file.', 'error');
+              toast(t('Could not open the file.'), 'error');
             }
           }
         })();
@@ -992,7 +998,7 @@ export const Layout: React.FC = () => {
         setAutoSaveStatus({ state: 'too-large' });
         if (!autoSaveTooLargeToastShownRef.current) {
           autoSaveTooLargeToastShownRef.current = true;
-          toast(`Game is too large for recovery auto-save (${AUTO_SAVE_MAX_LABEL}). Save to Library or download SGF to keep changes.`, 'info');
+          toast(t('Game is too large for recovery auto-save ({limit}). Save to Library or download SGF to keep changes.', { limit: AUTO_SAVE_MAX_LABEL }), 'info');
         }
       } else {
         setAutoSaveStatus({ state: 'failed' });
@@ -1015,13 +1021,13 @@ export const Layout: React.FC = () => {
       setLoadedLibraryFile(null);
       navigateEnd();
       setAutoSaveRecovery(null);
-      toast('Restored auto-saved game.', 'success');
+      toast(t('Restored auto-saved game.'), 'success');
     } catch {
       clearAutoSavedGame();
       setAutoSaveRecovery(null);
-      toast('Failed to restore auto-saved game.', 'error');
+      toast(t('Failed to restore auto-saved game.'), 'error');
     }
-  }, [autoSaveRecovery, loadGame, navigateEnd, setLoadedLibraryFile, toast]);
+  }, [autoSaveRecovery, loadGame, navigateEnd, setLoadedLibraryFile, t, toast]);
 
   const handleSaveCurrentSgf = useCallback(async () => {
     const sgf = generateCurrentSgf();
@@ -1029,11 +1035,11 @@ export const Layout: React.FC = () => {
     try {
       const saved = downloadSgfFromTree(useGameStore.getState().rootNode, sgfExportOptions);
       markCurrentGameCleanAndClearAutoSave(saved);
-      toast('Downloaded SGF.', 'success');
+      toast(t('Downloaded SGF.'), 'success');
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Failed to download SGF.', 'error');
+      toast(error instanceof Error ? error.message : t('Failed to download SGF.'), 'error');
     }
-  }, [generateCurrentSgf, markCurrentGameCleanAndClearAutoSave, saveLoadedLibraryFile, sgfExportOptions, toast]);
+  }, [generateCurrentSgf, markCurrentGameCleanAndClearAutoSave, saveLoadedLibraryFile, sgfExportOptions, t, toast]);
 
   const openSaveToLibraryDialog = useCallback(async (returnFocus?: HTMLElement | null) => {
     modalReturnFocusRef.current = returnFocus ?? null;
@@ -1046,7 +1052,7 @@ export const Layout: React.FC = () => {
         preferredFolderId: readLocalStorage(LIBRARY_CURRENT_FOLDER_STORAGE_KEY),
       });
       const fileCount = items.filter((item): item is LibraryFile => item.type === 'file').length;
-      const fallbackName = loadedLibraryFileName ?? loadedExternalFile?.name ?? `Game ${fileCount + 1}`;
+      const fallbackName = loadedLibraryFileName ?? loadedExternalFile?.name ?? t('Game {n}', { n: fileCount + 1 });
       setSaveToLibraryDialog({
         sgf,
         initialName: suggestLibraryItemNameFromSgf(sgf, fallbackName),
@@ -1054,10 +1060,10 @@ export const Layout: React.FC = () => {
         folderOptions: getLibraryFolderOptions(items),
       });
     } catch {
-      toast('Failed to open Library save dialog.', 'error');
+      toast(t('Failed to open Library save dialog.'), 'error');
       if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
     }
-  }, [generateCurrentSgf, loadedExternalFile?.name, loadedLibraryFileId, loadedLibraryFileName, toast]);
+  }, [generateCurrentSgf, loadedExternalFile?.name, loadedLibraryFileId, loadedLibraryFileName, t, toast]);
 
   const handleOpenSaveToLibraryDialog = useCallback((returnFocus?: HTMLElement | null) => {
     void openSaveToLibraryDialog(returnFocus);
@@ -1065,7 +1071,7 @@ export const Layout: React.FC = () => {
 
   const handleSaveCopyToLibrary = useCallback(async (name: string, folderId: string | null): Promise<boolean> => {
     const sgf = saveToLibraryDialog?.sgf ?? generateCurrentSgf();
-    const itemName = name.trim().replace(/\.sgf$/i, '').trim() || 'Untitled';
+    const itemName = name.trim().replace(/\.sgf$/i, '').trim() || t('Untitled');
     try {
       const items = await loadLibrary();
       const targetFolderId =
@@ -1078,14 +1084,14 @@ export const Layout: React.FC = () => {
       setExternalLibraryItemCreate({ item: newItem, updatedAt });
       setLibraryVersion((prev) => prev + 1);
       markCurrentGameCleanAndClearAutoSave(sgf);
-      toast(`Saved "${newItem.name}" to Library.`, 'success');
+      toast(t('Saved "{name}" to Library.', { name: newItem.name }), 'success');
       setSaveToLibraryDialog(null);
       return true;
     } catch {
-      toast('Failed to save game to Library.', 'error');
+      toast(t('Failed to save game to Library.'), 'error');
       return false;
     }
-  }, [generateCurrentSgf, markCurrentGameCleanAndClearAutoSave, saveToLibraryDialog?.sgf, setLoadedLibraryFile, toast]);
+  }, [generateCurrentSgf, markCurrentGameCleanAndClearAutoSave, saveToLibraryDialog?.sgf, setLoadedLibraryFile, t, toast]);
 
   const confirmReplaceCurrentGame = useCallback(async (): Promise<UnsavedChangesChoice> => {
     if (!hasUnsavedChanges()) return 'discard';
@@ -1359,25 +1365,25 @@ export const Layout: React.FC = () => {
   });
 
   const statusText = engineError
-    ? `Engine error: ${engineError}`
+    ? t('Engine error: {error}', { error: engineError })
     : isSelfplayToEnd
-      ? 'Selfplay to end… (Esc to stop)'
+      ? t('Selfplay to end… (Esc to stop)')
       : isSelectingRegionOfInterest
-        ? 'Select region of interest (drag on board, Esc cancels)'
+        ? t('Select region of interest (drag on board, Esc cancels)')
         : scoringMode
-          ? 'Scoring mode'
+          ? t('Scoring mode')
         : notification?.message
           ? notification.message
           : isInsertMode
-            ? 'Insert mode (I to finish)'
+            ? t('Insert mode (I to finish)')
             : isAiThinking
-              ? 'AI thinking…'
+              ? t('AI thinking…')
               : isGameAnalysisRunning
-              ? `Analyzing game (${gameAnalysisType ?? '…'})… ${gameAnalysisDone}/${gameAnalysisTotal}`
+              ? t('Analyzing game ({type})… {done}/{total}', { type: gameAnalysisType ?? '…', done: gameAnalysisDone, total: gameAnalysisTotal })
               : isContinuousAnalysis
-                ? 'Pondering… (Space)'
+                ? t('Pondering… (Space)')
                 : isAnalysisMode
-                  ? 'Analysis mode on (Tab toggles)'
+                  ? t('Analysis mode on (Tab toggles)')
                   // Nothing notable is happening: stay empty rather than echo the
                   // engine badge's own "Ready" next to it. Consumers skip the row
                   // when this is blank.
@@ -1477,7 +1483,7 @@ export const Layout: React.FC = () => {
       winRate,
       scoreLead,
     });
-  }, [boardSize, currentMoveNumber, currentNode, scoreLead, totalMovesInCurrentLine, treeVersion, winRate]);
+  }, [boardSize, currentMoveNumber, currentNode, scoreLead, settings.appLocale, totalMovesInCurrentLine, treeVersion, winRate]);
 
   const branchInfo = useMemo(() => {
     void treeVersion;
@@ -1684,13 +1690,13 @@ export const Layout: React.FC = () => {
       uploadedModelRestoreHandledRef.current = true;
       if (!restored) return;
       updateSettings({ katagoModelUrl: restored.url });
-      toast(`Restored uploaded KataGo model weights "${restored.name}".`, 'success');
+      toast(t('Restored uploaded KataGo model weights "{name}".', { name: restored.name }), 'success');
     });
 
     return () => {
       cancelled = true;
     };
-  }, [settings.katagoModelUrl, toast, updateSettings]);
+  }, [settings.katagoModelUrl, t, toast, updateSettings]);
 
   const handleModelWeightsFile = useCallback(async (file: File): Promise<boolean> => {
     const error = validateModelUploadFile(file);
@@ -1701,18 +1707,18 @@ export const Layout: React.FC = () => {
     try {
       updateSettings({ katagoModelUrl: createUploadedModelUrl(file, settings.katagoModelUrl) });
     } catch (uploadError) {
-      toast(uploadError instanceof Error ? uploadError.message : 'Could not load this model file.', 'error');
+      toast(uploadError instanceof Error ? uploadError.message : t('Could not load this model file.'), 'error');
       return false;
     }
     const persisted = await savePersistedUploadedModel(file);
     toast(
       persisted
-        ? `Loaded and saved KataGo model weights "${file.name}".`
-        : `Loaded KataGo model weights "${file.name}" for this session.`,
+        ? t('Loaded and saved KataGo model weights "{name}".', { name: file.name })
+        : t('Loaded KataGo model weights "{name}" for this session.', { name: file.name }),
       'success'
     );
     return true;
-  }, [settings.katagoModelUrl, toast, updateSettings]);
+  }, [settings.katagoModelUrl, t, toast, updateSettings]);
 
   const openNewGameWithGuard = useCallback(async () => {
     setMenuOpen(false);
@@ -1735,7 +1741,7 @@ export const Layout: React.FC = () => {
     setScoringMode(false);
     setManualDeadStones(new Set());
     markCurrentGameCleanAndClearAutoSave();
-    toast(`Started ${settings.defaultBoardSize}×${settings.defaultBoardSize} game.`, 'success');
+    toast(t('Started {size}×{size} game.', { size: settings.defaultBoardSize }), 'success');
   }, [
     markCurrentGameCleanAndClearAutoSave,
     prepareForGameReplacement,
@@ -1744,6 +1750,7 @@ export const Layout: React.FC = () => {
     settings.gameRules,
     startNewGame,
     setLoadedLibraryFile,
+    t,
     toast,
   ]);
 
@@ -1757,7 +1764,7 @@ export const Layout: React.FC = () => {
       useGameStore.getState().currentNode.gameState.board.length,
       DEFAULT_BOARD_SIZE
     );
-    return `Board size ${declared} is not supported, so it opened as ${opened}×${opened}.`;
+    return t('Board size {declared} is not supported, so it opened as {opened}×{opened}.', { declared, opened });
   };
 
   const loadLocalSgfText = async (text: string, sourceName: string): Promise<boolean> => {
@@ -1766,11 +1773,11 @@ export const Layout: React.FC = () => {
     loadGame(parsed);
     const restoredAnalysisCount = useGameStore.getState().analysisCacheSize;
     setLoadedLibraryFile(null);
-    setLoadedExternalFile({ kind: 'file', name: sourceName || getImportedSgfNameFromProperties(parsed.tree?.props, 'Loaded SGF') });
+    setLoadedExternalFile({ kind: 'file', name: sourceName || getImportedSgfNameFromProperties(parsed.tree?.props, t('Loaded SGF')) });
     markCurrentGameCleanAndClearAutoSave();
     const sizeNotice = boardSizeCoercionNotice(text);
     toast(
-      appendRestoredAnalysisSummary(`Loaded "${sourceName || 'SGF'}".`, restoredAnalysisCount)
+      appendRestoredAnalysisSummary(t('Loaded "{name}".', { name: sourceName || t('SGF') }), restoredAnalysisCount)
         + (sizeNotice ? ` ${sizeNotice}` : ''),
       sizeNotice ? 'info' : 'success'
     );
@@ -1787,7 +1794,7 @@ export const Layout: React.FC = () => {
       }
       if (isPhotoBoardImageFile(file)) {
         openPhotoBoard(file);
-        toast('Opened photo board from image.', 'info');
+        toast(t('Opened photo board from image.'), 'info');
         return;
       }
       if (isUnsupportedPhotoBoardImageFile(file)) {
@@ -1795,7 +1802,7 @@ export const Layout: React.FC = () => {
         return;
       }
       if (!file.name.toLowerCase().endsWith('.sgf')) {
-        toast('Choose an SGF file, board photo, or KataGo model weights.', 'error');
+        toast(t('Choose an SGF file, board photo, or KataGo model weights.'), 'error');
         return;
       }
       const sizeError = getSgfImportSizeError(file.size);
@@ -1806,7 +1813,7 @@ export const Layout: React.FC = () => {
       const text = await file.text();
       await loadLocalSgfText(text, file.name);
     } catch {
-      toast('Failed to parse SGF file.', 'error');
+      toast(t('Failed to parse SGF file.'), 'error');
     } finally {
       e.target.value = '';
     }
@@ -1822,7 +1829,7 @@ export const Layout: React.FC = () => {
       if (sizeNotice) toast(sizeNotice, 'info');
       return true;
     } catch {
-      toast('Failed to load SGF from library.', 'error');
+      toast(t('Failed to load SGF from library.'), 'error');
       return false;
     }
   };
@@ -1830,41 +1837,41 @@ export const Layout: React.FC = () => {
   const handleCopySgf = async () => {
     const sgf = generateSgfFromTree(rootNode, sgfExportOptions);
     if (await copyTextToClipboard(sgf)) {
-      toast('Copied SGF to clipboard.', 'success');
+      toast(t('Copied SGF to clipboard.'), 'success');
       return;
     }
 
-    toast('Copy failed (clipboard unavailable).', 'error');
+    toast(t('Copy failed (clipboard unavailable).'), 'error');
   };
 
   const handleExportBoardImage = async () => {
     const moveNumber = useGameStore.getState().currentNode.gameState.moveHistory.length;
     if (await downloadBoardImage(rootNode, moveNumber)) {
-      toast('Exported board image (PNG).', 'success');
+      toast(t('Exported board image (PNG).'), 'success');
       return;
     }
-    toast('Could not export the board image.', 'error');
+    toast(t('Could not export the board image.'), 'error');
   };
 
   const handleCopyBoardImage = async () => {
     if (await copyBoardImage()) {
-      toast('Copied board image to clipboard.', 'success');
+      toast(t('Copied board image to clipboard.'), 'success');
       return;
     }
-    toast('Copy failed (image clipboard unavailable).', 'error');
+    toast(t('Copy failed (image clipboard unavailable).'), 'error');
   };
 
   const handleCopyShareLink = async () => {
     const sgf = generateSgfFromTree(rootNode, sgfExportOptions);
     const url = buildShareUrl(sgf, window.location);
     if (!(await copyTextToClipboard(url))) {
-      toast('Copy failed (clipboard unavailable).', 'error');
+      toast(t('Copy failed (clipboard unavailable).'), 'error');
       return;
     }
     if (url.length > MAX_SHARE_URL_LENGTH) {
-      toast('Copied share link. It is long and may not open in every browser.', 'info');
+      toast(t('Copied share link. It is long and may not open in every browser.'), 'info');
     } else {
-      toast('Copied share link to clipboard.', 'success');
+      toast(t('Copied share link to clipboard.'), 'success');
     }
   };
 
@@ -1897,11 +1904,11 @@ export const Layout: React.FC = () => {
       markCurrentGameCleanAndClearAutoSave();
       setIsProGamesOpen(false);
       navigateEnd();
-      toast(appendRestoredAnalysisSummary(`Loaded ${name}.`, restoredAnalysisCount), 'success');
+      toast(appendRestoredAnalysisSummary(t('Loaded {name}.', { name }), restoredAnalysisCount), 'success');
     } catch {
-      toast('Failed to load pro game.', 'error');
+      toast(t('Failed to load pro game.'), 'error');
     }
-  }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, navigateEnd, toast]);
+  }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, navigateEnd, t, toast]);
 
   const handleOpenSgfFromText = useCallback(async (
     text: string,
@@ -1918,30 +1925,30 @@ export const Layout: React.FC = () => {
       setLoadedExternalFile(
         result.source === 'ogs'
           ? { kind: 'ogs', name: `ogs-${result.gameId ?? 'game'}.sgf` }
-          : { kind: 'pasted', name: getImportedSgfNameFromProperties(parsed.tree?.props, 'Pasted SGF') }
+          : { kind: 'pasted', name: getImportedSgfNameFromProperties(parsed.tree?.props, t('Pasted SGF')) }
       );
       markCurrentGameCleanAndClearAutoSave();
       const sizeNotice = boardSizeCoercionNotice(result.sgf);
       toast(
         appendRestoredAnalysisSummary(
-          result.source === 'ogs' ? `Downloaded OGS game ${result.gameId ?? ''}.` : 'Loaded SGF.',
+          result.source === 'ogs' ? t('Downloaded OGS game {id}.', { id: result.gameId ?? '' }) : t('Loaded SGF.'),
           restoredAnalysisCount
         ) + (sizeNotice ? ` ${sizeNotice}` : ''),
         sizeNotice ? 'info' : 'success'
       );
       return 'loaded';
     } catch {
-      if (options.notifyFailure !== false) toast('Failed to load SGF or OGS URL.', 'error');
+      if (options.notifyFailure !== false) toast(t('Failed to load SGF or OGS URL.'), 'error');
       return 'failed';
     }
-  }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, toast]);
+  }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, t, toast]);
 
   // Plain function (not memoised): only consumed via the handler ref assigned
   // below during render, so it never feeds an effect/callback dependency list.
   const handleOpenLaunchFile = async (file: File) => {
     if (isPhotoBoardImageFile(file)) {
       openPhotoBoard(file);
-      toast('Opened photo board from shared image.', 'info');
+      toast(t('Opened photo board from shared image.'), 'info');
       return;
     }
     if (file.name.toLowerCase().endsWith('.sgf') || file.type === 'application/x-go-sgf') {
@@ -1954,11 +1961,11 @@ export const Layout: React.FC = () => {
         const text = await file.text();
         await loadLocalSgfText(text, file.name);
       } catch {
-        toast('Failed to open the SGF file.', 'error');
+        toast(t('Failed to open the SGF file.'), 'error');
       }
       return;
     }
-    toast('Unsupported file type. Open an SGF file or board image.', 'error');
+    toast(t('Unsupported file type. Open an SGF file or board image.'), 'error');
   };
 
   // Keep the startup-effect handler ref pointed at the current callbacks.
@@ -1969,7 +1976,7 @@ export const Layout: React.FC = () => {
     if (!loaded) return;
     const restoredAnalysisCount = useGameStore.getState().analysisCacheSize;
     setLoadedLibraryFile(item.id, item.name);
-    toast(appendRestoredAnalysisSummary(`Loaded "${item.name}".`, restoredAnalysisCount), 'success');
+    toast(appendRestoredAnalysisSummary(t('Loaded "{name}".', { name: item.name }), restoredAnalysisCount), 'success');
   };
 
   useEffect(() => {
@@ -1987,7 +1994,7 @@ export const Layout: React.FC = () => {
       if (!imageFile) return;
       event.preventDefault();
       openPhotoBoard(imageFile);
-      toast('Opened photo board from pasted image.', 'info');
+      toast(t('Opened photo board from pasted image.'), 'info');
     };
 
     document.addEventListener('paste', handlePasteEvent);
@@ -2017,9 +2024,9 @@ export const Layout: React.FC = () => {
       navigateStart();
       markCurrentGameCleanAndClearAutoSave();
       closePhotoBoard();
-      toast('Imported board position.', 'success');
+      toast(t('Imported board position.'), 'success');
     } catch {
-      toast('Failed to import board position.', 'error');
+      toast(t('Failed to import board position.'), 'error');
     }
   };
 
@@ -2028,16 +2035,17 @@ export const Layout: React.FC = () => {
     scannedBoardSize: number
   ) => {
     if (scannedBoardSize !== boardSize) {
-      toast(`Photo board is ${scannedBoardSize}x${scannedBoardSize}; current board is ${boardSize}x${boardSize}.`, 'error');
+      toast(t('Photo board is {a}x{a}; current board is {b}x{b}.', { a: scannedBoardSize, b: boardSize }), 'error');
       return;
     }
     const changed = applySetupStones(stones);
     if (changed === 0) {
-      toast('No new photo board stones to add.', 'info');
+      toast(t('No new photo board stones to add.'), 'info');
       return;
     }
     closePhotoBoard();
-    toast(`Added ${changed} setup stone${changed === 1 ? '' : 's'} from photo board.`, 'success');
+    const setupStoneUnit = changed === 1 ? t('setup stone') : t('setup stones');
+    toast(t('Added {count} setup {unit} from photo board.', { count: changed, unit: setupStoneUnit }), 'success');
   };
 
   const handlePhotoBoardPlayMove = async (x: number, y: number) => {
@@ -2045,11 +2053,11 @@ export const Layout: React.FC = () => {
     playMove(x, y);
     const after = useGameStore.getState();
     if (after.currentNode.id === beforeNodeId) {
-      toast('Could not play photo board move.', 'error');
+      toast(t('Could not play photo board move.'), 'error');
       return;
     }
     closePhotoBoard();
-    toast('Played photo board move.', 'success');
+    toast(t('Played photo board move.'), 'success');
   };
 
   const handleLibraryUpdated = useCallback(() => {
@@ -2130,7 +2138,7 @@ export const Layout: React.FC = () => {
       if (droppedText) {
         await handleOpenSgfFromText(droppedText);
       } else {
-        toast('Drop SGF text or an Online-Go game URL here.', 'error');
+        toast(t('Drop SGF text or an Online-Go game URL here.'), 'error');
       }
       return;
     }
@@ -2139,7 +2147,7 @@ export const Layout: React.FC = () => {
       if (droppedText) {
         await handleOpenSgfFromText(droppedText);
       } else {
-        toast('Drop SGF text or an Online-Go game URL here.', 'error');
+        toast(t('Drop SGF text or an Online-Go game URL here.'), 'error');
       }
       return;
     }
@@ -2149,7 +2157,7 @@ export const Layout: React.FC = () => {
     }
     if (isPhotoBoardImageFile(file)) {
       openPhotoBoard(file);
-      toast('Opened photo board from dropped image.', 'info');
+      toast(t('Opened photo board from dropped image.'), 'info');
       return;
     }
     if (isUnsupportedPhotoBoardImageFile(file)) {
@@ -2157,7 +2165,7 @@ export const Layout: React.FC = () => {
       return;
     }
     if (!file.name.toLowerCase().endsWith('.sgf')) {
-      toast('Drop an SGF file, OGS URL, board photo, or KataGo model weights here.', 'error');
+      toast(t('Drop an SGF file, OGS URL, board photo, or KataGo model weights here.'), 'error');
       return;
     }
     try {
@@ -2169,7 +2177,7 @@ export const Layout: React.FC = () => {
       const text = await file.text();
       await loadLocalSgfText(text, file.name);
     } catch {
-      toast('Failed to load the dropped SGF file.', 'error');
+      toast(t('Failed to load the dropped SGF file.'), 'error');
     }
   };
 
@@ -2199,7 +2207,7 @@ export const Layout: React.FC = () => {
     };
   }, [libraryOpen, libraryVersion]);
 
-  const saveControlLabel = loadedLibraryFileId ? 'Save to Library' : 'Save SGF';
+  const saveControlLabel = loadedLibraryFileId ? t('Save to Library') : t('Save SGF');
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -2244,7 +2252,7 @@ export const Layout: React.FC = () => {
     };
     const setLiveAnalysisDepth = (visits: number) => {
       if (isGameAnalysisRunning) {
-        toast('Stop game review before changing live analysis depth.', 'error');
+        toast(t('Stop game review before changing live analysis depth.'), 'error');
         return;
       }
       updateSettings({ katagoVisits: visits });
@@ -2253,25 +2261,25 @@ export const Layout: React.FC = () => {
           void useGameStore.getState().runAnalysis({ force: true, visits });
         }, 0);
       }
-      toast(`Live analysis depth: ${formatVisitCount(visits)} visits (${visitPresetLabel(visits)}).`, 'info');
+      toast(t('Live analysis depth: {visits} visits ({preset}).', { visits: formatVisitCount(visits), preset: visitPresetLabel(visits) }), 'info');
     };
     const toggleTopMoveHints = () => {
       if (settings.analysisShowPolicy) {
-        toast('Move heatmap is showing; top move hints are hidden.', 'info');
+        toast(t('Move heatmap is showing; top move hints are hidden.'), 'info');
         return;
       }
       updateControls({ analysisShowHints: !settings.analysisShowHints });
     };
     const guardNavigation = (action: () => void) => {
       if (isInsertMode) {
-        toast('Finish inserting before navigating.', 'error');
+        toast(t('Finish inserting before navigating.'), 'error');
         return;
       }
       action();
     };
     const openScoring = () => {
       if (isEditMode || isInsertMode || isSelectingRegionOfInterest) {
-        toast('Finish editing before scoring.', 'error');
+        toast(t('Finish editing before scoring.'), 'error');
         return false;
       }
       setScoringMode(true);
@@ -2281,15 +2289,15 @@ export const Layout: React.FC = () => {
     return [
       {
         id: 'quick-new-game',
-        label: 'Quick new game',
-        category: 'Game',
+        label: t('Quick new game'),
+        category: t('Game'),
         run: () => { void startQuickNewGame(); },
         keywords: ['restart', 'fresh board'],
       },
       {
         id: 'new-game',
-        label: 'New game setup',
-        category: 'Game',
+        label: t('New game setup'),
+        category: t('Game'),
         shortcutId: 'new-game',
         run: () => { void openNewGameWithGuard(); },
         keywords: ['board size', 'handicap', 'players'],
@@ -2297,260 +2305,260 @@ export const Layout: React.FC = () => {
       {
         id: 'save-sgf',
         label: saveControlLabel,
-        category: 'File',
+        category: t('File'),
         shortcutId: 'save-sgf',
         run: () => { void handleSaveCurrentSgf(); },
         keywords: ['download', 'export'],
       },
       {
         id: 'save-library',
-        label: 'Save copy to library',
-        category: 'File',
+        label: t('Save copy to library'),
+        category: t('File'),
         shortcutId: 'save-library',
         run: handleOpenSaveToLibraryDialog,
         keywords: ['archive', 'collection'],
       },
       {
         id: 'load-sgf',
-        label: 'Load SGF / photo / model',
-        category: 'File',
+        label: t('Load SGF / photo / model'),
+        category: t('File'),
         shortcutId: 'open-sgf',
         run: handleLoadClick,
         keywords: ['open', 'import', 'weights'],
       },
       {
         id: 'photo-board',
-        label: 'Open photo board',
-        category: 'File',
+        label: t('Open photo board'),
+        category: t('File'),
         run: () => openPhotoBoard(),
         keywords: ['scan', 'camera', 'image'],
       },
       {
         id: 'print-kifu',
-        label: 'Print kifu (PDF)',
-        category: 'File',
+        label: t('Print kifu (PDF)'),
+        category: t('File'),
         run: () => openSimpleModal(() => setIsKifuPrintOpen(true)),
         keywords: ['print', 'pdf', 'diagram', 'kifu', 'export', 'moves per diagram'],
       },
       {
         id: 'paste-sgf',
-        label: 'Paste SGF or OGS URL',
-        category: 'File',
+        label: t('Paste SGF or OGS URL'),
+        category: t('File'),
         shortcutId: 'paste-sgf',
         run: () => { void handlePasteSgfShortcut(); },
         keywords: ['clipboard', 'load', 'read clipboard'],
       },
       {
         id: 'copy-sgf',
-        label: 'Copy SGF',
-        category: 'File',
+        label: t('Copy SGF'),
+        category: t('File'),
         shortcutId: 'copy-sgf',
         run: () => { void handleCopySgf(); },
         keywords: ['clipboard'],
       },
       {
         id: 'export-board-image',
-        label: 'Export board image (PNG)',
-        category: 'File',
+        label: t('Export board image (PNG)'),
+        category: t('File'),
         run: () => { void handleExportBoardImage(); },
         keywords: ['png', 'screenshot', 'diagram', 'picture', 'save image', 'download image', 'share'],
       },
       {
         id: 'copy-board-image',
-        label: 'Copy board image',
-        category: 'File',
+        label: t('Copy board image'),
+        category: t('File'),
         run: () => { void handleCopyBoardImage(); },
         keywords: ['png', 'screenshot', 'diagram', 'clipboard', 'picture', 'share'],
       },
       {
         id: 'copy-share-link',
-        label: 'Copy share link',
-        category: 'File',
+        label: t('Copy share link'),
+        category: t('File'),
         run: () => { void handleCopyShareLink(); },
         keywords: ['url', 'link', 'share', 'sgf', 'send', 'position'],
       },
       {
         id: 'nav-back',
-        label: 'Previous move',
-        category: 'Navigation',
+        label: t('Previous move'),
+        category: t('Navigation'),
         shortcutId: 'nav-back',
-        disabledReason: historyNavigation.back ? undefined : 'No previous move',
+        disabledReason: historyNavigation.back ? undefined : t('No previous move'),
         run: () => { if (mode === 'play') handleUndo(); else navigateBack(); },
         keywords: ['back', 'undo move'],
       },
       {
         id: 'nav-forward',
-        label: 'Next move',
-        category: 'Navigation',
+        label: t('Next move'),
+        category: t('Navigation'),
         shortcutId: 'nav-forward',
-        disabledReason: historyNavigation.forward ? undefined : 'No next move',
+        disabledReason: historyNavigation.forward ? undefined : t('No next move'),
         run: () => guardNavigation(navigateForward),
         keywords: ['forward', 'redo move'],
       },
       {
         id: 'nav-back-10',
-        label: 'Back 10 moves',
-        category: 'Navigation',
+        label: t('Back 10 moves'),
+        category: t('Navigation'),
         shortcutId: 'nav-back-10',
-        disabledReason: historyNavigation.back ? undefined : 'Already at the first move',
+        disabledReason: historyNavigation.back ? undefined : t('Already at the first move'),
         run: () => { for (let i = 0; i < 10; i++) navigateBack(); },
         keywords: ['rewind'],
       },
       {
         id: 'nav-forward-10',
-        label: 'Forward 10 moves',
-        category: 'Navigation',
+        label: t('Forward 10 moves'),
+        category: t('Navigation'),
         shortcutId: 'nav-forward-10',
-        disabledReason: historyNavigation.forward ? undefined : 'Already at the last move',
+        disabledReason: historyNavigation.forward ? undefined : t('Already at the last move'),
         run: () => guardNavigation(() => { for (let i = 0; i < 10; i++) navigateForward(); }),
         keywords: ['advance'],
       },
       {
         id: 'nav-start',
-        label: 'Go to start',
-        category: 'Navigation',
+        label: t('Go to start'),
+        category: t('Navigation'),
         shortcutId: 'nav-start',
-        disabledReason: historyNavigation.back ? undefined : 'Already at the first move',
+        disabledReason: historyNavigation.back ? undefined : t('Already at the first move'),
         run: () => guardNavigation(navigateStart),
         keywords: ['root', 'beginning'],
       },
       {
         id: 'nav-end',
-        label: 'Go to end',
-        category: 'Navigation',
+        label: t('Go to end'),
+        category: t('Navigation'),
         shortcutId: 'nav-end',
-        disabledReason: historyNavigation.forward ? undefined : 'Already at the last move',
+        disabledReason: historyNavigation.forward ? undefined : t('Already at the last move'),
         run: () => guardNavigation(navigateEnd),
         keywords: ['last move'],
       },
       {
         id: 'branch-prev',
-        label: 'Previous branch',
-        category: 'Navigation',
+        label: t('Previous branch'),
+        category: t('Navigation'),
         shortcutId: 'branch-prev',
-        disabledReason: branchInfo.hasBranches ? undefined : 'No alternate branch',
+        disabledReason: branchInfo.hasBranches ? undefined : t('No alternate branch'),
         run: () => guardNavigation(() => switchBranch(-1)),
         keywords: ['variation'],
       },
       {
         id: 'branch-next',
-        label: 'Next branch',
-        category: 'Navigation',
+        label: t('Next branch'),
+        category: t('Navigation'),
         shortcutId: 'branch-next',
-        disabledReason: branchInfo.hasBranches ? undefined : 'No alternate branch',
+        disabledReason: branchInfo.hasBranches ? undefined : t('No alternate branch'),
         run: () => guardNavigation(() => switchBranch(1)),
         keywords: ['variation'],
       },
       {
         id: 'undo-branch-point',
-        label: 'Undo to branch point',
-        category: 'Navigation',
+        label: t('Undo to branch point'),
+        category: t('Navigation'),
         shortcutId: 'undo-branch-point',
-        disabledReason: branchInfo.hasBranches ? undefined : 'Not on a variation',
+        disabledReason: branchInfo.hasBranches ? undefined : t('Not on a variation'),
         run: () => guardNavigation(undoToBranchPoint),
         keywords: ['variation', 'fork'],
       },
       {
         id: 'undo-main-branch',
-        label: 'Undo to main branch',
-        category: 'Navigation',
+        label: t('Undo to main branch'),
+        category: t('Navigation'),
         shortcutId: 'undo-main-branch',
-        disabledReason: branchInfo.hasBranches && branchInfo.currentIndex > 1 ? undefined : 'Already on the main branch',
+        disabledReason: branchInfo.hasBranches && branchInfo.currentIndex > 1 ? undefined : t('Already on the main branch'),
         run: () => guardNavigation(undoToMainBranch),
         keywords: ['variation', 'main line'],
       },
       {
         id: 'make-main-branch',
-        label: 'Make current branch main',
-        category: 'Navigation',
+        label: t('Make current branch main'),
+        category: t('Navigation'),
         shortcutId: 'make-main-branch',
-        disabledReason: branchInfo.hasBranches && branchInfo.currentIndex > 1 ? undefined : 'Current line is already main',
+        disabledReason: branchInfo.hasBranches && branchInfo.currentIndex > 1 ? undefined : t('Current line is already main'),
         run: () => guardNavigation(makeCurrentNodeMainBranch),
         keywords: ['variation', 'main line'],
       },
       {
         id: 'prev-mistake',
-        label: 'Previous mistake',
-        category: 'Navigation',
+        label: t('Previous mistake'),
+        category: t('Navigation'),
         shortcutId: 'prev-mistake',
-        disabledReason: mistakeNavigation.previous ? undefined : 'No earlier analyzed mistake',
+        disabledReason: mistakeNavigation.previous ? undefined : t('No earlier analyzed mistake'),
         run: () => guardNavigation(() => findMistake('undo')),
         keywords: ['review', 'blunder'],
       },
       {
         id: 'next-mistake',
-        label: 'Next mistake',
-        category: 'Navigation',
+        label: t('Next mistake'),
+        category: t('Navigation'),
         shortcutId: 'next-mistake',
-        disabledReason: mistakeNavigation.next ? undefined : 'No later analyzed mistake',
+        disabledReason: mistakeNavigation.next ? undefined : t('No later analyzed mistake'),
         run: () => guardNavigation(() => findMistake('redo')),
         keywords: ['review', 'blunder'],
       },
       {
         id: 'drill-mistakes',
-        label: mistakeDrill ? 'End mistake drill' : 'Drill my mistakes',
-        category: 'Analysis',
+        label: mistakeDrill ? t('End mistake drill') : t('Drill my mistakes'),
+        category: t('Analysis'),
         run: () => (mistakeDrill ? stopMistakeDrill() : startMistakeDrill('both')),
         keywords: ['review', 'blunder', 'practice', 'quiz', 'learn from mistakes', 'retry'],
       },
       {
         id: 'drill-mistakes-black',
-        label: 'Drill Black\u2019s mistakes',
-        category: 'Analysis',
+        label: t('Drill Black\u2019s mistakes'),
+        category: t('Analysis'),
         run: () => startMistakeDrill('black'),
         keywords: ['review', 'blunder', 'practice', 'quiz'],
       },
       {
         id: 'drill-mistakes-white',
-        label: 'Drill White\u2019s mistakes',
-        category: 'Analysis',
+        label: t('Drill White\u2019s mistakes'),
+        category: t('Analysis'),
         run: () => startMistakeDrill('white'),
         keywords: ['review', 'blunder', 'practice', 'quiz'],
       },
       {
         id: 'toggle-library',
-        label: libraryOpen ? 'Hide library' : 'Show library',
-        category: 'View',
+        label: libraryOpen ? t('Hide library') : t('Show library'),
+        category: t('View'),
         shortcutId: 'toggle-library',
         run: handleToggleLibrary,
         keywords: ['games', 'collection'],
       },
       {
         id: 'toggle-sidebar',
-        label: showSidebar ? 'Hide side panel' : 'Show side panel',
-        category: 'View',
+        label: showSidebar ? t('Hide side panel') : t('Show side panel'),
+        category: t('View'),
         shortcutId: 'toggle-sidebar',
         run: handleToggleSidebar,
         keywords: ['layout', 'panels'],
       },
       {
         id: 'center-move-tree',
-        label: 'Center current move in tree',
-        category: 'View',
+        label: t('Center current move in tree'),
+        category: t('View'),
         shortcutId: 'center-move-tree',
         run: () => runMoveTreeCommand('center-current'),
         keywords: ['game tree', 'locate', 'review'],
       },
       {
         id: 'toggle-move-tree-layout',
-        label: 'Switch move tree layout',
-        category: 'View',
+        label: t('Switch move tree layout'),
+        category: t('View'),
         shortcutId: 'toggle-move-tree-layout',
         run: () => runMoveTreeCommand('toggle-layout'),
         keywords: ['game tree', 'horizontal', 'vertical'],
       },
       {
         id: 'toggle-move-tree-map',
-        label: 'Toggle move tree map',
-        category: 'View',
+        label: t('Toggle move tree map'),
+        category: t('View'),
         shortcutId: 'toggle-move-tree-map',
         run: () => runMoveTreeCommand('toggle-minimap'),
         keywords: ['game tree', 'minimap', 'overview'],
       },
       {
         id: 'toggle-focus-mode',
-        label: focusMode ? 'Exit focus mode' : 'Enter focus mode',
-        category: 'View',
+        label: focusMode ? t('Exit focus mode') : t('Enter focus mode'),
+        category: t('View'),
         shortcutId: 'toggle-focus-mode',
         run: () => {
           closeFloatingMenus();
@@ -2560,8 +2568,8 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'pin-variation',
-        label: 'Pin current line',
-        category: 'Navigation',
+        label: t('Pin current line'),
+        category: t('Navigation'),
         run: () => {
           closeFloatingMenus();
           pinCurrentVariation();
@@ -2570,8 +2578,8 @@ export const Layout: React.FC = () => {
       },
       ...pinnedVariations.map((pin) => ({
         id: `recall-variation-${pin.id}`,
-        label: `Recall pinned: ${pin.label}`,
-        category: 'Navigation',
+        label: t('Recall pinned: {label}', { label: pin.label }),
+        category: t('Navigation'),
         run: () => {
           closeFloatingMenus();
           recallVariation(pin.id);
@@ -2582,8 +2590,8 @@ export const Layout: React.FC = () => {
         ? [
             {
               id: 'clear-pinned-variations',
-              label: 'Clear pinned lines',
-              category: 'Navigation',
+              label: t('Clear pinned lines'),
+              category: t('Navigation'),
               run: () => {
                 closeFloatingMenus();
                 clearPinnedVariations();
@@ -2594,64 +2602,64 @@ export const Layout: React.FC = () => {
         : []),
       {
         id: 'toggle-top-bar',
-        label: topBarOpen ? 'Hide top bar' : 'Show top bar',
-        category: 'View',
+        label: topBarOpen ? t('Hide top bar') : t('Show top bar'),
+        category: t('View'),
         shortcutId: 'toggle-top-bar',
         run: handleToggleTopBar,
         keywords: ['layout', 'header', 'chrome', 'focus'],
       },
       {
         id: 'toggle-bottom-bar',
-        label: bottomBarOpen ? 'Hide bottom controls' : 'Show bottom controls',
-        category: 'View',
+        label: bottomBarOpen ? t('Hide bottom controls') : t('Show bottom controls'),
+        category: t('View'),
         shortcutId: 'toggle-bottom-bar',
         run: handleToggleBottomBar,
         keywords: ['layout', 'navigation', 'chrome', 'focus'],
       },
       {
         id: 'toggle-sound',
-        label: settings.soundEnabled ? 'Mute sound' : 'Enable sound',
-        category: 'View',
+        label: settings.soundEnabled ? t('Mute sound') : t('Enable sound'),
+        category: t('View'),
         shortcutId: 'toggle-sound',
         run: () => updateSettings({ soundEnabled: !settings.soundEnabled }),
         keywords: ['audio', 'mute', 'volume'],
       },
       {
         id: 'toggle-coordinates',
-        label: settings.showCoordinates ? 'Hide coordinates' : 'Show coordinates',
-        category: 'View',
+        label: settings.showCoordinates ? t('Hide coordinates') : t('Show coordinates'),
+        category: t('View'),
         shortcutId: 'toggle-coordinates',
         run: () => updateSettings({ showCoordinates: !settings.showCoordinates }),
         keywords: ['board labels', 'grid'],
       },
       {
         id: 'toggle-move-numbers',
-        label: settings.showMoveNumbers ? 'Hide move numbers' : 'Show move numbers',
-        category: 'View',
+        label: settings.showMoveNumbers ? t('Hide move numbers') : t('Show move numbers'),
+        category: t('View'),
         shortcutId: 'toggle-move-numbers',
         run: () => updateSettings({ showMoveNumbers: !settings.showMoveNumbers }),
         keywords: ['stones', 'sequence'],
       },
       {
         id: 'toggle-next-move-preview',
-        label: settings.showNextMovePreview ? 'Hide next move preview' : 'Show next move preview',
-        category: 'View',
+        label: settings.showNextMovePreview ? t('Hide next move preview') : t('Show next move preview'),
+        category: t('View'),
         shortcutId: 'toggle-next-move-preview',
         run: () => updateSettings({ showNextMovePreview: !settings.showNextMovePreview }),
         keywords: ['ghost stone', 'preview'],
       },
       {
         id: 'toggle-analysis',
-        label: isAnalysisMode ? 'Turn analysis off' : 'Turn analysis on',
-        category: 'Analysis',
+        label: isAnalysisMode ? t('Turn analysis off') : t('Turn analysis on'),
+        category: t('Analysis'),
         shortcutId: 'toggle-analysis',
         run: toggleAnalysisMode,
         keywords: ['engine', 'ai'],
       },
       {
         id: 'analysis-without-top',
-        label: 'Analyze without the top move',
-        category: 'Analysis',
+        label: t('Analyze without the top move'),
+        category: t('Analysis'),
         // KataGo's avoidMoves: the same search with the engine's own first choice
         // taken off the table, which is how you find out what the rest of the board
         // is worth when one move dominates the reading.
@@ -2663,40 +2671,40 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'toggle-children',
-        label: settings.analysisShowChildren ? 'Hide children overlay' : 'Show children overlay',
-        category: 'Analysis',
+        label: settings.analysisShowChildren ? t('Hide children overlay') : t('Show children overlay'),
+        category: t('Analysis'),
         shortcutId: 'toggle-children',
         run: () => updateControls({ analysisShowChildren: !settings.analysisShowChildren }),
         keywords: ['legal moves', 'variations'],
       },
       {
         id: 'toggle-eval',
-        label: settings.analysisShowEval ? 'Hide evaluation dots' : 'Show evaluation dots',
-        category: 'Analysis',
+        label: settings.analysisShowEval ? t('Hide evaluation dots') : t('Show evaluation dots'),
+        category: t('Analysis'),
         shortcutId: 'toggle-eval',
         run: () => updateControls({ analysisShowEval: !settings.analysisShowEval }),
         keywords: ['dots', 'mistakes'],
       },
       {
         id: 'toggle-hints',
-        label: settings.analysisShowHints && !settings.analysisShowPolicy ? 'Hide top move hints' : 'Show top move hints',
-        category: 'Analysis',
+        label: settings.analysisShowHints && !settings.analysisShowPolicy ? t('Hide top move hints') : t('Show top move hints'),
+        category: t('Analysis'),
         shortcutId: 'toggle-hints',
         run: toggleTopMoveHints,
         keywords: ['best moves', 'suggestions'],
       },
       {
         id: 'toggle-policy',
-        label: settings.analysisShowPolicy ? 'Hide move heatmap' : 'Show move heatmap',
-        category: 'Analysis',
+        label: settings.analysisShowPolicy ? t('Hide move heatmap') : t('Show move heatmap'),
+        category: t('Analysis'),
         shortcutId: 'toggle-policy',
         run: () => updateControls({ analysisShowPolicy: !settings.analysisShowPolicy }),
         keywords: ['heatmap', 'probability', 'network'],
       },
       {
         id: 'cycle-policy-metric',
-        label: 'Cycle move heatmap metric',
-        category: 'Analysis',
+        label: t('Cycle move heatmap metric'),
+        category: t('Analysis'),
         shortcutId: 'cycle-policy-metric',
         run: () => {
           updateSettings({ analysisPolicyMetric: nextPolicyHeatmapMetric(settings.analysisPolicyMetric) });
@@ -2706,29 +2714,29 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'analyze-tenuki',
-        label: 'What does playing elsewhere cost?',
-        category: 'Analysis',
+        label: t('What does playing elsewhere cost?'),
+        category: t('Analysis'),
         run: () => analyzeTenuki(),
         disabledReason: currentNode.analysis
           ? undefined
-          : 'Analyze the position first, so there is something to compare a pass against.',
+          : t('Analyze the position first, so there is something to compare a pass against.'),
         keywords: ['tenuki', 'sente', 'gote', 'urgent', 'threat', 'how big', 'value of the point', 'pass'],
       },
       {
         id: 'toggle-territory',
-        label: settings.analysisShowOwnership ? 'Hide territory ownership' : 'Show territory ownership',
-        category: 'Analysis',
+        label: settings.analysisShowOwnership ? t('Hide territory ownership') : t('Show territory ownership'),
+        category: t('Analysis'),
         shortcutId: 'toggle-territory',
         run: () => updateControls({ analysisShowOwnership: !settings.analysisShowOwnership }),
         keywords: ['ownership', 'area'],
       },
       {
         id: 'toggle-shape-coach',
-        label: shapeCoachEnabled ? 'Hide Shape Coach' : 'Show Shape Coach',
-        category: 'Analysis',
+        label: shapeCoachEnabled ? t('Hide Shape Coach') : t('Show Shape Coach'),
+        category: t('Analysis'),
         run: () => {
           toggleShapeCoach();
-          toast(shapeCoachEnabled ? 'Shape Coach hidden.' : 'Shape Coach shown.', 'info');
+          toast(shapeCoachEnabled ? t('Shape Coach hidden.') : t('Shape Coach shown.'), 'info');
         },
         keywords: ['pattern', 'move names', 'joseki', 'study', 'sensei', 'kaya'],
       },
@@ -2736,8 +2744,8 @@ export const Layout: React.FC = () => {
         const label = visitPresetLabel(visits);
         return {
           id: `set-live-mcts-depth-${visits}`,
-          label: `Set live analysis depth: ${label}`,
-          category: 'Analysis',
+          label: t('Set live analysis depth: {label}', { label }),
+          category: t('Analysis'),
           run: () => setLiveAnalysisDepth(visits),
           keywords: [
             'visits',
@@ -2752,105 +2760,105 @@ export const Layout: React.FC = () => {
       }),
       {
         id: 'game-review',
-        label: isGameAnalysisRunning ? 'Stop game review' : 'Fast game review',
-        category: 'Analysis',
+        label: isGameAnalysisRunning ? t('Stop game review') : t('Fast game review'),
+        category: t('Analysis'),
         run: isGameAnalysisRunning ? stopGameAnalysis : () => startFastGameAnalysis(),
         keywords: ['analyze all', 'report'],
       },
       {
         id: 'game-report',
-        label: 'Open game report',
-        category: 'Analysis',
+        label: t('Open game report'),
+        category: t('Analysis'),
         shortcutId: 'game-report-modal',
         run: () => openSimpleModal(() => setIsGameReportOpen(true)),
         keywords: ['review', 'mistakes'],
       },
       {
         id: 'score-quiz',
-        label: 'Score estimation quiz',
-        category: 'Study',
+        label: t('Score estimation quiz'),
+        category: t('Study'),
         run: () => openSimpleModal(() => setIsScoreQuizOpen(true)),
         keywords: ['estimate', 'quiz', 'count', 'territory', 'judgement', 'guess'],
       },
       {
         id: 'rank-ladder',
-        label: 'Rank ladder (tournament)',
-        category: 'Study',
+        label: t('Rank ladder (tournament)'),
+        category: t('Study'),
         run: () => openSimpleModal(() => setIsTournamentOpen(true)),
         keywords: ['tournament', 'ladder', 'climb', 'bot', 'rank', 'challenge'],
       },
       {
         id: 'pro-games',
-        label: 'Browse pro game database',
-        category: 'Study',
+        label: t('Browse pro game database'),
+        category: t('Study'),
         run: () => openSimpleModal(() => setIsProGamesOpen(true)),
         keywords: ['professional', 'database', 'famous', 'kifu', 'player', 'event', 'opening', 'joseki'],
       },
       {
         id: 'lessons',
-        label: 'Interactive lessons',
-        category: 'Study',
+        label: t('Interactive lessons'),
+        category: t('Study'),
         run: () => openSimpleModal(() => setIsLessonsOpen(true)),
         keywords: ['learn', 'tutorial', 'teach', 'beginner', 'fundamentals', 'capture', 'eyes'],
       },
       {
         id: 'guess-move',
-        label: 'Guess the move',
-        category: 'Study',
+        label: t('Guess the move'),
+        category: t('Study'),
         run: () => openSimpleModal(() => setIsGuessMoveOpen(true)),
         keywords: ['predict', 'next move', 'quiz', 'pro', 'practice', 'replay'],
       },
       {
         id: 'problem-practice',
-        label: 'Problem practice (tsumego)',
-        category: 'Study',
+        label: t('Problem practice (tsumego)'),
+        category: t('Study'),
         run: () => openSimpleModal(() => setIsProblemOpen(true)),
         keywords: ['tsumego', 'problem', 'life and death', 'puzzle', 'solve', 'tesuji'],
       },
       {
         id: 'game-analysis',
-        label: 'Open game re-analysis',
-        category: 'Analysis',
+        label: t('Open game re-analysis'),
+        category: t('Analysis'),
         shortcutId: 'game-analysis-modal',
         run: () => openSimpleModal(() => setIsGameAnalysisOpen(true)),
         keywords: ['depth', 'range'],
       },
       {
         id: 'tsumego-frame',
-        label: 'Frame as tsumego',
-        category: 'Analysis',
+        label: t('Frame as tsumego'),
+        category: t('Analysis'),
         shortcutId: 'tsumego-frame-modal',
         run: () => openSimpleModal(() => setIsTsumegoFrameOpen(true)),
         keywords: ['tsumego', 'frame', 'wall', 'life and death', 'problem', 'fill'],
       },
       {
         id: 'pass',
-        label: 'Pass',
-        category: 'Game',
+        label: t('Pass'),
+        category: t('Game'),
         shortcutId: 'pass',
         run: passTurn,
         keywords: ['skip', 'tenuki', 'no move'],
       },
       {
         id: 'ai-move',
-        label: 'AI move',
-        category: 'Game',
+        label: t('AI move'),
+        category: t('Game'),
         shortcutId: 'ai-move',
         run: requestAiMove,
         keywords: ['engine', 'play for me', 'computer'],
       },
       {
         id: 'rotate-board',
-        label: 'Rotate board',
-        category: 'Game',
+        label: t('Rotate board'),
+        category: t('Game'),
         shortcutId: 'rotate-board',
         run: rotateBoard,
         keywords: ['orientation', 'flip', 'turn'],
       },
       {
         id: 'resign',
-        label: 'Resign',
-        category: 'Game',
+        label: t('Resign'),
+        category: t('Game'),
         // handleResign is declared below this registry, so defer the reference
         // to call time rather than reading it while the list is being built.
         run: () => handleResign(),
@@ -2858,16 +2866,16 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'toggle-scoring',
-        label: scoringMode ? 'Exit scoring mode' : 'Score position',
-        category: 'Game',
+        label: scoringMode ? t('Exit scoring mode') : t('Score position'),
+        category: t('Game'),
         shortcutId: 'toggle-scoring',
         run: toggleScoringMode,
         keywords: ['count', 'territory', 'dead stones', 'manual score'],
       },
       {
         id: 'score-auto-estimate',
-        label: 'Auto-estimate dead stones',
-        category: 'Game',
+        label: t('Auto-estimate dead stones'),
+        category: t('Game'),
         run: () => {
           if (!openScoring()) return;
           autoEstimateDeadStones();
@@ -2876,8 +2884,8 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'score-clear-dead-stones',
-        label: 'Clear scoring dead stones',
-        category: 'Game',
+        label: t('Clear scoring dead stones'),
+        category: t('Game'),
         run: () => {
           if (!openScoring()) return;
           clearManualDeadStones();
@@ -2886,8 +2894,8 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'score-use-final',
-        label: 'Use final manual score',
-        category: 'Game',
+        label: t('Use final manual score'),
+        category: t('Game'),
         run: () => {
           if (!openScoring()) return;
           setManualScoreMode('manual');
@@ -2896,16 +2904,16 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'score-done',
-        label: 'Finish scoring',
-        category: 'Game',
-        disabledReason: scoringMode ? undefined : 'Scoring mode is not active',
+        label: t('Finish scoring'),
+        category: t('Game'),
+        disabledReason: scoringMode ? undefined : t('Scoring mode is not active'),
         run: () => setScoringMode(false),
         keywords: ['score', 'done', 'close'],
       },
       {
         id: 'toggle-edit-mode',
-        label: isEditMode ? 'Close edit tools' : 'Open edit tools',
-        category: 'Edit',
+        label: isEditMode ? t('Close edit tools') : t('Open edit tools'),
+        category: t('Edit'),
         shortcutId: 'toggle-edit-mode',
         run: toggleEditMode,
         keywords: ['sgf', 'setup stones', 'markers', 'labels'],
@@ -2913,77 +2921,77 @@ export const Layout: React.FC = () => {
       ...EDIT_TOOL_SHORTCUT_DEFINITIONS.map((shortcut) => ({
         id: shortcut.id,
         label: shortcut.label,
-        category: 'Edit',
+        category: t('Edit'),
         shortcutId: shortcut.id,
         run: () => selectEditTool(shortcut.tool),
         keywords: ['tool', 'edit mode', shortcut.tool.replaceAll('-', ' ')],
       })),
       {
         id: 'edit-note',
-        label: 'Edit current note',
-        category: 'Edit',
+        label: t('Edit current note'),
+        category: t('Edit'),
         shortcutId: 'edit-note',
         run: openCurrentNoteEditor,
         keywords: ['comment', 'annotation', 'sgf c'],
       },
       ...BOARD_THEME_OPTIONS.map((theme) => ({
         id: `set-board-theme-${theme.value}`,
-        label: `Set board theme: ${theme.label}`,
-        category: 'Appearance',
+        label: t('Set board theme: {label}', { label: theme.label }),
+        category: t('Appearance'),
         run: () => {
           updateSettings({ boardTheme: theme.value });
-          toast(`Board theme: ${theme.label}.`, 'info');
+          toast(t('Board theme: {label}.', { label: theme.label }), 'info');
         },
         keywords: ['board', 'theme', 'appearance', 'kaya', theme.value],
       })),
       {
         id: 'settings',
-        label: 'Open settings',
-        category: 'Help & Settings',
+        label: t('Open settings'),
+        category: t('Help & Settings'),
         shortcutId: 'settings-modal',
         run: () => openSimpleModal(() => setIsSettingsOpen(true)),
         keywords: ['preferences', 'configuration'],
       },
       {
         id: 'settings-general',
-        label: 'Open general settings',
-        category: 'Help & Settings',
+        label: t('Open general settings'),
+        category: t('Help & Settings'),
         run: () => openSettingsTab('general'),
         keywords: ['preferences', 'configuration', 'board', 'theme', 'sound', 'gamepad'],
       },
       {
         id: 'settings-analysis',
-        label: 'Open analysis settings',
-        category: 'Help & Settings',
+        label: t('Open analysis settings'),
+        category: t('Help & Settings'),
         run: () => openSettingsTab('analysis'),
         keywords: ['preferences', 'configuration', 'overlays', 'review', 'visits'],
       },
       {
         id: 'settings-ai',
-        label: 'Open AI/Engine settings',
-        category: 'Help & Settings',
+        label: t('Open AI/Engine settings'),
+        category: t('Help & Settings'),
         run: () => openSettingsTab('ai'),
         keywords: ['preferences', 'configuration', 'model', 'backend', 'webgpu', 'upload'],
       },
       {
         id: 'keyboard-help',
-        label: 'Open keyboard shortcuts',
-        category: 'Help & Settings',
+        label: t('Open keyboard shortcuts'),
+        category: t('Help & Settings'),
         shortcutId: 'keyboard-help',
         run: () => openSimpleModal(() => setIsKeyboardHelpOpen(true)),
         keywords: ['hotkeys', 'keys'],
       },
       {
         id: 'shortcut-settings',
-        label: 'Customize keyboard shortcuts',
-        category: 'Help & Settings',
+        label: t('Customize keyboard shortcuts'),
+        category: t('Help & Settings'),
         run: openShortcutSettings,
         keywords: ['hotkeys', 'keys', 'bindings', 'rebind'],
       },
       {
         id: 'about',
-        label: 'About Web KaTrain',
-        category: 'Help & Settings',
+        label: t('About Web KaTrain'),
+        category: t('Help & Settings'),
         run: () => openSimpleModal(() => setIsAboutOpen(true)),
         keywords: ['version', 'build'],
       },
@@ -2997,8 +3005,8 @@ export const Layout: React.FC = () => {
     for (let i = 0; i < n; i++) navigateForward();
   };
 
-  const blackName = getRootProp('PB') || 'Black';
-  const whiteName = getRootProp('PW') || 'White';
+  const blackName = getRootProp('PB') || t('Black');
+  const whiteName = getRootProp('PW') || t('White');
   const blackRank = getRootProp('BR');
   const whiteRank = getRootProp('WR');
 
@@ -3021,8 +3029,8 @@ export const Layout: React.FC = () => {
     const result = getResignResult(resigningPlayer);
     setPendingResignPlayer(null);
     resign(resigningPlayer);
-    toast(`Result: ${result}`, 'info');
-  }, [currentPlayer, pendingResignPlayer, resign, toast]);
+    toast(t('Result: {result}', { result }), 'info');
+  }, [currentPlayer, pendingResignPlayer, resign, t, toast]);
 
   const cancelResign = useCallback(() => {
     setPendingResignPlayer(null);
@@ -3054,8 +3062,8 @@ export const Layout: React.FC = () => {
 
   const handleDisableGamepadNavigation = useCallback(() => {
     updateSettings({ gamepadNavigation: false });
-    toast('Gamepad navigation disabled.', 'info');
-  }, [toast, updateSettings]);
+    toast(t('Gamepad navigation disabled.'), 'info');
+  }, [t, toast, updateSettings]);
 
   useTournamentWatcher();
 
@@ -3069,8 +3077,8 @@ export const Layout: React.FC = () => {
       useGameStore.getState().toggleAi(opponent);
       useTournamentStore.getState().beginGame();
     }, 0);
-    toast(`Ladder game vs ${ladder.boardSize}×${ladder.boardSize} ${ladder.userColor === 'black' ? 'White' : 'Black'} bot started.`, 'success');
-  }, [startNewGame, updateSettings, settings.gameRules, toast]);
+    toast(t('Ladder game vs {size}×{size} {color} bot started.', { size: ladder.boardSize, color: ladder.userColor === 'black' ? t('White') : t('Black') }), 'success');
+  }, [startNewGame, updateSettings, settings.gameRules, t, toast]);
 
   const handlePlayGauntletGame = useCallback((gauntlet: GauntletState) => {
     setIsTournamentOpen(false);
@@ -3082,8 +3090,8 @@ export const Layout: React.FC = () => {
       useGameStore.getState().toggleAi(opponent);
       useTournamentStore.getState().beginGauntletGame();
     }, 0);
-    toast(`Gauntlet game ${gauntlet.index + 1}/4 vs ${formatKyuRank(opponentKyu)} started.`, 'success');
-  }, [startNewGame, updateSettings, settings.gameRules, toast]);
+    toast(t('Gauntlet game {n}/4 vs {rank} started.', { n: gauntlet.index + 1, rank: formatKyuRank(opponentKyu) }), 'success');
+  }, [startNewGame, updateSettings, settings.gameRules, t, toast]);
 
   const gamepadBlockedByOverlay = Boolean(
     isSettingsOpen ||
@@ -3176,8 +3184,8 @@ export const Layout: React.FC = () => {
           const stale = isStaleBuildError(message);
           toast(
             stale
-              ? 'Web KaTrain has been updated. Reload to open this.'
-              : 'That panel could not be opened. Reload to try again.',
+              ? t('Web KaTrain has been updated. Reload to open this.')
+              : t('That panel could not be opened. Reload to try again.'),
             stale ? 'info' : 'error'
           );
         }}
@@ -3427,8 +3435,8 @@ export const Layout: React.FC = () => {
       {isFileDragActive && (
         <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
           <div className="rounded-xl border-2 border-dashed border-[var(--ui-accent)] px-6 py-4 text-center ui-panel">
-            <div className="text-sm font-semibold text-[var(--ui-accent)]">Drop SGF, OGS URL, board photo, or model weights</div>
-            <div className="text-xs ui-text-faint">Release to load a game, fetch Online-Go, trace a photo, or switch browser KataGo weights.</div>
+            <div className="text-sm font-semibold text-[var(--ui-accent)]">{t('Drop SGF, OGS URL, board photo, or model weights')}</div>
+            <div className="text-xs ui-text-faint">{t('Release to load a game, fetch Online-Go, trace a photo, or switch browser KataGo weights.')}</div>
           </div>
         </div>
       )}
@@ -3525,7 +3533,7 @@ export const Layout: React.FC = () => {
       )}
 
       {isDesktop && (
-        <Suspense fallback={<div className="flex h-dvh items-center justify-center ui-text-faint">Loading workspace…</div>}>
+        <Suspense fallback={<div className="flex h-dvh items-center justify-center ui-text-faint">{t('Loading workspace…')}</div>}>
           <DesktopDashboard
             board={
               <div className="relative flex h-full min-h-0 w-full min-w-0">
@@ -4097,24 +4105,24 @@ export const Layout: React.FC = () => {
         <div
           className="fixed bottom-4 left-1/2 z-[60] flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-1 rounded-full border border-[var(--ui-border)] bg-[var(--ui-bar)]/95 px-2 py-1 text-xs text-[var(--ui-text)] shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md mobile-safe-area-bottom"
           role="toolbar"
-          aria-label="Focus mode controls"
+          aria-label={t('Focus mode controls')}
         >
-          <button type="button" onClick={navigateStart} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title="First move" aria-label="First move">⏮</button>
-          <button type="button" onClick={navigateBack} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title="Previous move" aria-label="Previous move">◀</button>
+          <button type="button" onClick={navigateStart} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('First move')} aria-label={t('First move')}>⏮</button>
+          <button type="button" onClick={navigateBack} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Previous move')} aria-label={t('Previous move')}>◀</button>
           <span className="min-w-12 px-1 text-center font-mono tabular-nums lg:min-w-[4.5rem]">
             {currentMoveNumber}/{totalMovesInCurrentLine}
           </span>
-          <button type="button" onClick={navigateForward} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title="Next move" aria-label="Next move">▶</button>
-          <button type="button" onClick={navigateEnd} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title="Last move" aria-label="Last move">⏭</button>
+          <button type="button" onClick={navigateForward} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Next move')} aria-label={t('Next move')}>▶</button>
+          <button type="button" onClick={navigateEnd} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Last move')} aria-label={t('Last move')}>⏭</button>
           <button
             type="button"
             onClick={() => setFocusMode(false)}
             className="ml-1 min-h-11 min-w-11 shrink-0 rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1.5 text-[0.6875rem] font-semibold hover:bg-[var(--ui-surface-2)] desktop-shell:min-h-0 desktop-shell:min-w-0 lg:px-3"
-            title="Exit focus mode (Esc)"
-            aria-label="Exit focus mode"
+            title={t('Exit focus mode (Esc)')}
+            aria-label={t('Exit focus mode')}
           >
-            <span className="lg:hidden">Exit</span>
-            <span className="hidden lg:inline">Exit focus</span>
+            <span className="lg:hidden">{t('Exit')}</span>
+            <span className="hidden lg:inline">{t('Exit focus')}</span>
           </button>
         </div>
       )}

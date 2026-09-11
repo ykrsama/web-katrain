@@ -12,6 +12,7 @@ import {
   problemSideToMove,
 } from '../utils/problemMode';
 import type { GameNode } from '../types';
+import { useT } from '../i18n';
 
 interface ProblemModalProps {
   onClose: () => void;
@@ -21,8 +22,6 @@ interface ProblemModalProps {
 type Status = 'solving' | 'replying' | 'correct' | 'wrong' | 'end';
 
 const OPPONENT_REPLY_DELAY_MS = 420;
-
-const playerLabel = (player: 'black' | 'white'): string => (player === 'black' ? 'Black' : 'White');
 
 const statusTone = (status: Status): string =>
   status === 'correct'
@@ -34,6 +33,8 @@ const statusTone = (status: Status): string =>
 export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
+  const colorName = (player: 'black' | 'white'): string => (player === 'black' ? t('Black') : t('White'));
 
   const rootNode = useGameStore((s) => s.rootNode);
   const treeVersion = useGameStore((s) => s.treeVersion);
@@ -83,17 +84,17 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
     const verdict = classifyProblemNode(next);
     if (verdict === 'correct') {
       setStatus('correct');
-      setMessage('Correct — that solves it!');
+      setMessage(t('Correct — that solves it!'));
       return true;
     }
     if (verdict === 'wrong') {
       setStatus('wrong');
-      setMessage('That line fails. Retry the problem.');
+      setMessage(t('That line fails. Retry the problem.'));
       return true;
     }
     if (next.children.length === 0) {
       setStatus('end');
-      setMessage('End of this line.');
+      setMessage(t('End of this line.'));
       return true;
     }
     return false;
@@ -103,7 +104,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
     if (!node || status !== 'solving') return;
     const child = findChildForMove(node, x, y);
     if (!child) {
-      setMessage("That move isn't part of this problem — try another point.");
+      setMessage(t("That move isn't part of this problem — try another point."));
       return;
     }
     setMessage(null);
@@ -139,7 +140,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
     setCursor(last);
     const verdict = classifyProblemNode(last);
     setStatus(verdict === 'correct' ? 'correct' : 'end');
-    setMessage(verdict === 'correct' ? 'Solution shown.' : 'Main line shown.');
+    setMessage(verdict === 'correct' ? t('Solution shown.') : t('Main line shown.'));
   };
 
   const goToProblem = (next: number) => {
@@ -171,13 +172,13 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
       >
         <div className="problem-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="problem-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Problem Practice
+            {t('Problem Practice')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close problem practice"
+            aria-label={t('Close problem practice')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -186,8 +187,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
         {!hasMoves || !node ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
             <p className="text-sm text-[var(--ui-text-muted)]">
-              Open a tsumego SGF to play its recorded variations. Opponent replies and solution verdicts are handled
-              automatically.
+              {t('Open a tsumego SGF to play its recorded variations. Opponent replies and solution verdicts are handled automatically.')}
             </p>
             <button
               type="button"
@@ -197,7 +197,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
               }}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-4 py-2 text-sm font-semibold text-[var(--ui-accent)] hover:bg-[var(--ui-surface-2)]"
             >
-              <FaFolderOpen aria-hidden="true" /> Open SGF
+              <FaFolderOpen aria-hidden="true" /> {t('Open SGF')}
             </button>
           </div>
         ) : (
@@ -206,13 +206,13 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
               <div className="problem-toolbar flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-[var(--ui-text)]" data-problem-prompt="true">
                   {status === 'solving'
-                    ? `${playerLabel(sideToMove)} to play`
+                    ? t('{player} to play', { player: colorName(sideToMove) })
                     : status === 'replying'
-                      ? 'Opponent replying…'
-                      : 'Result'}
+                      ? t('Opponent replying…')
+                      : t('Result')}
                 </p>
                 {problems.length > 1 && (
-                  <span className="text-xs text-[var(--ui-text-muted)]">Problem {safeIndex + 1} / {problems.length}</span>
+                  <span className="text-xs text-[var(--ui-text-muted)]">{t('Problem {n} / {total}', { n: safeIndex + 1, total: problems.length })}</span>
                 )}
               </div>
 
@@ -222,7 +222,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                   lastMove={lastMove}
                   markers={markers}
                   onPointClick={status === 'solving' ? handlePoint : undefined}
-                  ariaLabel="Problem position"
+                  ariaLabel={t('Problem position')}
                 />
               </div>
 
@@ -247,7 +247,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                       onClick={() => goToProblem(safeIndex - 1)}
                       disabled={safeIndex === 0}
                       className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
-                      aria-label="Previous problem"
+                      aria-label={t('Previous problem')}
                     >
                       <FaArrowLeft aria-hidden="true" />
                     </button>
@@ -256,7 +256,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                       onClick={() => goToProblem(safeIndex + 1)}
                       disabled={safeIndex >= problems.length - 1}
                       className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
-                      aria-label="Next problem"
+                      aria-label={t('Next problem')}
                     >
                       <FaArrowRight aria-hidden="true" />
                     </button>
@@ -270,7 +270,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                   className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                   data-problem-solution="true"
                 >
-                  <span className="inline-flex items-center gap-2"><FaLightbulb aria-hidden="true" /> Show solution</span>
+                  <span className="inline-flex items-center gap-2"><FaLightbulb aria-hidden="true" /> {t('Show solution')}</span>
                 </button>
                 <button
                   type="button"
@@ -278,7 +278,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                   className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                   data-problem-retry="true"
                 >
-                  <span className="inline-flex items-center gap-2"><FaRedo aria-hidden="true" /> Retry</span>
+                  <span className="inline-flex items-center gap-2"><FaRedo aria-hidden="true" /> {t('Retry')}</span>
                 </button>
               </div>
             </div>

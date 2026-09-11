@@ -2,7 +2,7 @@ import React from 'react';
 import { shallow } from 'zustand/shallow';
 import { FaCheck, FaEdit, FaExternalLinkAlt } from 'react-icons/fa';
 import { useGameStore } from '../store/gameStore';
-import { DEFAULT_BOARD_SIZE, type GameSettings, type Player } from '../types';
+import { DEFAULT_BOARD_SIZE, type GameSettings, type GameRules, type Player } from '../types';
 import { getMaxHandicap, normalizeBoardSize } from '../utils/boardSize';
 import { describeAiStrength, estimateAiRank } from '../utils/aiStrength';
 import { BotPersonaPicker } from './BotPersonaPicker';
@@ -14,11 +14,11 @@ import {
   formatGameInfoTitle,
   formatKomiLabel,
   getFirstGameInfoLink,
-  formatRulesLabel,
   getVisibleGameInfoDetails,
   hasGameInfoMetadata,
   readRootInfoValue,
 } from '../utils/gameInfoDisplay';
+import { useT } from '../i18n';
 
 type GameInfoField = {
   key: string;
@@ -47,6 +47,7 @@ const inputClass =
   'min-h-11 w-full ui-input border rounded px-2 py-1.5 text-xs text-[var(--ui-text)] focus:border-[var(--ui-accent)] outline-none desktop-shell:min-h-0';
 
 export const GameInfoPanel: React.FC = () => {
+  const t = useT();
   const {
     rootNode,
     komi,
@@ -119,6 +120,27 @@ export const GameInfoPanel: React.FC = () => {
   const hasMetadata = hasGameInfoMetadata(rootProps);
   const blackDisplay = formatGameInfoPlayer(blackName, blackRank, 'Black');
   const whiteDisplay = formatGameInfoPlayer(whiteName, whiteRank, 'White');
+  const colorLabel = (color: Player): string => (color === 'black' ? t('Black') : t('White'));
+  const rulesName = (rule: GameRules): string => {
+    switch (rule) {
+      case 'japanese':
+        return t('Japanese rules');
+      case 'chinese':
+        return t('Chinese rules');
+      case 'korean':
+        return t('Korean rules');
+      case 'aga':
+        return t('AGA rules');
+      case 'new-zealand':
+        return t('New Zealand rules');
+      case 'stone-scoring':
+        return t('Ancient Chinese rules');
+      case 'tromp-taylor':
+        return t('Tromp-Taylor rules');
+      default:
+        return t('Japanese rules');
+    }
+  };
 
   React.useEffect(() => {
     if (!isEditingKomi) setKomiInput(String(komi));
@@ -188,12 +210,12 @@ export const GameInfoPanel: React.FC = () => {
           href={sourceLink.href}
           target="_blank"
           rel="noopener noreferrer"
-          title={`Open link from ${sourceLink.sourceLabel}`}
-          aria-label={`Open link from ${sourceLink.sourceLabel}`}
+          title={t('Open link from {source}', { source: sourceLink.sourceLabel })}
+          aria-label={t('Open link from {source}', { source: sourceLink.sourceLabel })}
           data-game-info-source-link="true"
         >
           <FaExternalLinkAlt size={11} aria-hidden="true" />
-          Source
+          {t('Source')}
         </a>
       ) : null}
       <button
@@ -204,7 +226,7 @@ export const GameInfoPanel: React.FC = () => {
         data-game-info-edit-toggle="true"
       >
         {isEditingInfo ? <FaCheck size={11} aria-hidden="true" /> : <FaEdit size={11} aria-hidden="true" />}
-        {isEditingInfo ? 'Done' : 'Edit'}
+        {isEditingInfo ? t('Done') : t('Edit')}
       </button>
     </div>
   );
@@ -212,13 +234,13 @@ export const GameInfoPanel: React.FC = () => {
   const renderField = ({ key, label, placeholder, className }: GameInfoField) => (
     <label key={key} className={['min-w-0 space-y-1', className ?? ''].join(' ')}>
       <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-        {label}
+        {t(label)}
       </span>
       <input
         value={valueFor(key)}
         onChange={(e) => setRootProperty(key, e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder}
+        placeholder={t(placeholder)}
         className={inputClass}
         spellCheck={false}
       />
@@ -238,7 +260,7 @@ export const GameInfoPanel: React.FC = () => {
           <div className="truncate text-sm font-semibold text-[var(--ui-text)]" title={title}>{title}</div>
           {/* Only worth a line when it explains an empty-looking card — otherwise
               the players and details are right below. */}
-          {hasMetadata ? null : <div className="mt-1 text-[0.6875rem] ui-text-faint">No metadata yet</div>}
+          {hasMetadata ? null : <div className="mt-1 text-[0.6875rem] ui-text-faint">{t('No metadata yet')}</div>}
         </div>
         {renderPanelActions(true)}
       </div>
@@ -247,14 +269,14 @@ export const GameInfoPanel: React.FC = () => {
         <div className="flex min-w-0 items-center gap-2 rounded border border-[var(--ui-border)] bg-[var(--ui-panel)] px-2 py-1.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-neutral-900 ring-1 ring-white/20" aria-hidden="true" />
           <div className="min-w-0">
-            <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Black</div>
+            <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Black')}</div>
             <div className="truncate text-xs text-[var(--ui-text)]">{blackDisplay}</div>
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-2 rounded border border-[var(--ui-border)] bg-[var(--ui-panel)] px-2 py-1.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white ring-1 ring-black/30" aria-hidden="true" />
           <div className="min-w-0">
-            <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">White</div>
+            <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('White')}</div>
             <div className="truncate text-xs text-[var(--ui-text)]">{whiteDisplay}</div>
           </div>
         </div>
@@ -262,16 +284,16 @@ export const GameInfoPanel: React.FC = () => {
 
       <dl className="grid grid-cols-2 gap-2">
         <div className="min-w-0">
-          <dt className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Komi</dt>
+          <dt className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Komi')}</dt>
           <dd className="truncate text-xs text-[var(--ui-text)]">{formatKomiLabel(komi)}</dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Rules</dt>
-          <dd className="truncate text-xs text-[var(--ui-text)]">{formatRulesLabel(gameRules)}</dd>
+          <dt className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Rules')}</dt>
+          <dd className="truncate text-xs text-[var(--ui-text)]">{rulesName(gameRules)}</dd>
         </div>
         {handicap > 0 ? (
           <div className="min-w-0">
-            <dt className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Handicap</dt>
+            <dt className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Handicap')}</dt>
             <dd className="truncate text-xs text-[var(--ui-text)]">{handicap}</dd>
           </div>
         ) : null}
@@ -284,7 +306,7 @@ export const GameInfoPanel: React.FC = () => {
               key={detail.key}
               className="min-w-0 max-w-full rounded border border-[var(--ui-border)] bg-[var(--ui-panel)] px-2 py-1 text-[0.6875rem] text-[var(--ui-text-muted)]"
             >
-              <span className="font-semibold text-[var(--ui-text)]">{detail.label}:</span>{' '}
+              <span className="font-semibold text-[var(--ui-text)]">{t(detail.label)}:</span>{' '}
               <span className="break-words">{detail.value}</span>
             </span>
           ))}
@@ -302,7 +324,7 @@ export const GameInfoPanel: React.FC = () => {
         {detailFields.map(renderField)}
         <label className="min-w-0 space-y-1">
           <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-            Komi
+            {t('Komi')}
           </span>
           <input
             value={komiInput}
@@ -318,7 +340,7 @@ export const GameInfoPanel: React.FC = () => {
         </label>
         <label className="min-w-0 space-y-1">
           <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-            Handicap
+            {t('Handicap')}
           </span>
           <input
             value={handicapInput}
@@ -336,7 +358,7 @@ export const GameInfoPanel: React.FC = () => {
         </label>
         <label className="min-w-0 space-y-1">
           <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-            Rules
+            {t('Rules')}
           </span>
           <select
             value={gameRules}
@@ -344,20 +366,20 @@ export const GameInfoPanel: React.FC = () => {
             onKeyDown={handleKeyDown}
             className={inputClass}
           >
-            <option value="japanese">Japanese</option>
-            <option value="chinese">Chinese</option>
-            <option value="korean">Korean</option>
+            <option value="japanese">{t('Japanese rules')}</option>
+            <option value="chinese">{t('Chinese rules')}</option>
+            <option value="korean">{t('Korean rules')}</option>
           </select>
         </label>
       </div>
       <div className="space-y-3 rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3" data-game-info-ai-edit="true">
         <div>
-          <div className="text-xs font-semibold text-[var(--ui-text)]">AI bot</div>
-          <div className="text-[0.625rem] ui-text-faint">Configure the current game opponent without starting over.</div>
+          <div className="text-xs font-semibold text-[var(--ui-text)]">{t('AI bot')}</div>
+          <div className="text-[0.625rem] ui-text-faint">{t('Configure the current game opponent without starting over.')}</div>
         </div>
         <label className="min-w-0 space-y-1">
           <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-            Play against
+            {t('Play against')}
           </span>
           <select
             value={aiOpponent}
@@ -365,19 +387,19 @@ export const GameInfoPanel: React.FC = () => {
             onKeyDown={handleKeyDown}
             className={inputClass}
           >
-            <option value="none">Human (local)</option>
-            <option value="black">AI as Black</option>
-            <option value="white">AI as White</option>
+            <option value="none">{t('Human (local)')}</option>
+            <option value="black">{t('AI as Black')}</option>
+            <option value="white">{t('AI as White')}</option>
           </select>
         </label>
         {showAiOptions ? (
           <>
             <div className="text-xs ui-text-faint">
-              You play as {aiOpponent === 'black' ? 'White' : 'Black'}.
-              {aiOpponent === currentPlayer ? ' AI is to move now.' : ''}
+              {t('You play as {color}.', { color: aiOpponent === 'black' ? t('White') : t('Black') })}
+              {aiOpponent === currentPlayer ? ` ${t('AI is to move now.')}` : ''}
             </div>
             <div className="space-y-2">
-              <div className="text-[0.6875rem] font-semibold uppercase tracking-wide ui-text-faint">Choose a bot</div>
+              <div className="text-[0.6875rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Choose a bot')}</div>
               <BotPersonaPicker selectedId={selectedPersonaId} onSelect={selectPersona} />
             </div>
             <button
@@ -387,11 +409,11 @@ export const GameInfoPanel: React.FC = () => {
               className="text-xs font-semibold text-[var(--ui-accent)] hover:underline"
               aria-expanded={showAdvancedAi}
             >
-              {showAdvancedAi ? 'Hide advanced strategy options' : 'Advanced strategy options'}
+              {showAdvancedAi ? t('Hide advanced strategy options') : t('Advanced strategy options')}
             </button>
             <div className={showAdvancedAi ? 'space-y-2' : 'hidden'}>
               <label className="min-w-0 space-y-1">
-                <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Strategy</span>
+                <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Strategy')}</span>
                 <select
                   value={settings.aiStrategy}
                   onChange={(e) => {
@@ -401,22 +423,22 @@ export const GameInfoPanel: React.FC = () => {
                   onKeyDown={handleKeyDown}
                   className={inputClass}
                 >
-                  <option value="default">Default (engine top move)</option>
-                  <option value="human">Human (KataGo human net)</option>
-                  <option value="handicap">KataHandicap (KaTrain)</option>
-                  <option value="antimirror">KataAntiMirror (KaTrain)</option>
-                  <option value="rank">Rank (KaTrain)</option>
-                  <option value="simple">Simple Ownership</option>
-                  <option value="settle">Settle Stones</option>
-                  <option value="scoreloss">ScoreLoss (weaker)</option>
-                  <option value="policy">Policy</option>
-                  <option value="weighted">Policy Weighted</option>
-                  <option value="jigo">Jigo</option>
-                  <option value="pick">Pick</option>
-                  <option value="local">Local</option>
-                  <option value="tenuki">Tenuki</option>
-                  <option value="territory">Territory</option>
-                  <option value="influence">Influence</option>
+                  <option value="default">{t('Default (engine top move)')}</option>
+                  <option value="human">{t('Human (KataGo human net)')}</option>
+                  <option value="handicap">{t('KataHandicap (KaTrain)')}</option>
+                  <option value="antimirror">{t('KataAntiMirror (KaTrain)')}</option>
+                  <option value="rank">{t('Rank (KaTrain)')}</option>
+                  <option value="simple">{t('Simple Ownership')}</option>
+                  <option value="settle">{t('Settle Stones')}</option>
+                  <option value="scoreloss">{t('ScoreLoss (weaker)')}</option>
+                  <option value="policy">{t('Policy')}</option>
+                  <option value="weighted">{t('Policy Weighted')}</option>
+                  <option value="jigo">{t('Jigo')}</option>
+                  <option value="pick">{t('Pick')}</option>
+                  <option value="local">{t('Local')}</option>
+                  <option value="tenuki">{t('Tenuki')}</option>
+                  <option value="territory">{t('Territory')}</option>
+                  <option value="influence">{t('Influence')}</option>
                 </select>
               </label>
               <p className="text-xs ui-text-faint" data-game-info-ai-strength={aiStrength.label ?? 'none'}>
@@ -424,7 +446,7 @@ export const GameInfoPanel: React.FC = () => {
               </p>
               {settings.aiStrategy === 'human' ? (
                 <label className="min-w-0 space-y-1">
-                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Plays like</span>
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Plays like')}</span>
                   <select
                     value={settings.humanSlProfile}
                     onChange={(e) => updateAiConfig({ humanSlProfile: e.target.value })}
@@ -439,7 +461,7 @@ export const GameInfoPanel: React.FC = () => {
               ) : null}
               {settings.aiStrategy === 'rank' ? (
                 <label className="min-w-0 space-y-1">
-                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Strength (rank target)</span>
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Strength (rank target)')}</span>
                   <input
                     type="number"
                     min={-5}
@@ -457,7 +479,7 @@ export const GameInfoPanel: React.FC = () => {
               ) : null}
               {settings.aiStrategy === 'scoreloss' ? (
                 <label className="min-w-0 space-y-1">
-                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Strength (c)</span>
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Strength (c)')}</span>
                   <input
                     type="number"
                     min={0}
@@ -471,7 +493,7 @@ export const GameInfoPanel: React.FC = () => {
               ) : null}
               {settings.aiStrategy === 'jigo' ? (
                 <label className="min-w-0 space-y-1">
-                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Target Score</span>
+                  <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Target score')}</span>
                   <input
                     type="number"
                     step={0.1}
@@ -483,7 +505,7 @@ export const GameInfoPanel: React.FC = () => {
                 </label>
               ) : null}
               <div className="text-xs ui-text-faint">
-                Full per-strategy parameters remain available in Settings → AI/Engine.
+                {t('Full per-strategy parameters remain available in Settings → AI/Engine.')}
               </div>
             </div>
             {aiOpponent === currentPlayer ? (
@@ -493,7 +515,7 @@ export const GameInfoPanel: React.FC = () => {
                 onClick={() => makeAiMove()}
                 onKeyDown={handleKeyDown}
               >
-                Move now
+                {t('Move now')}
               </button>
             ) : null}
           </>
@@ -510,8 +532,8 @@ export const GameInfoPanel: React.FC = () => {
             labelled and the game title is the next line. Edit mode keeps one
             because "Editing…" is state the reader has to see. */}
         <div className="min-w-0">
-          <div className="truncate text-xs font-semibold text-[var(--ui-text)]">Editing game info</div>
-          <div className="text-[0.625rem] ui-text-faint">SGF root metadata</div>
+          <div className="truncate text-xs font-semibold text-[var(--ui-text)]">{t('Editing game info')}</div>
+          <div className="text-[0.625rem] ui-text-faint">{t('SGF root metadata')}</div>
         </div>
         {renderPanelActions()}
       </div>

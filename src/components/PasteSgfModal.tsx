@@ -2,6 +2,7 @@ import React from 'react';
 import { FaCamera, FaClipboard, FaTimes } from 'react-icons/fa';
 import { readClipboardText } from '../utils/clipboard';
 import { getPasteSgfInputInfo, type PasteSgfSubmitResult } from '../utils/pasteSgfInput';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 
@@ -20,6 +21,7 @@ interface PasteSgfModalProps {
 }
 
 export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit, onOpenPhotoBoard, returnFocus }) => {
+  const t = useT();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const statusRef = React.useRef<HTMLDivElement>(null);
   const [text, setText] = React.useState('');
@@ -50,11 +52,11 @@ export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit,
     setStatus(null);
     const clipboardText = await readClipboardText();
     if (clipboardText === null) {
-      setStatus({ text: 'Clipboard unavailable.', tone: 'error' });
+      setStatus({ text: t('Clipboard unavailable.'), tone: 'error' });
       return;
     }
     updateText(clipboardText);
-    if (!clipboardText.trim()) setStatus({ text: 'Clipboard is empty.', tone: 'info' });
+    if (!clipboardText.trim()) setStatus({ text: t('Clipboard is empty.'), tone: 'info' });
   };
 
   const submit = async () => {
@@ -66,7 +68,7 @@ export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit,
       const result = await onSubmit(trimmed);
       if (result === 'loaded') onClose();
       else if (result === 'cancelled') {
-        setStatus({ text: 'Import canceled. Your current game was left unchanged.', tone: 'info' });
+        setStatus({ text: t('Import canceled. Your current game was left unchanged.'), tone: 'info' });
       } else {
         setStatus({ text: inputInfo.errorStatus, tone: 'error' });
       }
@@ -91,12 +93,12 @@ export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit,
         aria-labelledby="paste-sgf-title"
       >
         <div className="paste-sgf-modal-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
-          <h2 id="paste-sgf-title" className="text-lg font-semibold text-[var(--ui-text)]">Paste SGF / OGS</h2>
+          <h2 id="paste-sgf-title" className="text-lg font-semibold text-[var(--ui-text)]">{t('Paste SGF / OGS')}</h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close paste SGF"
+            aria-label={t('Close paste SGF')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -109,11 +111,11 @@ export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit,
             onChange={(event) => updateText(event.target.value)}
             className="paste-sgf-modal-textarea min-h-40 w-full resize-y rounded-lg border ui-input px-3 py-2 font-mono text-sm text-[var(--ui-text)] sm:min-h-[220px]"
             placeholder="(;GM[1]...) or https://online-go.com/game/12345"
-            aria-label="SGF text or OGS game URL"
+            aria-label={t('SGF text or OGS game URL')}
             aria-describedby="paste-sgf-helper paste-sgf-detection"
           />
           <div id="paste-sgf-helper" className="text-xs ui-text-faint">
-            Paste a complete SGF, a game tree snippet, or a public Online-Go game URL.
+            {t('Paste a complete SGF, a game tree snippet, or a public Online-Go game URL.')}
           </div>
           <div
             id="paste-sgf-detection"
@@ -141,17 +143,17 @@ export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit,
               onClick={readClipboard}
               className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
             >
-              <span className="inline-flex items-center gap-2"><FaClipboard /> Read Clipboard</span>
+              <span className="inline-flex items-center gap-2"><FaClipboard /> {t('Read Clipboard')}</span>
             </button>
             {onOpenPhotoBoard && (
               <button
                 type="button"
                 onClick={onOpenPhotoBoard}
                 className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
-                title="Use a board screenshot or camera photo"
+                title={t('Use a board screenshot or camera photo')}
                 data-paste-sgf-photo-board="true"
               >
-                <span className="inline-flex items-center gap-2"><FaCamera /> Photo Board</span>
+                <span className="inline-flex items-center gap-2"><FaCamera /> {t('Photo Board')}</span>
               </button>
             )}
           </div>
@@ -161,16 +163,16 @@ export const PasteSgfModal: React.FC<PasteSgfModalProps> = ({ onClose, onSubmit,
               onClick={onClose}
               className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
             >
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="button"
               onClick={submit}
               disabled={!text.trim() || isSubmitting}
-              aria-label="Open pasted SGF or OGS URL"
+              aria-label={t('Open pasted SGF or OGS URL')}
               className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-[var(--ui-accent-contrast)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSubmitting ? 'Opening...' : 'Open'}
+              {isSubmitting ? t('Opening...') : t('Open')}
             </button>
           </div>
         </div>

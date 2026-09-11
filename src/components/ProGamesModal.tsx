@@ -5,6 +5,7 @@ import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { StaticBoard } from './StaticBoard';
 import { PRO_GAMES, buildFinalBoard, filterProGames, type ProGameMeta } from '../utils/proGames';
 import { tagsFromResult, narrativeTagToneClass } from '../utils/narrativeTags';
+import { useT } from '../i18n';
 
 interface ProGamesModalProps {
   onClose: () => void;
@@ -32,6 +33,7 @@ const shortPlayerName = (name: string): string => {
 export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGame }) => {
   useEscapeToClose(onClose);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  const t = useT();
 
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => filterProGames(PRO_GAMES, query), [query]);
@@ -74,13 +76,13 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
       >
         <div className="pro-games-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="pro-games-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Pro Game Library
+            {t('Pro Game Library')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close pro game library"
+            aria-label={t('Close pro game library')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -97,8 +99,8 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                     type="search"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    aria-label="Search pro games"
-                    placeholder="Search by player, event, date…"
+                    aria-label={t('Search pro games')}
+                    placeholder={t('Search by player, event, date…')}
                     className="min-h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] py-2 pl-9 pr-3 text-sm text-[var(--ui-text)] desktop-shell:min-h-0"
                     autoFocus
                   />
@@ -107,14 +109,14 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                   type="button"
                   onClick={surpriseMe}
                   className="inline-flex min-h-11 min-w-11 shrink-0 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] desktop-shell:min-h-0 desktop-shell:min-w-0"
-                  title="Jump to a random pro game"
+                  title={t('Jump to a random pro game')}
                 >
-                  <FaDice aria-hidden="true" /> <span className="hidden sm:inline">Surprise me</span>
+                  <FaDice aria-hidden="true" /> <span className="hidden sm:inline">{t('Surprise me')}</span>
                 </button>
               </div>
               {FEATURED_PRO_GAMES.length > 0 && !query && (
-                <div className="pro-games-featured flex flex-nowrap items-center gap-1.5 overflow-x-auto lg:flex-wrap lg:overflow-visible" aria-label="Featured games">
-                  <span className="text-[0.625rem] font-semibold uppercase tracking-wide text-[var(--ui-text-faint)]">Featured</span>
+                <div className="pro-games-featured flex flex-nowrap items-center gap-1.5 overflow-x-auto lg:flex-wrap lg:overflow-visible" aria-label={t('Featured games')}>
+                  <span className="text-[0.625rem] font-semibold uppercase tracking-wide text-[var(--ui-text-faint)]">{t('Featured')}</span>
                   {FEATURED_PRO_GAMES.map((g) => (
                     <button
                       key={g.id}
@@ -137,7 +139,7 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
             </div>
             <ul className="pro-games-results min-h-0 flex-1 overflow-y-auto">
               {filtered.length === 0 && (
-                <li className="p-4 text-sm text-[var(--ui-text-muted)]">No games match “{query}”.</li>
+                <li className="p-4 text-sm text-[var(--ui-text-muted)]">{t('No games match “{query}”.', { query })}</li>
               )}
               {filtered.map((g) => {
                 const active = selected?.id === g.id;
@@ -166,9 +168,9 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                               <span
                                 key={tag.id}
                                 className={`rounded-full border px-1.5 py-0.5 text-[0.625rem] font-semibold ${narrativeTagToneClass(tag.tone)}`}
-                                title={tag.title}
+                                title={t(tag.title)}
                               >
-                                {tag.label}
+                                {t(tag.label)}
                               </span>
                             ))}
                           </div>
@@ -187,7 +189,7 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
               <>
                 <div className="pro-games-preview mx-auto w-full max-w-[280px]">
                   {preview ? (
-                    <StaticBoard board={preview.board} ariaLabel="Final position preview" maxPx={280} />
+                    <StaticBoard board={preview.board} ariaLabel={t('Final position preview')} maxPx={280} />
                   ) : (
                     <div className="aspect-square w-full rounded bg-[var(--ui-surface-2)]" />
                   )}
@@ -199,9 +201,9 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                   {selected.event && <div className="text-[var(--ui-text-muted)]">{selected.event}</div>}
                   <div className="flex flex-wrap gap-x-4 text-xs text-[var(--ui-text-muted)]">
                     {selected.date && <span>{selected.date}</span>}
-                    {selected.result && <span>Result: {selected.result}</span>}
+                    {selected.result && <span>{t('Result: {result}', { result: selected.result })}</span>}
                     <span>{selected.boardSize}×{selected.boardSize}</span>
-                    {preview && <span>{preview.moveCount} moves</span>}
+                    {preview && <span>{t('{moves} moves', { moves: preview.moveCount })}</span>}
                     <span>{selected.source}</span>
                   </div>
                 </div>
@@ -210,19 +212,19 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                   onClick={() => void onLoadGame(selected.sgf, selected.name)}
                   className="pro-games-load mt-4 min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                 >
-                  <span className="inline-flex items-center gap-2"><FaDownload aria-hidden="true" /> Load &amp; study this game</span>
+                  <span className="inline-flex items-center gap-2"><FaDownload aria-hidden="true" /> {t('Load & study this game')}</span>
                 </button>
                 {selected.editorial && (
                   <p
                     className="mt-3 rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs leading-relaxed text-[var(--ui-text-muted)]"
                     data-pro-game-editorial
                   >
-                    {selected.editorial}
+                    {t(selected.editorial)}
                   </p>
                 )}
               </>
             ) : (
-              <div className="grid flex-1 place-items-center text-sm text-[var(--ui-text-muted)]">Select a game</div>
+              <div className="grid flex-1 place-items-center text-sm text-[var(--ui-text-muted)]">{t('Select a game')}</div>
             )}
           </div>
         </div>

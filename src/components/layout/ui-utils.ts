@@ -1,11 +1,12 @@
 import { formatReadableScoreLead } from '../../utils/analysisSummary';
+import { t } from '../../i18n';
 export function rgba(color: readonly [number, number, number, number], alphaOverride?: number): string {
   const a = typeof alphaOverride === 'number' ? alphaOverride : color[3];
   return `rgba(${Math.round(color[0] * 255)}, ${Math.round(color[1] * 255)}, ${Math.round(color[2] * 255)}, ${a})`;
 }
 
 export function formatMoveLabel(x: number, y: number, boardSize = 19): string {
-  if (x < 0 || y < 0) return 'Pass';
+  if (x < 0 || y < 0) return t('Pass');
   const col = String.fromCharCode(65 + (x >= 8 ? x + 1 : x));
   const row = boardSize - y;
   return `${col}${row}`;
@@ -29,10 +30,15 @@ export function formatBoardAnnouncement(args: {
 }): string {
   const { move, moveNumber, totalMoves, boardSize = 19, winRate, scoreLead } = args;
   const position = move
-    ? `Move ${moveNumber} of ${totalMoves}, ${move.player === 'black' ? 'Black' : 'White'} ${formatMoveLabel(move.x, move.y, boardSize)}`
+    ? t('Move {n} of {total}, {color} {point}', {
+        n: moveNumber,
+        total: totalMoves,
+        color: t(move.player === 'black' ? 'Black' : 'White'),
+        point: formatMoveLabel(move.x, move.y, boardSize),
+      })
     : totalMoves > 0
-      ? `Start of game, ${totalMoves} moves`
-      : 'Empty board';
+      ? t('Start of game, {total} moves', { total: totalMoves })
+      : t('Empty board');
 
   // Evaluation only once it has arrived, and rounded coarser than the display.
   // The engine keeps refining a position as it deepens — 38.1% became 38.3%,
@@ -45,12 +51,14 @@ export function formatBoardAnnouncement(args: {
     typeof scoreLead === 'number' && Number.isFinite(scoreLead)
       ? `, ${formatReadableScoreLead(Math.round(scoreLead * 2) / 2)}`
       : '';
-  return `${position}. Black win ${spokenWinRate}${score}`;
+  return t('{position}. Black win {winRate}{score}', { position, winRate: spokenWinRate, score });
 }
 
 export function playerToShort(p: 'black' | 'white'): string {
   return p === 'black' ? 'B' : 'W';
 }
+
+const ROOT_POSITION_LABEL = 'Root';
 
 export function formatPositionSummary(args: {
   move: { x: number; y: number; player: 'black' | 'white' } | null;
@@ -63,16 +71,17 @@ export function formatPositionSummary(args: {
   const playerLabel = playerToShort(player);
   const pointLabel = args.move
     ? formatMoveLabel(args.move.x, args.move.y, args.boardSize)
-    : args.positionLabel ?? 'Root';
-  const playerName = player === 'black' ? 'Black' : 'White';
-  const nonMoveTitle = pointLabel === 'Root'
-    ? `${playerName} to play at root`
-    : `${playerName} to play at ${pointLabel}`;
+    : args.positionLabel ?? ROOT_POSITION_LABEL;
+  const isRoot = pointLabel === ROOT_POSITION_LABEL;
+  const playerName = t(player === 'black' ? 'Black' : 'White');
+  const nonMoveTitle = isRoot
+    ? t('{player} to play at root', { player: playerName })
+    : t('{player} to play at {point}', { player: playerName, point: pointLabel });
   return {
     playerLabel,
     moveNumberLabel: String(args.moveNumber),
-    pointLabel,
-    title: args.move ? `${playerName} played ${pointLabel}` : nonMoveTitle,
+    pointLabel: isRoot ? t('Root') : pointLabel,
+    title: args.move ? t('{player} played {point}', { player: playerName, point: pointLabel }) : nonMoveTitle,
   };
 }
 

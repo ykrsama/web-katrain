@@ -1,6 +1,7 @@
 import React from 'react';
 import { FaCalculator, FaChevronDown, FaChevronUp, FaMagic, FaTimes, FaUndo } from 'react-icons/fa';
 import type { ManualScoreEstimate } from '../utils/scoring';
+import { useT } from '../i18n';
 
 interface ManualScorePanelProps {
   active: boolean;
@@ -29,22 +30,6 @@ interface ManualScorePanelProps {
 
 const formatScoreValue = (value: number): string => Number.isInteger(value) ? String(value) : value.toFixed(1);
 
-function formatScoreSourceLabel(
-  scoreMode: 'manual' | 'estimate',
-  estimateSource: 'ownership' | 'playout' | null,
-): string {
-  if (scoreMode === 'manual') return 'Manual';
-  if (estimateSource === 'ownership') return 'Ownership';
-  if (estimateSource === 'playout') return 'Playout';
-  return 'Estimate';
-}
-
-function formatScoreResultDetail(scoreLead: number, blackName: string, whiteName: string): string {
-  if (scoreLead > 0) return `${blackName} by ${formatScoreValue(Math.abs(scoreLead))}`;
-  if (scoreLead < 0) return `${whiteName} by ${formatScoreValue(Math.abs(scoreLead))}`;
-  return 'Even game';
-}
-
 export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
   active,
   disabled = false,
@@ -69,6 +54,7 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
   onClear,
   onDone,
 }) => {
+  const t = useT();
   const detailsId = React.useId();
   const detailsRef = React.useRef<HTMLDivElement>(null);
   // Docked (dashboard strip) and compact (mobile bottom bar) variants keep the
@@ -77,10 +63,13 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
   const [showDetails, setShowDetails] = React.useState(!isCompact && !docked);
   const showShortcutLabel = !!shortcutLabel && shortcutLabel !== 'Disabled';
   const scoreTitle = disabled
-    ? 'Finish editing before scoring.'
+    ? t('Finish editing before scoring.')
     : showShortcutLabel
-      ? `Score position (${shortcutLabel})`
-      : 'Score position';
+      ? t('Score position ({shortcut})', { shortcut: shortcutLabel })
+      : t('Score position');
+  const scoreAriaLabel = showShortcutLabel
+    ? t('Score position, keyboard shortcut {shortcut}', { shortcut: shortcutLabel })
+    : t('Score position');
 
   React.useEffect(() => {
     if (active) setShowDetails(!isCompact && !docked);
@@ -112,10 +101,10 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
           onClick={onToggle}
           disabled={disabled}
           title={scoreTitle}
-          aria-label={showShortcutLabel ? `Score position, keyboard shortcut ${shortcutLabel}` : 'Score position'}
+          aria-label={scoreAriaLabel}
         >
           <FaCalculator size={13} />
-          <span className="bc-label">Score</span>
+          <span className="bc-label">{t('Score')}</span>
         </button>
       );
     }
@@ -126,10 +115,10 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
         onClick={onToggle}
         disabled={disabled}
         title={scoreTitle}
-        aria-label={showShortcutLabel ? `Score position, keyboard shortcut ${shortcutLabel}` : 'Score position'}
+        aria-label={scoreAriaLabel}
       >
         <FaCalculator size={13} />
-        <span>Score</span>
+        <span>{t('Score')}</span>
         {showShortcutLabel && !isCompact ? <kbd className="manual-score-shortcut">{shortcutLabel}</kbd> : null}
       </button>
     );
@@ -138,29 +127,41 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
   const leaderClass = score.scoreLead > 0 ? 'black' : score.scoreLead < 0 ? 'white' : 'jigo';
   const estimateTitle =
     estimateSource === 'ownership'
-      ? 'Estimate dead stones from territory ownership'
+      ? t('Estimate dead stones from territory ownership')
       : estimateSource === 'playout'
-        ? 'Estimate dead stones with local playouts'
-        : 'Run territory analysis or score a position with stones before estimating';
-  const scoreSourceLabel = formatScoreSourceLabel(scoreMode, estimateSource);
-  const markedDeadLabel = `${deadStoneCount} marked dead stone${deadStoneCount === 1 ? '' : 's'}`;
-  const resultDetailLabel = formatScoreResultDetail(score.scoreLead, blackName, whiteName);
+        ? t('Estimate dead stones with local playouts')
+        : t('Run territory analysis or score a position with stones before estimating');
+  const scoreSourceLabel =
+    scoreMode === 'manual'
+      ? t('Manual')
+      : estimateSource === 'ownership'
+        ? t('Ownership')
+        : estimateSource === 'playout'
+          ? t('Playout')
+          : t('Estimate');
+  const markedDeadLabel = t('{n} marked dead stones', { n: deadStoneCount });
+  const resultDetailLabel =
+    score.scoreLead > 0
+      ? t('{name} by {n}', { name: blackName, n: formatScoreValue(score.scoreLead) })
+      : score.scoreLead < 0
+        ? t('{name} by {n}', { name: whiteName, n: formatScoreValue(Math.abs(score.scoreLead)) })
+        : t('Even game');
   return (
-    <section className={['manual-score-panel', commandBarOffset ? 'manual-score-offset' : '', docked ? 'manual-score-docked' : '', isCompact && !docked ? 'manual-score-compact' : ''].join(' ')} aria-label="Manual score">
+    <section className={['manual-score-panel', commandBarOffset ? 'manual-score-offset' : '', docked ? 'manual-score-docked' : '', isCompact && !docked ? 'manual-score-compact' : ''].join(' ')} aria-label={t('Manual score')}>
       <div className="manual-score-header">
         <div className="manual-score-title">
           <FaCalculator size={13} />
-          <span>Score</span>
+          <span>{t('Score')}</span>
         </div>
-        <span className="manual-score-count" title="Marked dead stones">
-          {deadStoneCount} dead
+        <span className="manual-score-count" title={t('Marked dead stones')}>
+          {t('{n} dead', { n: deadStoneCount })}
         </span>
-        <button type="button" className="manual-score-icon" onClick={onDone} title="Done" aria-label="Done scoring">
+        <button type="button" className="manual-score-icon" onClick={onDone} title={t('Done')} aria-label={t('Done scoring')}>
           <FaTimes size={12} />
         </button>
       </div>
 
-      <div className="manual-score-method" role="group" aria-label="Scoring method">
+      <div className="manual-score-method" role="group" aria-label={t('Scoring method')}>
         <button
           type="button"
           className={scoreMode === 'estimate' ? 'active' : ''}
@@ -171,7 +172,7 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
           data-score-estimate-source={estimateSource ?? 'none'}
         >
           <FaMagic size={11} />
-          <span>Estimate</span>
+          <span>{t('Estimate')}</span>
         </button>
         {/* Selected is not the same as unavailable. Disabling this while it was
             the active mode made the chosen half of the pair unfocusable and
@@ -184,9 +185,9 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
           aria-pressed={scoreMode === 'manual'}
           onClick={onUseManualScore}
           disabled={!onUseManualScore}
-          title="Use current dead-stone marks as the final manual score"
+          title={t('Use current dead-stone marks as the final manual score')}
         >
-          <span>Final</span>
+          <span>{t('Final')}</span>
         </button>
       </div>
 
@@ -198,17 +199,17 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
         <small data-manual-score-result-detail="true">{resultDetailLabel}</small>
       </div>
 
-      <div className="manual-score-status" data-manual-score-status="true" aria-label="Scoring status">
-        <div data-manual-score-status-item="mode" title={`Scoring mode: ${scoreSourceLabel}`}>
-          <span>Mode</span>
+      <div className="manual-score-status" data-manual-score-status="true" aria-label={t('Scoring status')}>
+        <div data-manual-score-status-item="mode" title={t('Scoring mode: {mode}', { mode: scoreSourceLabel })}>
+          <span>{t('Mode')}</span>
           <b>{scoreSourceLabel}</b>
         </div>
-        <div data-manual-score-status-item="dead" title="Marked dead stones">
-          <span>Dead</span>
+        <div data-manual-score-status-item="dead" title={t('Marked dead stones')}>
+          <span>{t('Dead')}</span>
           <b>{deadStoneCount}</b>
         </div>
-        <div data-manual-score-status-item="neutral" title="Neutral points">
-          <span>Neutral</span>
+        <div data-manual-score-status-item="neutral" title={t('Neutral points')}>
+          <span>{t('Neutral')}</span>
           <b>{score.neutralPoints}</b>
         </div>
       </div>
@@ -234,7 +235,7 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
           aria-expanded={showDetails}
           aria-controls={detailsId}
         >
-          <span>Details</span>
+          <span>{t('Details')}</span>
           {showDetails ? <FaChevronUp size={11} /> : <FaChevronDown size={11} />}
         </button>
         <div id={detailsId} className="manual-score-breakdown" hidden={!showDetails}>
@@ -244,29 +245,29 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
             <b>W</b>
           </div>
           <div>
-            <span>Territory</span>
+            <span>{t('Territory')}</span>
             <b>{score.blackTerritory}</b>
             <b>{score.whiteTerritory}</b>
           </div>
           <div>
-            <span>Neutral</span>
-            <b className="manual-score-muted" aria-label={`${score.neutralPoints} neutral points`}>
+            <span>{t('Neutral')}</span>
+            <b className="manual-score-muted" aria-label={t('{n} neutral points', { n: score.neutralPoints })}>
               {score.neutralPoints}
             </b>
             <b className="manual-score-muted">-</b>
           </div>
           <div>
-            <span>Prisoners</span>
+            <span>{t('Prisoners')}</span>
             <b>{capturedWhite}</b>
             <b>{capturedBlack}</b>
           </div>
           <div>
-            <span>Dead stones</span>
+            <span>{t('Dead stones')}</span>
             <b>{score.whiteDeadStones}</b>
             <b>{score.blackDeadStones}</b>
           </div>
           <div>
-            <span>Komi</span>
+            <span>{t('Komi')}</span>
             <b className="manual-score-muted">-</b>
             <b>{formatScoreValue(komi)}</b>
           </div>
@@ -283,25 +284,25 @@ export const ManualScorePanel: React.FC<ManualScorePanelProps> = ({
           className={scoreMode === 'estimate' ? 'active' : ''}
         >
           <FaMagic size={12} />
-          <span>Auto</span>
+          <span>{t('Auto')}</span>
         </button>
         <button
           type="button"
           onClick={onClear}
           disabled={deadStoneCount === 0}
-          title={deadStoneCount === 0 ? 'No dead stones to clear' : 'Clear dead stones'}
+          title={deadStoneCount === 0 ? t('No dead stones to clear') : t('Clear dead stones')}
         >
           <FaUndo size={12} />
-          <span>Clear</span>
+          <span>{t('Clear')}</span>
         </button>
         <button type="button" className="primary" onClick={onDone}>
           <FaTimes size={12} />
-          <span>Done</span>
+          <span>{t('Done')}</span>
         </button>
       </div>
 
       <div className="manual-score-help" data-manual-score-help="true">
-        Click board stones to toggle dead chains - {markedDeadLabel}
+        {t('Click board stones to toggle dead chains - {n}', { n: markedDeadLabel })}
       </div>
     </section>
   );

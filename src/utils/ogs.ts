@@ -1,4 +1,5 @@
 import { fetchOgsResource } from './ogsQueue';
+import { t } from '../i18n';
 
 const OGS_HOSTS = new Set(['online-go.com', 'www.online-go.com']);
 const OGS_TEXT_URL_RE =
@@ -71,11 +72,11 @@ export const downloadOgsSgf = async (
   const apiUrl = `https://online-go.com/api/v1/games/${gameId}/sgf`;
   const response = await fetchOgsResource(apiUrl, { method: 'GET' }, options);
   if (!response.ok) {
-    throw new Error(`Failed to download OGS game ${gameId}: ${response.statusText}`);
+    throw new Error(t('Failed to download OGS game {gameId}: {status}', { gameId, status: response.statusText }));
   }
   const sgf = await response.text();
   if (!sgf || sgf.trim().length === 0) {
-    throw new Error(`Empty SGF content received from OGS game ${gameId}`);
+    throw new Error(t('Empty SGF content received from OGS game {gameId}', { gameId }));
   }
   return sgf;
 };

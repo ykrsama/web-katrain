@@ -13,6 +13,7 @@ import {
   shouldUseBrowserPwaInstallPrompt,
 } from '../utils/pwa';
 import { getResizeObserverConstructor } from '../utils/resizeObserver';
+import { useT } from '../i18n';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -27,6 +28,7 @@ type BannerState =
   | null;
 
 export const PwaInstallBanner: React.FC = () => {
+  const t = useT();
   const [banner, setBanner] = useState<BannerState>(() =>
     isIosPwaInstallCandidate() && !isStandalonePwa() && !getPwaInstallDismissed()
       ? { type: 'ios-install' }
@@ -120,19 +122,19 @@ export const PwaInstallBanner: React.FC = () => {
         ? <FaRedo size={13} />
         : <FaWifi size={13} />;
   const title = isInstall
-    ? 'Install Web KaTrain'
+    ? t('Install Web KaTrain')
     : isIosInstall
-      ? 'Install on iPhone or iPad'
+      ? t('Install on iPhone or iPad')
       : isUpdate
-        ? 'Update ready'
-        : 'Offline ready';
+        ? t('Update ready')
+        : t('Offline ready');
   const detail = isInstall || isIosInstall
     ? isIosInstall
-      ? 'Tap Share, then Add to Home Screen for a dock icon and offline study.'
-      : 'Keep the board, library, model, and study tools available from your dock.'
+      ? t('Tap Share, then Add to Home Screen for a dock icon and offline study.')
+      : t('Keep the board, library, model, and study tools available from your dock.')
     : isUpdate
-      ? 'Reload to use the newest study tools.'
-      : 'App shell, board assets, TFJS WASM, and the bundled small model are cached.';
+      ? t('Reload to use the newest study tools.')
+      : t('App shell, board assets, TFJS WASM, and the bundled small model are cached.');
   const displayedDetail = actionMessage ?? detail;
 
   const primaryAction = async () => {
@@ -148,7 +150,7 @@ export const PwaInstallBanner: React.FC = () => {
       const outcome = await runPwaInstallPrompt(banner.prompt);
       setIsWorking(false);
       if (outcome === 'failed') {
-        setActionMessage('Install prompt was blocked. Use your browser install menu when available.');
+        setActionMessage(t('Install prompt was blocked. Use your browser install menu when available.'));
         return;
       }
       setPwaInstallDismissed(outcome !== 'accepted');
@@ -176,10 +178,10 @@ export const PwaInstallBanner: React.FC = () => {
       </div>
       <div className="pwa-install-actions">
         <button type="button" className="pwa-install-secondary" onClick={dismissBanner} disabled={isWorking}>
-          Dismiss
+          {t('Dismiss')}
         </button>
         <button type="button" className="pwa-install-primary" onClick={() => void primaryAction()} disabled={isWorking}>
-          {isWorking ? 'Working...' : isInstall ? 'Install' : isIosInstall ? 'Got it' : isUpdate ? 'Reload' : 'OK'}
+          {isWorking ? t('Working...') : isInstall ? t('Install') : isIosInstall ? t('Got it') : isUpdate ? t('Reload') : t('OK')}
         </button>
       </div>
     </div>

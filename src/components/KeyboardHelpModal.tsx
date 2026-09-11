@@ -8,6 +8,7 @@ import {
   SHORTCUTS_UPDATED_EVENT,
   shortcutDisplay,
 } from '../utils/shortcuts';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { filterKeyboardReferenceItems } from '../utils/keyboardHelp';
@@ -37,6 +38,7 @@ const POINTER_HELP = [
 
 export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, onOpenShortcutSettings, returnFocus }) => {
   useEscapeToClose(onClose);
+  const t = useT();
   const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, { returnFocus });
   const [overrides, setOverrides] = React.useState(() => loadShortcutOverrides());
   const [query, setQuery] = React.useState('');
@@ -84,12 +86,12 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
               of hard-clipping, so this degrades at any width and text size. */}
           <div className="min-w-0 flex-1">
             <h2 id="keyboard-help-title" className="keyboard-help-title truncate font-semibold text-[var(--ui-text)]">
-              Keyboard Shortcuts
+              {t('Keyboard Shortcuts')}
             </h2>
             <div className="mt-0.5 truncate text-xs ui-text-faint" aria-live="polite" data-keyboard-help-count="true">
               {normalizedQuery
-                ? `${visibleResultCount} result${visibleResultCount === 1 ? '' : 's'}`
-                : `${visibleShortcutCount} command${visibleShortcutCount === 1 ? '' : 's'}`}
+                ? t(visibleResultCount === 1 ? '{count} result' : '{count} results', { count: visibleResultCount })
+                : t(visibleShortcutCount === 1 ? '{count} command' : '{count} commands', { count: visibleShortcutCount })}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -98,18 +100,18 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
                 type="button"
                 className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 text-xs font-semibold text-[var(--ui-text-muted)] transition-colors hover:border-[var(--ui-accent)] hover:text-[var(--ui-text)]"
                 onClick={onOpenShortcutSettings}
-                aria-label="Customize keyboard shortcuts"
+                aria-label={t('Customize keyboard shortcuts')}
                 data-keyboard-help-customize="true"
               >
                 <FaCog aria-hidden="true" size={12} />
-                <span className="keyboard-help-customize-label" aria-hidden="true">Customize</span>
+                <span className="keyboard-help-customize-label" aria-hidden="true">{t('Customize')}</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
               className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-              aria-label="Close keyboard shortcuts"
+              aria-label={t('Close keyboard shortcuts')}
             >
               <FaTimes aria-hidden="true" />
             </button>
@@ -127,8 +129,8 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
               className="ui-input h-11 w-full rounded-lg border py-2 pl-8 pr-12 text-sm text-[var(--ui-text)]"
-              placeholder="Search shortcuts"
-              aria-label="Search shortcuts"
+              placeholder={t('Search shortcuts')}
+              aria-label={t('Search shortcuts')}
               data-keyboard-help-search="true"
             />
             {query && (
@@ -136,7 +138,7 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
                 type="button"
                 className="absolute right-1 top-1/2 grid min-h-11 min-w-11 -translate-y-1/2 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
                 onClick={() => setQuery('')}
-                aria-label="Clear shortcut search"
+                aria-label={t('Clear shortcut search')}
               >
                 <FaTimes aria-hidden="true" size={11} />
               </button>
@@ -148,14 +150,14 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             <section className="ui-surface rounded-lg border p-3" data-keyboard-help-pointer="true">
               <div className="mb-2 flex items-center gap-2 border-b border-[var(--ui-border)] pb-2">
                 <FaMouse aria-hidden="true" className="text-[var(--ui-accent)]" />
-                <h3 className="text-sm font-semibold text-[var(--ui-text)]">Touch / Trackpad / Mouse</h3>
+                <h3 className="text-sm font-semibold text-[var(--ui-text)]">{t('Touch / Trackpad / Mouse')}</h3>
               </div>
               <div className="grid grid-cols-1 gap-1">
                 {visiblePointerHelp.map((item) => (
                   <div key={item.control} className="flex items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-2)] px-2 py-1.5 text-sm">
-                    <span className="ui-text-faint">{item.action}</span>
+                    <span className="ui-text-faint">{t(item.action)}</span>
                     <kbd className="shrink-0 rounded bg-[var(--ui-panel)] px-2 py-0.5 text-xs font-mono text-[var(--ui-text)]">
-                      {item.control}
+                      {t(item.control)}
                     </kbd>
                   </div>
                 ))}
@@ -166,14 +168,14 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             <section className="ui-surface rounded-lg border p-3" data-keyboard-help-gamepad="true">
               <div className="mb-2 flex items-center gap-2 border-b border-[var(--ui-border)] pb-2">
                 <FaGamepad aria-hidden="true" className="text-[var(--ui-accent)]" />
-                <h3 className="text-sm font-semibold text-[var(--ui-text)]">Gamepad</h3>
+                <h3 className="text-sm font-semibold text-[var(--ui-text)]">{t('Gamepad')}</h3>
               </div>
               <div className="grid grid-cols-1 gap-1">
                 {visibleGamepadHelp.map((item) => (
                   <div key={item.control} className="flex items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-2)] px-2 py-1.5 text-sm">
-                    <span className="ui-text-faint">{item.action}</span>
+                    <span className="ui-text-faint">{t(item.action)}</span>
                     <kbd className="shrink-0 rounded bg-[var(--ui-panel)] px-2 py-0.5 text-xs font-mono text-[var(--ui-text)]">
-                      {item.control}
+                      {t(item.control)}
                     </kbd>
                   </div>
                 ))}
@@ -186,12 +188,12 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             {visibleGroups.map((category) => (
               <div key={category.title} className="ui-surface rounded-lg p-3 border">
                 <h3 className="text-sm font-semibold text-[var(--ui-text)] mb-2 pb-2 border-b border-[var(--ui-border)]">
-                  {category.title}
+                  {t(category.title)}
                 </h3>
                 <div className="space-y-1">
                   {category.shortcuts.map((shortcut) => (
                     <div key={shortcut.id} className="flex items-center justify-between text-sm">
-                      <span className="ui-text-faint">{shortcut.label}</span>
+                      <span className="ui-text-faint">{t(shortcut.label)}</span>
                       <kbd className="px-2 py-0.5 ui-surface-2 rounded text-xs font-mono text-[var(--ui-text)] ml-2 whitespace-nowrap">
                         {shortcutDisplay(shortcut.bindings)}
                       </kbd>
@@ -203,7 +205,7 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
           </div>
           {normalizedQuery && visibleResultCount === 0 && (
             <div className="ui-surface rounded-lg border p-4 text-sm ui-text-muted" data-keyboard-help-empty="true">
-              No shortcuts match "{query.trim()}".
+              {t('No shortcuts match "{query}".', { query: query.trim() })}
             </div>
           )}
         </div>
@@ -211,15 +213,15 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             way out, and the app hides keyboard hints elsewhere on mobile too. */}
         <div className="mobile-shortcut-hint p-3 border-t border-[var(--ui-border)] text-center">
           <span className="text-xs ui-text-faint">
-            Press{' '}
+            {t('Press')}{' '}
             <kbd className="px-1.5 py-0.5 ui-surface-2 rounded text-xs font-mono text-[var(--ui-text)]">
               {helpShortcutLabel}
             </kbd>{' '}
-            or{' '}
+            {t('or')}{' '}
             <kbd className="px-1.5 py-0.5 ui-surface-2 rounded text-xs font-mono text-[var(--ui-text)]">
               {closeShortcutLabel}
             </kbd>{' '}
-            to close
+            {t('to close')}
           </span>
         </div>
       </div>

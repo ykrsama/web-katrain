@@ -30,6 +30,7 @@ import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
 import { useShortcutLabels } from '../hooks/useShortcutLabels';
 import { EDIT_TOOL_SHORTCUT_ID_BY_TOOL, EDIT_TOOL_SHORTCUT_IDS } from '../utils/shortcuts';
+import { t, useT } from '../i18n';
 import type { EditTool } from '../types';
 
 type EditToolItem = {
@@ -39,9 +40,10 @@ type EditToolItem = {
   icon: React.ReactNode;
 };
 
-const TOOL_GROUPS: Array<{ title: string; items: EditToolItem[] }> = [
+const TOOL_GROUPS: Array<{ id: 'setup' | 'marks' | 'labels' | 'draw' | 'inspect'; title: string; items: EditToolItem[] }> = [
   {
-    title: 'Setup',
+    id: 'setup',
+    title: t('Setup'),
     items: [
       // Drawn as stones rather than tinted glyphs. Painting the icon `text-white`
       // put a white ring on a #f8fafc button — 1.05:1, which reads as a disabled
@@ -50,51 +52,55 @@ const TOOL_GROUPS: Array<{ title: string; items: EditToolItem[] }> = [
       // rimmed disc is legible on either, and says stone rather than circle.
       {
         tool: 'setup-black',
-        label: 'Black',
-        title: 'Setup black stone',
+        label: t('Black'),
+        title: t('Setup black stone'),
         icon: <span className="edit-tool-stone black" aria-hidden="true" />,
       },
       {
         tool: 'setup-white',
-        label: 'White',
-        title: 'Setup white stone',
+        label: t('White'),
+        title: t('Setup white stone'),
         icon: <span className="edit-tool-stone white" aria-hidden="true" />,
       },
-      { tool: 'setup-alternate', label: 'Alt', title: 'Alternate setup stones', icon: <FaExchangeAlt /> },
-      { tool: 'setup-erase', label: 'Erase', title: 'Erase setup stone', icon: <FaEraser /> },
+      { tool: 'setup-alternate', label: t('Alt'), title: t('Alternate setup stones'), icon: <FaExchangeAlt /> },
+      { tool: 'setup-erase', label: t('Erase'), title: t('Erase setup stone'), icon: <FaEraser /> },
     ],
   },
   {
-    title: 'Marks',
+    id: 'marks',
+    title: t('Marks'),
     items: [
-      { tool: 'marker-triangle', label: 'TR', title: 'Triangle marker', icon: <FaCaretUp /> },
-      { tool: 'marker-square', label: 'SQ', title: 'Square marker', icon: <FaRegSquare /> },
-      { tool: 'marker-circle', label: 'CR', title: 'Circle marker', icon: <FaRegCircle /> },
-      { tool: 'marker-cross', label: 'MA', title: 'Cross marker', icon: <FaTimes /> },
+      { tool: 'marker-triangle', label: 'TR', title: t('Triangle marker'), icon: <FaCaretUp /> },
+      { tool: 'marker-square', label: 'SQ', title: t('Square marker'), icon: <FaRegSquare /> },
+      { tool: 'marker-circle', label: 'CR', title: t('Circle marker'), icon: <FaRegCircle /> },
+      { tool: 'marker-cross', label: 'MA', title: t('Cross marker'), icon: <FaTimes /> },
     ],
   },
   {
-    title: 'Labels',
+    id: 'labels',
+    title: t('Labels'),
     items: [
-      { tool: 'label-alpha', label: 'A-Z', title: 'Auto letter label', icon: <FaFont /> },
-      { tool: 'label-number', label: '1-9', title: 'Auto number label', icon: <FaHashtag /> },
-      { tool: 'marker-erase', label: 'Clear', title: 'Erase marker or label', icon: <FaEraser /> },
+      { tool: 'label-alpha', label: 'A-Z', title: t('Auto letter label'), icon: <FaFont /> },
+      { tool: 'label-number', label: '1-9', title: t('Auto number label'), icon: <FaHashtag /> },
+      { tool: 'marker-erase', label: t('Clear'), title: t('Erase marker or label'), icon: <FaEraser /> },
     ],
   },
   {
-    title: 'Draw',
+    id: 'draw',
+    title: t('Draw'),
     items: [
-      { tool: 'markup-arrow', label: 'Arrow', title: 'Arrow — choose a start point, then an end point', icon: <FaLongArrowAltRight /> },
-      { tool: 'markup-line', label: 'Line', title: 'Line — choose a start point, then an end point', icon: <FaSlash /> },
-      { tool: 'draw-pen', label: 'Pen', title: 'Freehand pen — drag to draw on the board (not saved to SGF)', icon: <FaPen /> },
-      { tool: 'draw-highlight', label: 'Mark', title: 'Highlighter — drag to highlight an area (not saved to SGF)', icon: <FaHighlighter /> },
+      { tool: 'markup-arrow', label: t('Arrow'), title: t('Arrow — choose a start point, then an end point'), icon: <FaLongArrowAltRight /> },
+      { tool: 'markup-line', label: t('Line'), title: t('Line — choose a start point, then an end point'), icon: <FaSlash /> },
+      { tool: 'draw-pen', label: t('Pen'), title: t('Freehand pen — drag to draw on the board (not saved to SGF)'), icon: <FaPen /> },
+      { tool: 'draw-highlight', label: t('Mark'), title: t('Highlighter — drag to highlight an area (not saved to SGF)'), icon: <FaHighlighter /> },
     ],
   },
   {
-    title: 'Inspect',
+    id: 'inspect',
+    title: t('Inspect'),
     items: [
-      { tool: 'region-count', label: 'Count', title: 'Stone count — drag a rectangle to count stones inside it', icon: <FaCalculator /> },
-      { tool: 'region-score', label: 'AI', title: 'AI region score — drag a rectangle to reveal the AI score inside it', icon: <FaBrain /> },
+      { tool: 'region-count', label: t('Count'), title: t('Stone count — drag a rectangle to count stones inside it'), icon: <FaCalculator /> },
+      { tool: 'region-score', label: t('AI'), title: t('AI region score — drag a rectangle to reveal the AI score inside it'), icon: <FaBrain /> },
     ],
   },
 ];
@@ -121,7 +127,7 @@ const countBranchNodes = (node: CountableBranchNode | null): number => {
   return count;
 };
 
-const formatBranchNodeCount = (count: number): string => `${count} node${count === 1 ? '' : 's'}`;
+const formatBranchNodeCount = (count: number): string => t('{count} node(s)', { count });
 
 const toolButtonClass = (active: boolean) =>
   [
@@ -188,6 +194,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
 
   const nodeProps = currentNode.properties ?? {};
   const shortcutLabels = useShortcutLabels(EDIT_TOOLBAR_SHORTCUT_IDS);
+  const t = useT();
   const withShortcut = (label: string, id: EditToolbarShortcutId) => `${label} (${shortcutLabels[id]})`;
   const setupCount = (nodeProps.AB?.length ?? 0) + (nodeProps.AW?.length ?? 0) + (nodeProps.AE?.length ?? 0);
   const markerCount =
@@ -212,31 +219,31 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
     branchCursor = branchCursor.parent;
   }
   const canPruneOtherBranches = branchSiblingCount > 0;
-  const openEditToolsLabel = withShortcut('Open SGF edit tools', 'toggle-edit-mode');
-  const closeEditToolsLabel = withShortcut('Close edit mode', 'toggle-edit-mode');
-  const clearSetupStonesLabel = 'Clear setup stones on this node';
-  const passEditModeLabel = 'Pass turn from edit mode';
-  const moveVariationEarlierLabel = 'Move variation earlier';
-  const moveVariationLaterLabel = 'Move variation later';
-  const makeMainBranchLabel = 'Make current variation the main branch';
+  const openEditToolsLabel = withShortcut(t('Open SGF edit tools'), 'toggle-edit-mode');
+  const closeEditToolsLabel = withShortcut(t('Close edit mode'), 'toggle-edit-mode');
+  const clearSetupStonesLabel = t('Clear setup stones on this node');
+  const passEditModeLabel = t('Pass turn from edit mode');
+  const moveVariationEarlierLabel = t('Move variation earlier');
+  const moveVariationLaterLabel = t('Move variation later');
+  const makeMainBranchLabel = t('Make current variation the main branch');
   const copyBranchLabel = canEditBranch
-    ? `Copy current branch (${currentBranchNodeLabel})`
-    : 'Select a move branch to copy';
+    ? t('Copy current branch ({count})', { count: currentBranchNodeLabel })
+    : t('Select a move branch to copy');
   const pasteBranchLabel = copiedBranch
-    ? `Paste copied branch (${copiedBranchNodeLabel})`
-    : 'No copied branch to paste';
+    ? t('Paste copied branch ({count})', { count: copiedBranchNodeLabel })
+    : t('No copied branch to paste');
   const deleteCurrentNodeLabel = canEditBranch
-    ? `Delete current branch (${currentBranchNodeLabel})`
-    : 'Select a move branch to delete';
+    ? t('Delete current branch ({count})', { count: currentBranchNodeLabel })
+    : t('Select a move branch to delete');
   const pruneOtherBranchesLabel = canPruneOtherBranches
-    ? `Delete ${branchSiblingCount} other branch${branchSiblingCount === 1 ? '' : 'es'} and keep the current line`
-    : 'No other branches on the current line';
-  const undoEditLabel = editUndoCount > 0 ? `Undo last edit (${editUndoCount} available)` : 'No edit to undo';
-  const redoEditLabel = editRedoCount > 0 ? `Redo edit (${editRedoCount} available)` : 'No edit to redo';
-  const clearNodeAnnotationsLabel = 'Clear all markers and labels on this node';
+    ? t('Delete {count} other branches and keep the current line', { count: branchSiblingCount })
+    : t('No other branches on the current line');
+  const undoEditLabel = editUndoCount > 0 ? t('Undo last edit ({count} available)', { count: editUndoCount }) : t('No edit to undo');
+  const redoEditLabel = editRedoCount > 0 ? t('Redo edit ({count} available)', { count: editRedoCount }) : t('No edit to redo');
+  const clearNodeAnnotationsLabel = t('Clear all markers and labels on this node');
   const drawingCount = currentNode.drawings?.length ?? 0;
   const clearDrawingsLabel =
-    drawingCount > 0 ? `Clear ${drawingCount} drawing${drawingCount === 1 ? '' : 's'} on this node` : 'No drawings on this node';
+    drawingCount > 0 ? t('Clear {count} drawings on this node', { count: drawingCount }) : t('No drawings on this node');
   void treeVersion;
 
   // On mobile the panel floats over the board, so a tall stacked layout would hide
@@ -290,7 +297,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
             aria-label={openEditToolsLabel}
           >
             <FaEdit />
-            <span className="bc-label">Edit</span>
+            <span className="bc-label">{t('Edit')}</span>
           </button>
         ) : (
           <button
@@ -301,7 +308,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
             aria-label={openEditToolsLabel}
           >
             <FaEdit className="text-[var(--ui-accent)]" />
-            Edit
+            {t('Edit')}
             {!isMobile && (
               <span className="ml-1 rounded border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-1.5 py-0.5 text-[0.625rem] font-mono text-[var(--ui-text-muted)]">
                 {shortcutLabels['toggle-edit-mode']}
@@ -318,21 +325,24 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
             <div className="flex items-center gap-2 min-w-0">
               <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[var(--ui-accent)] shadow-sm shadow-black/30" />
               <div className="text-xs font-semibold uppercase tracking-wider text-[var(--ui-text-muted)] whitespace-nowrap">
-                Edit mode
+                {t('Edit mode')}
               </div>
               <div className="hidden sm:block text-xs ui-text-faint truncate">
-                Active: {TOOL_LABELS[editTool]} · {shortcutLabels['toggle-edit-mode']} closes
+                {t('Active: {tool} · {shortcut} closes', {
+                  tool: TOOL_LABELS[editTool],
+                  shortcut: shortcutLabels['toggle-edit-mode'],
+                })}
               </div>
             </div>
             <div className="hidden md:flex items-center gap-1 text-[0.625rem] font-semibold uppercase tracking-wider">
               <span className="px-1.5 py-0.5 rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)]">
-                Setup {setupCount}
+                {t('Setup {count}', { count: setupCount })}
               </span>
               <span className="px-1.5 py-0.5 rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)]">
-                Marks {markerCount}
+                {t('Marks {count}', { count: markerCount })}
               </span>
               <span className="px-1.5 py-0.5 rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)]">
-                Labels {labelCount}
+                {t('Labels {count}', { count: labelCount })}
               </span>
             </div>
             <button
@@ -349,7 +359,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
           <div className={toolAreaClass}>
             {TOOL_GROUPS.map((group) => (
               <div
-                key={group.title}
+                key={group.id}
                 className={groupClass}
               >
                 <div className="w-12 shrink-0 text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--ui-text-faint)] px-1">
@@ -377,7 +387,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                     </button>
                   );
                 })}
-                {group.title === 'Draw' && (
+                {group.id === 'draw' && (
                   <button
                     type="button"
                     className={[toolButtonClass(false), drawingCount === 0 ? 'opacity-40 cursor-not-allowed' : ''].join(' ')}
@@ -387,10 +397,10 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                     aria-label={clearDrawingsLabel}
                   >
                     <FaEraser />
-                    <span className="hidden sm:inline">Clear</span>
+                    <span className="hidden sm:inline">{t('Clear')}</span>
                   </button>
                 )}
-                {group.title === 'Setup' && (
+                {group.id === 'setup' && (
                   <button
                     type="button"
                     className={[toolButtonClass(false), setupCount === 0 ? 'opacity-40 cursor-not-allowed' : ''].join(' ')}
@@ -400,10 +410,10 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                     aria-label={clearSetupStonesLabel}
                   >
                     <FaTrash />
-                    <span className="hidden sm:inline">All</span>
+                    <span className="hidden sm:inline">{t('All')}</span>
                   </button>
                 )}
-                {group.title === 'Setup' && (
+                {group.id === 'setup' && (
                   <button
                     type="button"
                     className={toolButtonClass(false)}
@@ -412,14 +422,14 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                     aria-label={passEditModeLabel}
                   >
                     <FaRegHandPaper />
-                    <span className="hidden sm:inline">Pass</span>
+                    <span className="hidden sm:inline">{t('Pass')}</span>
                   </button>
                 )}
               </div>
             ))}
             <div className={groupClass}>
               <div className="w-12 shrink-0 text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--ui-text-faint)] px-1">
-                Branch
+                {t('Branch')}
               </div>
               <button
                 type="button"
@@ -430,7 +440,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={moveVariationEarlierLabel}
               >
                 <FaArrowLeft />
-                <span className="hidden sm:inline">Earlier</span>
+                <span className="hidden sm:inline">{t('Earlier')}</span>
               </button>
               <button
                 type="button"
@@ -441,7 +451,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={moveVariationLaterLabel}
               >
                 <FaArrowRight />
-                <span className="hidden sm:inline">Later</span>
+                <span className="hidden sm:inline">{t('Later')}</span>
               </button>
               <button
                 type="button"
@@ -452,7 +462,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={makeMainBranchLabel}
               >
                 <FaStar />
-                <span className="hidden sm:inline">Main</span>
+                <span className="hidden sm:inline">{t('Main')}</span>
               </button>
               <button
                 type="button"
@@ -463,7 +473,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={copyBranchLabel}
               >
                 <FaCopy />
-                <span className="hidden sm:inline">Copy</span>
+                <span className="hidden sm:inline">{t('Copy')}</span>
               </button>
               <button
                 type="button"
@@ -474,7 +484,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={pasteBranchLabel}
               >
                 <FaPaste />
-                <span className="hidden sm:inline">Paste</span>
+                <span className="hidden sm:inline">{t('Paste')}</span>
               </button>
               <button
                 type="button"
@@ -485,7 +495,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={deleteCurrentNodeLabel}
               >
                 <FaTrash />
-                <span className="hidden sm:inline">Delete</span>
+                <span className="hidden sm:inline">{t('Delete')}</span>
               </button>
               <button
                 type="button"
@@ -496,12 +506,12 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={pruneOtherBranchesLabel}
               >
                 <FaCut />
-                <span className="hidden sm:inline">Others</span>
+                <span className="hidden sm:inline">{t('Others')}</span>
               </button>
             </div>
             <div className={groupClass}>
               <div className="w-12 shrink-0 text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--ui-text-faint)] px-1">
-                History
+                {t('History')}
               </div>
               <button
                 type="button"
@@ -512,7 +522,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={undoEditLabel}
               >
                 <FaUndo />
-                <span className="hidden sm:inline">Undo</span>
+                <span className="hidden sm:inline">{t('Undo')}</span>
               </button>
               <button
                 type="button"
@@ -523,7 +533,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                 aria-label={redoEditLabel}
               >
                 <FaRedo />
-                <span className="hidden sm:inline">Redo</span>
+                <span className="hidden sm:inline">{t('Redo')}</span>
               </button>
             </div>
             <button
@@ -534,7 +544,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
               aria-label={clearNodeAnnotationsLabel}
             >
               <FaEraser />
-              <span>Clear node</span>
+              <span>{t('Clear node')}</span>
             </button>
           </div>
         </div>

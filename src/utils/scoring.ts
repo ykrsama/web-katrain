@@ -1,4 +1,5 @@
 import type { BoardState, GameRules, Player } from '../types';
+import { useGameStore } from '../store/gameStore';
 import { groupTaxPerRegion, handicapBonusForWhite, isAreaScoring } from './goRules';
 import { applyCapturesInPlace, getLegalMoves, isEye } from './gameLogic';
 import { formatResultScoreLead } from './manualScore';
@@ -461,6 +462,7 @@ export function computeManualScoreEstimate(args: {
     whiteScore = territoryScore.whiteTerritory + args.capturedBlack + deadCounts.blackDeadStones + args.komi;
   }
   const scoreLead = Math.round((blackScore - whiteScore) * 10) / 10;
+  const locale = useGameStore.getState().settings.appLocale;
 
   return {
     ...territoryScore,
@@ -468,7 +470,7 @@ export function computeManualScoreEstimate(args: {
     blackScore,
     whiteScore,
     scoreLead,
-    result: formatResultScoreLead(scoreLead),
+    result: formatResultScoreLead(scoreLead, locale),
   };
 }
 

@@ -11,6 +11,7 @@ import {
   FaMap,
   FaCopy,
 } from 'react-icons/fa';
+import { useT } from '../i18n';
 import type { AnalysisControlsState } from './layout/types';
 import type { AnalysisExperience } from '../types';
 import { EngineStatusBadge } from './layout/ui';
@@ -100,17 +101,19 @@ function pointsSummaryClass(tone: ReturnType<typeof summarizePointsLost>['tone']
   return 'text-[var(--ui-text-muted)]';
 }
 
-export const AnalysisQualityLegend: React.FC<{ items: QualityLegendItem[] }> = ({ items }) => (
+export const AnalysisQualityLegend: React.FC<{ items: QualityLegendItem[] }> = ({ items }) => {
+  const t = useT();
+  return (
   <div
     id="analysis-quality-legend"
     className="border-b border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1.5 text-[0.6875rem]"
     data-analysis-quality-legend="true"
   >
     <div className="mb-1 flex items-center justify-between gap-2">
-      <div className="font-semibold text-[var(--ui-text)]">Move quality</div>
-      <div className="ui-text-faint">Points lost</div>
+      <div className="font-semibold text-[var(--ui-text)]">{t('Move quality')}</div>
+      <div className="ui-text-faint">{t('Points lost')}</div>
     </div>
-    <p className="mb-1 ui-text-faint">{POINTS_LOST_EXPLANATION}</p>
+    <p className="mb-1 ui-text-faint">{t(POINTS_LOST_EXPLANATION)}</p>
     <div className="grid grid-cols-2 gap-x-2 gap-y-1">
       {items.map((item) => (
         <div key={item.label} className="flex min-w-0 items-center gap-1.5">
@@ -126,16 +129,16 @@ export const AnalysisQualityLegend: React.FC<{ items: QualityLegendItem[] }> = (
     </div>
     <div className="mt-1.5 border-t border-[var(--ui-border)] pt-1.5" data-analysis-overlay-legend="true">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="font-semibold text-[var(--ui-text)]">Overlays</div>
-        <div className="ui-text-faint">Board colors</div>
+        <div className="font-semibold text-[var(--ui-text)]">{t('Overlays')}</div>
+        <div className="ui-text-faint">{t('Board colors')}</div>
       </div>
       <div className="grid grid-cols-3 gap-x-2 gap-y-1">
         <div className="min-w-0" data-analysis-overlay-legend-item="top-moves">
           <span className="mb-1 flex h-5 w-full items-center justify-center rounded border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] font-mono text-[0.625rem] text-[var(--ui-accent)]">
             1
           </span>
-          <span className="block truncate text-[var(--ui-text-muted)]">Top moves</span>
-          <span className="block truncate font-mono text-[var(--ui-text)]">Best lines</span>
+          <span className="block truncate text-[var(--ui-text-muted)]">{t('Top moves')}</span>
+          <span className="block truncate font-mono text-[var(--ui-text)]">{t('Best lines')}</span>
         </div>
         <div className="min-w-0" data-analysis-overlay-legend-item="policy">
           <span
@@ -143,26 +146,28 @@ export const AnalysisQualityLegend: React.FC<{ items: QualityLegendItem[] }> = (
             style={{ background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0.85))' }}
             aria-hidden="true"
           />
-          <span className="block truncate text-[var(--ui-text-muted)]">Move prob.</span>
-          <span className="block truncate font-mono text-[var(--ui-text)]">Likely moves</span>
+          <span className="block truncate text-[var(--ui-text-muted)]">{t('Move prob.')}</span>
+          <span className="block truncate font-mono text-[var(--ui-text)]">{t('Likely moves')}</span>
         </div>
         <div className="min-w-0" data-analysis-overlay-legend-item="territory">
           <span className="mb-1 grid h-5 w-full grid-cols-2 overflow-hidden rounded border border-[var(--ui-border)]" aria-hidden="true">
             <span className="bg-black/60" />
             <span className="bg-white/70" />
           </span>
-          <span className="block truncate text-[var(--ui-text-muted)]">Territory</span>
-          <span className="block truncate font-mono text-[var(--ui-text)]">Owner</span>
+          <span className="block truncate text-[var(--ui-text-muted)]">{t('Territory')}</span>
+          <span className="block truncate font-mono text-[var(--ui-text)]">{t('Owner')}</span>
         </div>
       </div>
     </div>
   </div>
-);
+  );
+};
 
 export const AnalysisStatsActions: React.FC<AnalysisStatsActionsProps> = ({
   onOpenGameAnalysis,
   onOpenGameReport,
 }) => {
+  const t = useT();
   // Cache size is surfaced by the clear-cache control elsewhere in the panel,
   // so this row only carries the Report / Analyze actions.
   return (
@@ -174,21 +179,21 @@ export const AnalysisStatsActions: React.FC<AnalysisStatsActionsProps> = ({
         type="button"
         className="panel-action-button"
         onClick={onOpenGameReport}
-        title="Open game report"
-        aria-label="Open game report"
+        title={t('Open game report')}
+        aria-label={t('Open game report')}
       >
         <FaFileAlt size={11} aria-hidden="true" />
-        <span>Report</span>
+        <span>{t('Report')}</span>
       </button>
       <button
         type="button"
         className="panel-action-button"
         onClick={onOpenGameAnalysis}
-        title="Open analysis options"
-        aria-label="Open analysis options"
+        title={t('Open analysis options')}
+        aria-label={t('Open analysis options')}
       >
         <FaRedoAlt size={11} aria-hidden="true" />
-        <span>Analyze</span>
+        <span>{t('Analyze')}</span>
       </button>
     </div>
   );
@@ -204,15 +209,17 @@ export const AnalysisCoverageReadout: React.FC<AnalysisCoverageReadoutProps> = (
   summary,
   className,
   labelClassName = 'ui-text-faint',
-}) => (
+}) => {
+  const t = useT();
+  return (
   <div
     className={className}
     title={summary.title}
     data-analysis-coverage="true"
     data-analysis-coverage-tone={summary.tone}
-    aria-label={`${summary.stateLabel}: ${summary.valueLabel} analyzed positions`}
+    aria-label={t('{state}: {value} analyzed positions', { state: summary.stateLabel, value: summary.valueLabel })}
   >
-    <div className={labelClassName}>Analyzed</div>
+    <div className={labelClassName}>{t('Analyzed')}</div>
     <div className={['font-mono text-sm', analysisCoverageValueClass(summary.tone)].join(' ')}>
       {summary.valueLabel}
     </div>
@@ -220,7 +227,8 @@ export const AnalysisCoverageReadout: React.FC<AnalysisCoverageReadoutProps> = (
       {summary.stateLabel}
     </div>
   </div>
-);
+  );
+};
 
 export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   analysisControls,
@@ -253,6 +261,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   compact = false,
   analysisExperienceOverride,
 }) => {
+  const t = useT();
   const trainerTheme = useGameStore((state) => state.settings.trainerTheme);
   const trainerEvalThresholds = useGameStore((state) => state.settings.trainerEvalThresholds);
   const katagoVisits = useGameStore((state) => state.settings.katagoVisits);
@@ -289,11 +298,11 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       `0-${thresholds[4]}`,
     ];
     return ['Blunder', 'Mistake', 'Inaccuracy', 'Slight loss', 'Good', 'Best'].map((label, index) => ({
-      label,
+      label: t(label),
       range: `${ranges[index]} pt`,
       color: evalColorToCss(colors[index] ?? colors[colors.length - 1]!),
     }));
-  }, [trainerEvalThresholds, trainerTheme]);
+  }, [trainerEvalThresholds, trainerTheme, t]);
   const liveVisits = React.useMemo(() => clampAnalysisVisits(katagoVisits), [katagoVisits]);
   const liveVisitPresets = React.useMemo(
     () => mergeVisitPresets(ANALYSIS_VISIT_PRESETS, liveVisits),
@@ -337,13 +346,13 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
     if (nextVisits === liveVisits) return;
 
     updateSettings({ katagoVisits: nextVisits });
-    setTimedNotification(`Live analysis depth: ${nextVisits} visits`, 'info');
+    setTimedNotification(t('Live analysis depth: {visits} visits', { visits: nextVisits }), 'info');
     if (isAnalysisMode) {
       window.setTimeout(() => {
         void useGameStore.getState().runAnalysis({ force: true, visits: nextVisits });
       }, 0);
     }
-  }, [isAnalysisMode, liveVisits, updateSettings]);
+  }, [isAnalysisMode, liveVisits, t, updateSettings]);
   const copyEngineError = React.useCallback(async () => {
     if (!engineError) return;
     const ok = await copyTextToClipboard(formatEngineErrorReport({
@@ -355,19 +364,19 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       error: engineError,
     }));
     setEngineErrorCopied(ok);
-    setTimedNotification(ok ? 'Copied engine error details.' : 'Could not copy engine error details.', ok ? 'success' : 'error');
-  }, [activeBackend, engineError, engineModelLabel, engineStatus, modelUrl, requestedBackend]);
+    setTimedNotification(t(ok ? 'Copied engine error details.' : 'Could not copy engine error details.'), ok ? 'success' : 'error');
+  }, [activeBackend, engineError, engineModelLabel, engineStatus, modelUrl, requestedBackend, t]);
   const overlayToggle = (
     control: AnalysisOverlayControl,
     label: string,
     icon: React.ReactNode,
     disabled = false
   ) => {
-    const overlayName = ANALYSIS_OVERLAY_NAMES[control];
-    const overlayActionLabel = analysisControls[control] ? `Hide ${overlayName}` : `Show ${overlayName}`;
+    const overlayName = t(ANALYSIS_OVERLAY_NAMES[control]);
+    const overlayActionLabel = t(analysisControls[control] ? 'Hide {overlay}' : 'Show {overlay}', { overlay: overlayName });
     const topMovesHiddenByPolicy = control === 'analysisShowHints' && disabled;
     const overlayTitle = topMovesHiddenByPolicy
-      ? 'Move heatmap is showing; top move hints are hidden'
+      ? t('Move heatmap is showing; top move hints are hidden')
       : overlayActionLabel;
 
     // No aria-label: the accessible name is the visible chip text, so voice
@@ -392,16 +401,16 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   };
   const overlayToggleButtons = (
     <>
-      {overlayToggle('analysisShowChildren', 'Children', <FaSitemap size={11} aria-hidden="true" />)}
-      {overlayToggle('analysisShowEval', 'Dots', <FaCircle size={9} aria-hidden="true" />)}
+      {overlayToggle('analysisShowChildren', t('Children'), <FaSitemap size={11} aria-hidden="true" />)}
+      {overlayToggle('analysisShowEval', t('Dots'), <FaCircle size={9} aria-hidden="true" />)}
       {overlayToggle(
         'analysisShowHints',
-        'Top moves',
+        t('Top moves'),
         <FaLayerGroup size={11} aria-hidden="true" />,
         analysisControls.analysisShowPolicy
       )}
-      {overlayToggle('analysisShowPolicy', 'Heatmap', <FaThLarge size={11} aria-hidden="true" />)}
-      {overlayToggle('analysisShowOwnership', 'Territory', <FaMap size={11} aria-hidden="true" />)}
+      {overlayToggle('analysisShowPolicy', t('Heatmap'), <FaThLarge size={11} aria-hidden="true" />)}
+      {overlayToggle('analysisShowOwnership', t('Territory'), <FaMap size={11} aria-hidden="true" />)}
     </>
   );
   const overlayToggles = (
@@ -409,17 +418,19 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       {overlayToggleButtons}
     </div>
   );
-  const cachedAnalysisCountLabel = `${analysisCacheSize} cached ${analysisCacheSize === 1 ? 'analysis' : 'analyses'}`;
+  const clearCachedAnalysisPhrase = analysisCacheSize === 1
+    ? t('Clear {count} cached analysis', { count: analysisCacheSize })
+    : t('Clear {count} cached analyses', { count: analysisCacheSize });
   const analysisCacheTitle = analysisCacheSize > 0
     ? isGameAnalysisRunning
-      ? 'Stop analysis before clearing cache'
-      : `Clear ${cachedAnalysisCountLabel}`
-    : 'No cached analysis to clear';
+      ? t('Stop analysis before clearing cache')
+      : clearCachedAnalysisPhrase
+    : t('No cached analysis to clear');
   const analysisCacheLabel = analysisCacheSize > 0
     ? isGameAnalysisRunning
-      ? 'Analysis cache unavailable while game analysis is running'
-      : `Clear ${cachedAnalysisCountLabel}`
-    : 'No cached analysis to clear';
+      ? t('Analysis cache unavailable while game analysis is running')
+      : clearCachedAnalysisPhrase
+    : t('No cached analysis to clear');
   const analysisCacheControl = (
     <button
       type="button"
@@ -438,8 +449,8 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       type="button"
       className={['panel-icon-button', legendOpen ? 'active' : ''].join(' ')}
       onClick={() => setLegendOpen((prev) => !prev)}
-      title={legendOpen ? 'Hide analysis legend' : 'Show analysis legend'}
-      aria-label={legendOpen ? 'Hide analysis legend' : 'Show analysis legend'}
+      title={t(legendOpen ? 'Hide analysis legend' : 'Show analysis legend')}
+      aria-label={t(legendOpen ? 'Hide analysis legend' : 'Show analysis legend')}
       aria-expanded={legendOpen}
       aria-controls={legendOpen ? 'analysis-quality-legend' : undefined}
     >
@@ -466,12 +477,12 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         title={bestMoveSummary.title}
         data-analysis-panel-best-move="true"
       >
-        <div className={labelClassName}>Best</div>
+        <div className={labelClassName}>{t('Best')}</div>
         <div className="truncate font-mono text-sm text-[var(--ui-accent)]">
           {bestMoveSummary.moveLabel}
         </div>
         <div className="mt-0.5 truncate text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-          {isPro ? bestMoveSummary.detailLabel : "Engine's pick"}
+          {isPro ? bestMoveSummary.detailLabel : t("Engine's pick")}
         </div>
       </div>
     ) : null;
@@ -483,12 +494,12 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       return (
         <div
           className={className}
-          title={qualityKind === 'next' ? `Next move: ${displayedMoveQuality.title}` : displayedMoveQuality.title}
+          title={qualityKind === 'next' ? t('Next move: {title}', { title: displayedMoveQuality.title }) : displayedMoveQuality.title}
           data-analysis-move-quality={qualityKind}
           data-analysis-played-move={qualityKind === 'played' ? 'true' : undefined}
           data-analysis-next-move={qualityKind === 'next' ? 'true' : undefined}
         >
-          <div className={labelClassName}>{qualityKind === 'next' ? 'Next' : 'Played'}</div>
+          <div className={labelClassName}>{t(qualityKind === 'next' ? 'Next' : 'Played')}</div>
           <div className={['truncate font-mono text-sm', toneClass].join(' ')}>
             {displayedMoveQuality.playerLabel} {displayedMoveQuality.moveLabel}
           </div>
@@ -502,8 +513,8 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
     }
 
     return (
-      <div className={className} title="Move quality">
-        <div className={labelClassName}>Quality</div>
+      <div className={className} title={t('Move quality')}>
+        <div className={labelClassName}>{t('Quality')}</div>
         <div className={['font-mono text-sm', toneClass].join(' ')}>
           {pointsSummary.label}
         </div>
@@ -520,7 +531,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
    */
   const renderMoveReadout = (className: string, labelClassName = 'ui-text-faint') => (
     <div className={className}>
-      <div className={labelClassName}>Move</div>
+      <div className={labelClassName}>{t('Move')}</div>
       <div className="font-mono text-sm text-[var(--ui-text)]">{currentMoveNumber}</div>
     </div>
   );
@@ -535,7 +546,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="text-[0.6875rem] font-semibold uppercase tracking-wide ui-text-faint">
-          Analysis depth
+          {t('Analysis depth')}
         </div>
       </div>
       <div className={['grid gap-1', compact ? 'grid-cols-4' : 'grid-cols-2'].join(' ')}>
@@ -554,7 +565,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               onClick={() => applyLiveVisits(preset)}
               disabled={isGameAnalysisRunning}
               aria-pressed={active}
-              title={isGameAnalysisRunning ? 'Stop game analysis before changing live visits' : `Set live analysis to ${preset} visits`}
+              title={isGameAnalysisRunning ? t('Stop game analysis before changing live visits') : t('Set live analysis to {visits} visits', { visits: preset })}
             >
               <span className="block font-mono text-xs">{preset}</span>
               <span className="block text-[0.625rem] font-semibold uppercase tracking-wide">
@@ -584,8 +595,8 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             type="button"
             className={['panel-icon-button ml-auto', engineDetailsOpen ? 'active' : ''].join(' ')}
             onClick={() => setEngineDetailsOpen((open) => !open)}
-            title={engineDetailsOpen ? 'Hide engine details' : 'Show engine details'}
-            aria-label={engineDetailsOpen ? 'Hide engine details' : 'Show engine details'}
+            title={t(engineDetailsOpen ? 'Hide engine details' : 'Show engine details')}
+            aria-label={t(engineDetailsOpen ? 'Hide engine details' : 'Show engine details')}
             aria-expanded={engineDetailsOpen}
             aria-controls={!compact || engineDetailsOpen ? 'analysis-engine-details' : undefined}
           >
@@ -606,7 +617,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             />
           </div>
           <div className="mt-1 text-[0.6875rem] ui-text-faint">
-            {gameAnalysisDone}/{gameAnalysisTotal} analyzed
+            {t('{done}/{total} analyzed', { done: gameAnalysisDone, total: gameAnalysisTotal })}
           </div>
         </div>
       )}
@@ -617,13 +628,13 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                 "state · backend"), so this grid only carries what the badge omits. */}
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[0.6875rem]">
               <div>
-                <div className="ui-text-faint">Model</div>
+                <div className="ui-text-faint">{t('Model')}</div>
                 <div className="text-[var(--ui-text)] truncate" title={engineModelLabel ?? modelUrl}>
-                  {engineModelLabel ?? 'Not loaded'}
+                  {engineModelLabel ?? t('Not loaded')}
                 </div>
               </div>
               <div>
-                <div className="ui-text-faint">Source</div>
+                <div className="ui-text-faint">{t('Source')}</div>
                 <div className="text-[var(--ui-text)]">{engineSummary.modelSource}</div>
               </div>
             </div>
@@ -636,7 +647,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         )}
         {engineSummary.isFallback && (
           <div className={[compact && !engineDetailsOpen ? '' : 'mt-2', 'text-[0.6875rem] text-[var(--ui-warning)]'].join(' ')}>
-            Requested {engineSummary.requestedBackendLabel}, running {engineSummary.activeBackendLabel}.
+            {t('Requested {requested}, running {active}.', { requested: engineSummary.requestedBackendLabel, active: engineSummary.activeBackendLabel })}
           </div>
         )}
         {engineError && (
@@ -647,14 +658,14 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                 type="button"
                 className="panel-icon-button ui-danger-soft shrink-0"
                 onClick={() => void copyEngineError()}
-                title="Copy engine error details"
-                aria-label="Copy engine error details"
+                title={t('Copy engine error details')}
+                aria-label={t('Copy engine error details')}
               >
                 <FaCopy aria-hidden="true" />
               </button>
             </div>
             {engineErrorCopied && (
-              <div className="mt-1 font-semibold text-[var(--ui-danger)]">Copied</div>
+              <div className="mt-1 font-semibold text-[var(--ui-danger)]">{t('Copied')}</div>
             )}
           </div>
         )}
@@ -673,18 +684,18 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             }}
             title={
               isGameAnalysisRunning && gameAnalysisType === 'quick'
-                ? 'Stop quick graph analysis'
-                : 'Run a quick policy graph pass'
+                ? t('Stop quick graph analysis')
+                : t('Run a quick policy graph pass')
             }
             aria-label={
               isGameAnalysisRunning && gameAnalysisType === 'quick'
-                ? 'Stop quick graph analysis'
-                : 'Run quick graph analysis'
+                ? t('Stop quick graph analysis')
+                : t('Run quick graph analysis')
             }
           >
             {isGameAnalysisRunning && gameAnalysisType === 'quick'
-              ? `Stop quick (${gameAnalysisDone}/${gameAnalysisTotal})`
-              : 'Quick graph'}
+              ? t('Stop quick ({done}/{total})', { done: gameAnalysisDone, total: gameAnalysisTotal })
+              : t('Quick graph')}
           </button>
           <button type="button"
             className={[
@@ -707,10 +718,10 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             className="panel-action-button danger"
             onClick={stopGameAnalysis}
             disabled={!isGameAnalysisRunning}
-            title="Stop game analysis"
-            aria-label="Stop game analysis"
+            title={t('Stop game analysis')}
+            aria-label={t('Stop game analysis')}
           >
-            Stop
+            {t('Stop')}
           </button>
           {analysisCacheControl}
           {overlayToggles}
@@ -719,16 +730,16 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             <button type="button"
               className="panel-icon-button"
               onClick={onOpenGameAnalysis}
-              title="Re-analyze…"
-              aria-label="Open analysis options"
+              title={t('Re-analyze…')}
+              aria-label={t('Open analysis options')}
             >
               <FaRedoAlt size={12} />
             </button>
             <button type="button"
               className="panel-icon-button"
               onClick={onOpenGameReport}
-              title="Game report…"
-              aria-label="Open game report"
+              title={t('Game report…')}
+              aria-label={t('Open game report')}
             >
               <FaFileAlt size={12} />
             </button>
@@ -759,13 +770,13 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               {renderBestMoveReadout('min-w-0 px-2 py-1', 'text-[0.6875rem] ui-text-faint')}
               {renderMoveQualityReadout('min-w-0 px-2 py-1', 'text-[0.6875rem] ui-text-faint')}
               <div className="px-2 py-1">
-                <div className="text-[0.6875rem] ui-text-faint">Black win</div>
+                <div className="text-[0.6875rem] ui-text-faint">{t('Black win')}</div>
                 <div className="font-mono text-sm text-[var(--ui-success)]">
                   {typeof winRate === 'number' ? `${(winRate * 100).toFixed(1)}%` : NO_VALUE}
                 </div>
               </div>
               <div className="px-2 py-1">
-                <div className="text-[0.6875rem] ui-text-faint">Score</div>
+                <div className="text-[0.6875rem] ui-text-faint">{t('Score')}</div>
                 <div className="font-mono text-sm text-[var(--ui-warning)]">
                   {scoreLeadLabel}
                 </div>
@@ -784,13 +795,13 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             {renderBestMoveReadout('min-w-0 px-2 py-1', 'text-[0.6875rem] ui-text-faint')}
             {renderMoveQualityReadout('min-w-0 px-2 py-1', 'text-[0.6875rem] ui-text-faint')}
             <div className="px-2 py-1">
-              <div className="text-[0.6875rem] ui-text-faint">Black win</div>
+              <div className="text-[0.6875rem] ui-text-faint">{t('Black win')}</div>
               <div className="font-mono text-sm text-[var(--ui-success)]">
                 {typeof winRate === 'number' ? `${(winRate * 100).toFixed(1)}%` : NO_VALUE}
               </div>
             </div>
             <div className="px-2 py-1">
-              <div className="text-[0.6875rem] ui-text-faint">Score</div>
+              <div className="text-[0.6875rem] ui-text-faint">{t('Score')}</div>
               <div className="font-mono text-sm text-[var(--ui-warning)]">
                 {scoreLeadLabel}
               </div>

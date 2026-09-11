@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
+import { useT } from '../i18n';
 import { getCurrentLineNodes } from '../utils/branchNavigation';
 import { smoothAnalysisGraphValues } from '../utils/analysisSmoothing';
 import { getKaTrainEvalColors } from '../utils/katrainTheme';
@@ -64,8 +65,8 @@ function rgba(color: readonly [number, number, number, number], alphaOverride?: 
   return `rgba(${Math.round(color[0] * 255)}, ${Math.round(color[1] * 255)}, ${Math.round(color[2] * 255)}, ${a})`;
 }
 
-function formatPointLoss(pointsLost: number): string {
-  return pointsLost < 0 ? `Gain ${Math.abs(pointsLost).toFixed(1)}` : `Loss ${pointsLost.toFixed(1)}`;
+function formatPointLoss(pointsLost: number, tr: (text: string, vars?: Record<string, string | number>) => string): string {
+  return pointsLost < 0 ? tr('Gain {points}', { points: Math.abs(pointsLost).toFixed(1) }) : tr('Loss {points}', { points: pointsLost.toFixed(1) });
 }
 
 export const ScoreWinrateGraph: React.FC<{
@@ -75,6 +76,7 @@ export const ScoreWinrateGraph: React.FC<{
   showTime?: boolean;
   range?: { start: number; end: number } | null;
 }> = ({ showScore, showWinrate, showTime = false, range = null }) => {
+  const t = useT();
   const {
     currentNode,
     rootNode,
@@ -260,7 +262,7 @@ export const ScoreWinrateGraph: React.FC<{
   const nodeMoveNumber = (node?: (typeof displayNodes)[number]): number =>
     node ? node.gameState.moveHistory.length : 0;
   const activeSliderValue = activeGraphIndex + (range?.start ?? 0);
-  const activeMoveLabel = `Move ${nodeMoveNumber(displayNodes[activeGraphIndex])}`;
+  const activeMoveLabel = t('Move {n}', { n: nodeMoveNumber(displayNodes[activeGraphIndex]) });
 
   const handleFocus = () => {
     if (hasGraphData && count > 0) setHoverIndex((index) => index ?? clampedHighlighted);
@@ -313,7 +315,7 @@ export const ScoreWinrateGraph: React.FC<{
   const hoverPointsLost = hoverNode ? computeNodePointsLost(hoverNode) : null;
   const hoverLossText =
     typeof hoverPointsLost === 'number' && Number.isFinite(hoverPointsLost) && Math.abs(hoverPointsLost) > 0.05
-      ? formatPointLoss(hoverPointsLost)
+      ? formatPointLoss(hoverPointsLost, t)
       : '';
   const hoverMetricsText = `${showWinrate ? `${(50 + hoverWin).toFixed(1)}%` : ''}${showScore && showWinrate ? ' - ' : ''}${showScore ? `${hoverScore >= 0 ? 'B' : 'W'}+${Math.abs(hoverScore).toFixed(1)}` : ''}`;
   const hoverSeconds = hoverIndex !== null ? timeValues[hoverIndex] : undefined;
@@ -323,7 +325,7 @@ export const ScoreWinrateGraph: React.FC<{
       : '';
   const hoverTooltip =
     hoverIndex !== null
-      ? [`Move ${nodeMoveNumber(hoverNode)}`, hoverMetricsText, hoverTimeText, hoverLossText]
+      ? [t('Move {n}', { n: nodeMoveNumber(hoverNode) }), hoverMetricsText, hoverTimeText, hoverLossText]
           .filter(Boolean)
           .join(' · ')
       : '';
@@ -338,13 +340,13 @@ export const ScoreWinrateGraph: React.FC<{
       tabIndex={hasGraphData ? 0 : -1}
       aria-label={
         hasGraphData
-          ? 'Analysis graph move preview. Use arrow keys to preview moves, Enter to jump to the selected move.'
-          : 'Analysis graph. No analyzed moves yet.'
+          ? t('Analysis graph move preview. Use arrow keys to preview moves, Enter to jump to the selected move.')
+          : t('Analysis graph. No analyzed moves yet.')
       }
       aria-valuemin={hasGraphData ? (range?.start ?? 0) : undefined}
       aria-valuemax={hasGraphData ? (range?.start ?? 0) + Math.max(0, count - 1) : undefined}
       aria-valuenow={hasGraphData ? activeSliderValue : undefined}
-      aria-valuetext={hasGraphData ? (hoverTooltip || activeMoveLabel) : 'No analyzed moves yet'}
+      aria-valuetext={hasGraphData ? (hoverTooltip || activeMoveLabel) : t('No analyzed moves yet')}
       aria-describedby={hasGraphData ? undefined : emptyStateId}
       data-analysis-score-winrate-graph="true"
       data-analysis-graph-has-data={hasGraphData ? 'true' : 'false'}
@@ -399,7 +401,7 @@ export const ScoreWinrateGraph: React.FC<{
 
         {/* Move quality markers */}
         {qualityMarkers.length > 0 && (
-          <g aria-label="Move quality markers">
+          <g aria-label={t('Move quality markers')}>
             {qualityMarkers.map((marker) => (
               <circle
                 key={`quality-${marker.index}`}
@@ -412,7 +414,7 @@ export const ScoreWinrateGraph: React.FC<{
                 vectorEffect="non-scaling-stroke"
                 data-move-quality="true"
               >
-                <title>{`Move ${marker.moveNumber}: ${formatPointLoss(marker.pointsLost)}`}</title>
+                <title>{t('Move {n}: {loss}', { n: marker.moveNumber, loss: formatPointLoss(marker.pointsLost, t) })}</title>
               </circle>
             ))}
           </g>
@@ -448,14 +450,14 @@ export const ScoreWinrateGraph: React.FC<{
         >
           <div className={graphTheme.emptyBadgeClass}>
             {count <= 1 ? (
-              <span>Play a move or open an SGF to chart win rate and score</span>
+              <span>{t('Play a move or open an SGF to chart win rate and score')}</span>
             ) : isGameAnalysisRunning ? (
               <span>
-                Analyzing game… {gameAnalysisDone}/{gameAnalysisTotal}
+                {t('Analyzing game… {done}/{total}', { done: gameAnalysisDone, total: gameAnalysisTotal })}
               </span>
             ) : (
               <>
-                <span>No analyzed moves yet</span>
+                <span>{t('No analyzed moves yet')}</span>
                 <button
                   type="button"
                   className={graphTheme.emptyActionClass}
@@ -465,7 +467,7 @@ export const ScoreWinrateGraph: React.FC<{
                     startFastGameAnalysis();
                   }}
                 >
-                  Analyze game
+                  {t('Analyze game')}
                 </button>
               </>
             )}
@@ -484,7 +486,7 @@ export const ScoreWinrateGraph: React.FC<{
             className="absolute top-1/2 right-1 -translate-y-1/2 text-[0.5625rem] pointer-events-none"
             style={{ color: graphTheme.scoreMarkerColor }}
           >
-            Jigo
+            {t('Jigo')}
           </div>
           <div
             className="absolute bottom-1 right-1 text-[0.5625rem] pointer-events-none"

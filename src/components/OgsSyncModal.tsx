@@ -13,6 +13,7 @@ import {
 import { getOgsBackoffRemainingMs } from '../utils/ogsQueue';
 import type { LibraryItem } from '../utils/library';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useT } from '../i18n';
 
 interface OgsSyncModalProps {
   items: LibraryItem[];
@@ -30,6 +31,7 @@ type SyncSummary = {
 const LIMIT_OPTIONS = [10, 25, 50] as const;
 
 export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onImport }) => {
+  const t = useT();
   const [username, setUsername] = React.useState(
     () => readLocalStorage(OGS_SYNC_USERNAME_STORAGE_KEY) ?? ''
   );
@@ -80,7 +82,7 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
       writeLocalStorage(OGS_SYNC_USERNAME_STORAGE_KEY, player.username);
       const games = await listOgsFinishedGames(player.id, limit);
       if (games.length === 0) {
-        setError(`"${player.username}" has no finished games OGS will list.`);
+        setError(t('"{username}" has no finished games OGS will list.', { username: player.username }));
         return;
       }
       const { synced, skipped, failed } = await downloadNewOgsGames(
@@ -99,7 +101,7 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
       });
     } catch (cause) {
       if (!cancelledRef.current) {
-        setError(cause instanceof Error ? cause.message : 'OGS sync failed.');
+        setError(cause instanceof Error ? cause.message : t('OGS sync failed.'));
       }
     } finally {
       setIsRunning(false);
@@ -109,10 +111,14 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
 
   const summaryText = (result: SyncSummary): string => {
     const parts = [
-      `Added ${result.added} game${result.added === 1 ? '' : 's'} to "OGS - ${result.username}".`,
+      t('Added {count} game{s} to "OGS - {username}".', {
+        count: result.added,
+        s: result.added === 1 ? '' : 's',
+        username: result.username,
+      }),
     ];
-    if (result.skipped > 0) parts.push(`${result.skipped} already in your library.`);
-    if (result.failed > 0) parts.push(`${result.failed} failed to download.`);
+    if (result.skipped > 0) parts.push(t('{count} already in your library.', { count: result.skipped }));
+    if (result.failed > 0) parts.push(t('{count} failed to download.', { count: result.failed }));
     return parts.join(' ');
   };
 
@@ -126,13 +132,13 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
       >
         <div className="ogs-sync-header ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-4 py-3">
           <h2 id="ogs-sync-title" className="text-lg font-semibold text-[var(--ui-text)]">
-            Sync OGS Games
+            {t('Sync OGS Games')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close OGS sync"
+            aria-label={t('Close OGS sync')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -140,12 +146,10 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
 
         <div className="ogs-sync-body min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           <div className="ogs-sync-intro text-sm text-[var(--ui-text-muted)]">
-            Downloads your latest finished games from online-go.com into an{' '}
-            <span className="font-semibold">OGS - username</span> library folder. Games already
-            synced are skipped, so it is safe to run again after playing more.
+            {t('Downloads your latest finished games from online-go.com into an OGS - username library folder. Games already synced are skipped, so it is safe to run again after playing more.')}
           </div>
           <label className="block text-sm font-medium text-[var(--ui-text)]" htmlFor="ogs-sync-username">
-            OGS username
+            {t('OGS username')}
           </label>
           <input
             id="ogs-sync-username"
@@ -161,12 +165,12 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
             }}
             disabled={isRunning}
             className="min-h-11 w-full rounded-lg border ui-input px-3 py-2 text-sm text-[var(--ui-text)] desktop-shell:min-h-0"
-            placeholder="e.g. your OGS account name"
+            placeholder={t('e.g. your OGS account name')}
             autoComplete="off"
             spellCheck={false}
           />
           <label className="block text-sm font-medium text-[var(--ui-text)]" htmlFor="ogs-sync-limit">
-            Fetch up to
+            {t('Fetch up to')}
           </label>
           <select
             id="ogs-sync-limit"
@@ -177,7 +181,7 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
           >
             {LIMIT_OPTIONS.map((option) => (
               <option key={option} value={option}>
-                {option} most recent games
+                {t('{count} most recent games', { count: option })}
               </option>
             ))}
           </select>
@@ -189,12 +193,14 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
               aria-live="polite"
             >
               {backoffSeconds > 0
-                ? `OGS is rate limiting us - resuming in ${backoffSeconds}s...`
+                ? t('OGS is rate limiting us - resuming in {seconds}s...', { seconds: backoffSeconds })
                 : progress && progress.total > 0
-                  ? `Downloading ${Math.min(progress.downloaded + 1, progress.total)} of ${progress.total}${
-                      progress.current ? ` - ${progress.current.black} vs ${progress.current.white}` : ''
-                    }...`
-                  : 'Looking up player and games...'}
+                  ? t('Downloading {downloaded} of {total}{detail}...', {
+                      downloaded: Math.min(progress.downloaded + 1, progress.total),
+                      total: progress.total,
+                      detail: progress.current ? ` - ${progress.current.black} vs ${progress.current.white}` : '',
+                    })
+                  : t('Looking up player and games...')}
             </div>
           )}
           {error && (
@@ -218,7 +224,7 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
             onClick={onClose}
             className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
           >
-            {summary ? 'Done' : 'Cancel'}
+            {summary ? t('Done') : t('Cancel')}
           </button>
           <button
             type="button"
@@ -228,7 +234,7 @@ export const OgsSyncModal: React.FC<OgsSyncModalProps> = ({ items, onClose, onIm
           >
             <span className="inline-flex items-center gap-2">
               <FaCloudDownloadAlt aria-hidden="true" />
-              {isRunning ? 'Syncing...' : summary ? 'Sync Again' : 'Sync'}
+              {isRunning ? t('Syncing...') : summary ? t('Sync Again') : t('Sync')}
             </span>
           </button>
         </div>

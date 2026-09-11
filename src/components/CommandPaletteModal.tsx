@@ -14,6 +14,7 @@ import {
   scoreCommandMatch,
   writeRecentCommandIds,
 } from '../utils/commandPalette';
+import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 
@@ -33,6 +34,7 @@ interface CommandPaletteModalProps {
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ commands, onClose }) => {
+  const t = useT();
   useEscapeToClose(onClose);
   const [query, setQuery] = React.useState('');
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -148,17 +150,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
         <div className="ui-bar flex shrink-0 items-center justify-between gap-3 border-b border-[var(--ui-border)] p-4">
           <div className="min-w-0">
             <h2 id="command-palette-title" className="text-lg font-semibold text-[var(--ui-text)]">
-              Command Palette
+              {t('Command Palette')}
             </h2>
             <div className="mt-0.5 text-xs ui-text-faint" aria-live="polite" data-command-palette-count="true">
-              {filteredCommands.length} command{filteredCommands.length === 1 ? '' : 's'}
+              {t('{count} command{s}', { count: filteredCommands.length, s: filteredCommands.length === 1 ? '' : 's' })}
             </div>
           </div>
           <button
             type="button"
             className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
             onClick={onClose}
-            aria-label="Close command palette"
+            aria-label={t('Close command palette')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -177,8 +179,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
               className="ui-input h-11 w-full rounded-lg border py-2 pl-8 pr-12 text-sm text-[var(--ui-text)]"
-              placeholder="Search commands"
-              aria-label="Search commands"
+              placeholder={t('Search commands')}
+              aria-label={t('Search commands')}
               aria-autocomplete="list"
               aria-expanded="true"
               aria-controls={listboxId}
@@ -190,17 +192,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
                 type="button"
                 className="absolute right-0 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
                 onClick={() => setQuery('')}
-                aria-label="Clear command search"
+                aria-label={t('Clear command search')}
               >
                 <FaTimes aria-hidden="true" size={11} />
               </button>
             )}
           </label>
         </div>
-        <div id={listboxId} className="min-h-0 max-h-[56dvh] flex-1 overflow-y-auto overscroll-contain px-3 pb-3" role="listbox" aria-label="Commands">
+        <div id={listboxId} className="min-h-0 max-h-[56dvh] flex-1 overflow-y-auto overscroll-contain px-3 pb-3" role="listbox" aria-label={t('Commands')}>
           {filteredCommands.length === 0 ? (
             <div className="ui-surface rounded-lg border p-4 text-sm ui-text-muted" data-command-palette-empty="true">
-              No commands match "{query.trim()}".
+              {t('No commands match "{query}".', { query: query.trim() })}
             </div>
           ) : (
             <div className="space-y-1">
@@ -215,8 +217,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
                     role="option"
                     aria-label={[
                       command.label,
-                      command.disabledReason ? `Unavailable: ${command.disabledReason}` : '',
-                      recentSet.has(command.id) ? 'Recent' : '',
+                      command.disabledReason ? t('Unavailable: {reason}', { reason: command.disabledReason }) : '',
+                      recentSet.has(command.id) ? t('Recent') : '',
                       command.category,
                       shortcut,
                     ].filter(Boolean).join(', ')}
@@ -257,7 +259,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
                       )}
                     </span>
                     <span className="command-palette-category shrink-0 text-xs ui-text-faint">
-                      {recentSet.has(command.id) ? `Recent · ${command.category}` : command.category}
+                      {recentSet.has(command.id) ? t('Recent · {category}', { category: command.category }) : command.category}
                     </span>
                     {/* The chip column keeps its width whether or not this
                         command has a shortcut; without it the categories drift

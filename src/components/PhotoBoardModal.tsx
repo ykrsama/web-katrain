@@ -46,6 +46,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { isTextEntryTarget } from '../utils/keyboardTarget';
 import { detectCameraAvailability, type CameraAvailability } from '../utils/cameraAvailability';
+import { useT } from '../i18n';
 import { CameraCaptureModal } from './CameraCaptureModal';
 
 interface PhotoBoardModalProps {
@@ -95,6 +96,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
   initialPhotoFile = null,
   returnFocus,
 }) => {
+  const t = useT();
   const galleryInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
   const photoUrlRef = React.useRef<string | null>(null);
@@ -246,18 +248,18 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
   const hasPhotoAlignmentChanges =
     photoZoom !== 1 || photoOffsetX !== 0 || photoOffsetY !== 0 || photoRotation !== 0;
   const cameraUnavailable = cameraAvailability === 'unavailable' && !liveCameraSupported;
-  const cameraButtonTitle = cameraUnavailable ? 'No camera detected' : 'Take board photo with camera';
-  const clearBoardTitle = canClearBoard ? 'Clear all traced stones' : 'No traced stones to clear';
-  const transformTraceTitle = canTransformTrace ? 'Adjust traced board orientation' : 'Trace stones before transforming the board';
+  const cameraButtonTitle = cameraUnavailable ? t('No camera detected') : t('Take board photo with camera');
+  const clearBoardTitle = canClearBoard ? t('Clear all traced stones') : t('No traced stones to clear');
+  const transformTraceTitle = canTransformTrace ? t('Adjust traced board orientation') : t('Trace stones before transforming the board');
   const importBoardTitle = counts.total > 0
-    ? 'Import traced stones as a new board position'
-    : 'Trace at least one stone to import a board position';
+    ? t('Import traced stones as a new board position')
+    : t('Trace at least one stone to import a board position');
   const addToCurrentTitle =
     counts.total === 0
-      ? 'Trace at least one stone to add it to the current board'
+      ? t('Trace at least one stone to add it to the current board')
       : currentBoardSize !== boardSize
-        ? `Current board is ${currentBoardSize ?? '?'}x${currentBoardSize ?? '?'}, not ${boardSize}x${boardSize}`
-        : 'Add traced stones as setup stones on the current board';
+        ? t('Current board is {a}x{b}, not {size}x{size}', { a: currentBoardSize ?? '?', b: currentBoardSize ?? '?', size: boardSize })
+        : t('Add traced stones as setup stones on the current board');
 
   const choosePhoto = React.useCallback((file: File | undefined) => {
     if (!file) return;
@@ -275,11 +277,11 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
     if (!objectUrl) {
       setPhotoName('');
       setPhotoUrl(null);
-      setPhotoError('Photo preview is unavailable in this browser.');
+      setPhotoError(t('Photo preview is unavailable in this browser.'));
       return;
     }
     photoUrlRef.current = objectUrl;
-    setPhotoName(file.name || 'Camera photo');
+    setPhotoName(file.name || t('Camera photo'));
     setPhotoUrl(objectUrl);
     setPhotoUnderlay(true);
     setPhotoZoom(1);
@@ -288,7 +290,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
     setPhotoRotation(0);
     setAutoTraceStatus(null);
     setMobileTab('trace');
-  }, []);
+  }, [t]);
 
   const handlePhotoInputChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     choosePhoto(event.target.files?.[0]);
@@ -434,7 +436,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
   const autoTracePhoto = React.useCallback(async () => {
     if (!photoUrl) return;
     setIsAutoTracing(true);
-    setAutoTraceStatus('Reading photo...');
+    setAutoTraceStatus(t('Reading photo...'));
     try {
       const result = await recognizePhotoBoardFromImageUrl(
         photoUrl,
@@ -445,15 +447,15 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
       setMobileTab('trace');
       setAutoTraceStatus(
         result.total > 0
-          ? `Auto traced ${result.total} stone${result.total === 1 ? '' : 's'}. Review before importing.`
-          : 'No stones detected. Trace manually or adjust the photo.'
+          ? t('Auto traced {count} stone{s}. Review before importing.', { count: result.total, s: result.total === 1 ? '' : 's' })
+          : t('No stones detected. Trace manually or adjust the photo.')
       );
     } catch (error) {
-      setAutoTraceStatus(error instanceof Error ? error.message : 'Could not auto trace this photo.');
+      setAutoTraceStatus(error instanceof Error ? error.message : t('Could not auto trace this photo.'));
     } finally {
       setIsAutoTracing(false);
     }
-  }, [autoTraceSensitivity, boardSize, photoUrl]);
+  }, [autoTraceSensitivity, boardSize, photoUrl, t]);
 
   const updateAutoTraceSensitivity = (value: number) => {
     const next = Math.max(0, Math.min(100, Number.isFinite(value) ? value : DEFAULT_PHOTO_BOARD_RECOGNITION_SENSITIVITY));
@@ -557,12 +559,12 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
         aria-labelledby="photo-board-title"
       >
         <div className="ui-bar flex items-center justify-between border-b border-[var(--ui-border)] px-3 py-2 sm:px-4 sm:py-3">
-          <h2 id="photo-board-title" className="text-lg font-semibold text-[var(--ui-text)]">Photo Board</h2>
+          <h2 id="photo-board-title" className="text-lg font-semibold text-[var(--ui-text)]">{t('Photo Board')}</h2>
           <button
             type="button"
             onClick={onClose}
             className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            aria-label="Close photo board"
+            aria-label={t('Close photo board')}
           >
             <FaTimes aria-hidden="true" />
           </button>
@@ -579,8 +581,8 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               data-photo-board-mobile-tab="photo"
             >
               <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--ui-surface)] text-[0.6875rem]">1</span>
-              <span>Photo</span>
-              {photoUrl && <span className="rounded-full bg-[var(--ui-success-soft)] px-1.5 py-0.5 text-[0.625rem] text-[var(--ui-success)]">set</span>}
+              <span>{t('Photo')}</span>
+              {photoUrl && <span className="rounded-full bg-[var(--ui-success-soft)] px-1.5 py-0.5 text-[0.625rem] text-[var(--ui-success)]">{t('set')}</span>}
             </button>
             <button
               type="button"
@@ -591,7 +593,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               data-photo-board-mobile-tab="trace"
             >
               <span className="grid h-5 w-5 place-items-center rounded-full bg-[var(--ui-surface)] text-[0.6875rem]">2</span>
-              <span>Trace</span>
+              <span>{t('Trace')}</span>
               <span className="rounded-full bg-[var(--ui-surface)] px-1.5 py-0.5 text-[0.625rem] text-[var(--ui-text-muted)]">{counts.total}</span>
             </button>
           </div>
@@ -609,23 +611,23 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--ui-surface)]"
                 onClick={openCameraSource}
                 disabled={cameraUnavailable}
-                aria-label={cameraUnavailable ? 'No camera detected for board photo' : 'Take board photo with camera'}
+                aria-label={cameraUnavailable ? t('No camera detected for board photo') : t('Take board photo with camera')}
                 title={cameraButtonTitle}
                 data-photo-board-camera-state={cameraAvailability}
                 data-photo-board-live-camera={liveCameraSupported}
               >
                 <span className="flex items-center justify-center gap-2">
-                  <FaCamera /> {cameraUnavailable ? 'No camera' : 'Camera'}
+                  <FaCamera /> {cameraUnavailable ? t('No camera') : t('Camera')}
                 </span>
               </button>
               <button
                 type="button"
                 className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
                 onClick={() => galleryInputRef.current?.click()}
-                aria-label="Choose board photo file"
-                title="Choose board photo file"
+                aria-label={t('Choose board photo file')}
+                title={t('Choose board photo file')}
               >
-                <span className="flex items-center justify-center gap-2"><FaFolderOpen /> Photo</span>
+                <span className="flex items-center justify-center gap-2"><FaFolderOpen /> {t('Photo')}</span>
               </button>
               <input
                 ref={cameraInputRef}
@@ -648,7 +650,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 className="rounded-lg border border-[var(--ui-warning)] bg-[var(--ui-warning-soft)] px-3 py-2 text-xs font-medium text-[var(--ui-warning)]"
                 data-photo-board-camera-unavailable="true"
               >
-                No camera detected.
+                {t('No camera detected.')}
               </div>
             )}
 
@@ -656,7 +658,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               {photoUrl ? (
                 <img
                   src={photoUrl}
-                  alt={photoName || 'Board photo'}
+                  alt={photoName || t('Board photo')}
                   className="h-auto max-h-[42dvh] w-full object-contain"
                 />
               ) : (
@@ -666,7 +668,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 >
                   <div className="grid place-items-center gap-2 text-center">
                     <FaCamera size={28} aria-hidden="true" />
-                    <span>No board photo selected</span>
+                    <span>{t('No board photo selected')}</span>
                   </div>
                 </div>
               )}
@@ -680,7 +682,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 aria-atomic="true"
                 data-photo-board-photo-error="true"
               >
-                <span className="sr-only">Error: </span>
+                <span className="sr-only">{t('Error')}: </span>
                 {photoError}
               </div>
             )}
@@ -689,7 +691,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-xs"
                 data-photo-board-source-name="true"
               >
-                <span className="shrink-0 font-semibold text-[var(--ui-text-muted)]">Source</span>
+                <span className="shrink-0 font-semibold text-[var(--ui-text-muted)]">{t('Source')}</span>
                 <span className="min-w-0 truncate font-mono text-[var(--ui-text)]" title={photoName}>
                   {photoName}
                 </span>
@@ -698,7 +700,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
 
             <div className="grid grid-cols-2 gap-3">
               <label className="space-y-1 text-sm">
-                <span className="ui-text-muted">Board</span>
+                <span className="ui-text-muted">{t('Board')}</span>
                 <select
                   value={boardSize}
                   onChange={(event) => updateBoardSize(Number(event.target.value) as BoardSize)}
@@ -710,7 +712,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 </select>
               </label>
               <label className="space-y-1 text-sm">
-                <span className="ui-text-muted">Komi</span>
+                <span className="ui-text-muted">{t('Komi')}</span>
                 <input
                   type="number"
                   step="0.5"
@@ -721,7 +723,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               </label>
             </div>
 
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Next player">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label={t('Next player')}>
               {(['black', 'white'] as Player[]).map((player) => (
                 <button
                   key={player}
@@ -730,7 +732,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                   className={toolButtonClass(nextPlayer === player)}
                   onClick={() => setNextPlayer(player)}
                 >
-                  {player === 'black' ? 'Black next' : 'White next'}
+                  {player === 'black' ? t('Black next') : t('White next')}
                 </button>
               ))}
             </div>
@@ -741,17 +743,17 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
             className={[mobileTab === 'trace' ? 'min-w-0 space-y-3' : 'hidden min-w-0 space-y-3 md:block'].join(' ')}
             data-photo-board-panel="trace"
           >
-            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Trace tool">
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label={t('Trace tool')}>
               <button
                 type="button"
                 aria-pressed={tool === 'black'}
                 className={toolButtonClass(tool === 'black')}
                 onClick={() => setTraceTool('black')}
-                title={`Trace black stones (${TRACE_TOOL_KEY_HINTS.black})`}
+                title={t('Trace black stones ({keys})', { keys: TRACE_TOOL_KEY_HINTS.black })}
                 aria-keyshortcuts="1 B"
               >
                 <span className="inline-flex items-center gap-2">
-                  <span className="h-4 w-4 rounded-full bg-black ring-1 ring-white/30" aria-hidden="true" /> Black
+                  <span className="h-4 w-4 rounded-full bg-black ring-1 ring-white/30" aria-hidden="true" /> {t('Black')}
                 </span>
               </button>
               <button
@@ -759,11 +761,11 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 aria-pressed={tool === 'white'}
                 className={toolButtonClass(tool === 'white')}
                 onClick={() => setTraceTool('white')}
-                title={`Trace white stones (${TRACE_TOOL_KEY_HINTS.white})`}
+                title={t('Trace white stones ({keys})', { keys: TRACE_TOOL_KEY_HINTS.white })}
                 aria-keyshortcuts="2 W"
               >
                 <span className="inline-flex items-center gap-2">
-                  <span className="h-4 w-4 rounded-full bg-white ring-1 ring-black/25" aria-hidden="true" /> White
+                  <span className="h-4 w-4 rounded-full bg-white ring-1 ring-black/25" aria-hidden="true" /> {t('White')}
                 </span>
               </button>
               <button
@@ -771,10 +773,10 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 aria-pressed={tool === 'erase'}
                 className={toolButtonClass(tool === 'erase')}
                 onClick={() => setTraceTool('erase')}
-                title={`Erase traced stones (${TRACE_TOOL_KEY_HINTS.erase})`}
+                title={t('Erase traced stones ({keys})', { keys: TRACE_TOOL_KEY_HINTS.erase })}
                 aria-keyshortcuts="3 E"
               >
-                <span className="inline-flex items-center gap-2"><FaEraser /> Erase</span>
+                <span className="inline-flex items-center gap-2"><FaEraser /> {t('Erase')}</span>
               </button>
             </div>
 
@@ -784,11 +786,11 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!photoUrl || isAutoTracing}
                 onClick={() => void autoTracePhoto()}
-                title={photoUrl ? 'Auto trace stones from an aligned board photo' : 'Choose a board photo before auto tracing'}
+                title={photoUrl ? t('Auto trace stones from an aligned board photo') : t('Choose a board photo before auto tracing')}
                 data-photo-board-auto-trace="true"
               >
                 <span className="inline-flex items-center gap-2">
-                  <FaMagic aria-hidden="true" /> {isAutoTracing ? 'Tracing...' : 'Auto trace'}
+                  <FaMagic aria-hidden="true" /> {isAutoTracing ? t('Tracing...') : t('Auto trace')}
                 </span>
               </button>
               <button
@@ -798,16 +800,16 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 onClick={useCurrentBoard}
                 title={
                   canUseCurrentBoard
-                    ? `Copy ${currentBoardStoneCount} current stone${currentBoardStoneCount === 1 ? '' : 's'} into the trace grid`
-                    : 'No current stones to copy'
+                    ? t('Copy {count} current stone{s} into the trace grid', { count: currentBoardStoneCount, s: currentBoardStoneCount === 1 ? '' : 's' })
+                    : t('No current stones to copy')
                 }
               >
                 <span className="inline-flex items-center gap-2">
-                  <FaLayerGroup aria-hidden="true" /> Use current
+                  <FaLayerGroup aria-hidden="true" /> {t('Use current')}
                 </span>
               </button>
               <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)]">
-                <span>Sensitivity</span>
+                <span>{t('Sensitivity')}</span>
                 <input
                   type="range"
                   min={0}
@@ -816,8 +818,8 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                   value={autoTraceSensitivity}
                   onChange={(event) => updateAutoTraceSensitivity(Number.parseInt(event.target.value || '0', 10))}
                   className="min-h-11 w-28 accent-[var(--ui-accent)]"
-                  aria-label="Auto trace sensitivity"
-                  title="Lower detects fewer weak stones; higher detects more candidates"
+                  aria-label={t('Auto trace sensitivity')}
+                  title={t('Lower detects fewer weak stones; higher detects more candidates')}
                   data-photo-board-auto-trace-sensitivity="true"
                 />
                 <span className="w-8 text-right text-xs ui-text-faint" data-photo-board-auto-trace-sensitivity-value="true">
@@ -826,7 +828,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               </label>
               {currentBoardStoneCount > 0 && (
                 <span className="text-xs font-medium text-[var(--ui-text-muted)]">
-                  {currentBoardStoneCount} current stone{currentBoardStoneCount === 1 ? '' : 's'}
+                  {t('{count} current stone{s}', { count: currentBoardStoneCount, s: currentBoardStoneCount === 1 ? '' : 's' })}
                 </span>
               )}
               {autoTraceStatus && (
@@ -836,17 +838,17 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Trace board transforms">
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('Trace board transforms')}>
               <button
                 type="button"
                 className={traceTransformButtonClass}
                 disabled={!canTransformTrace}
                 onClick={() => transformTrace('rotate-left')}
                 title={transformTraceTitle}
-                aria-label="Rotate traced board left"
+                aria-label={t('Rotate traced board left')}
                 data-photo-board-transform="rotate-left"
               >
-                <span className="inline-flex items-center gap-1.5"><FaUndo aria-hidden="true" /> Rotate L</span>
+                <span className="inline-flex items-center gap-1.5"><FaUndo aria-hidden="true" /> {t('Rotate L')}</span>
               </button>
               <button
                 type="button"
@@ -854,10 +856,10 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 disabled={!canTransformTrace}
                 onClick={() => transformTrace('rotate-right')}
                 title={transformTraceTitle}
-                aria-label="Rotate traced board right"
+                aria-label={t('Rotate traced board right')}
                 data-photo-board-transform="rotate-right"
               >
-                <span className="inline-flex items-center gap-1.5"><FaRedo aria-hidden="true" /> Rotate R</span>
+                <span className="inline-flex items-center gap-1.5"><FaRedo aria-hidden="true" /> {t('Rotate R')}</span>
               </button>
               <button
                 type="button"
@@ -865,10 +867,10 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 disabled={!canTransformTrace}
                 onClick={() => transformTrace('flip-horizontal')}
                 title={transformTraceTitle}
-                aria-label="Flip traced board horizontally"
+                aria-label={t('Flip traced board horizontally')}
                 data-photo-board-transform="flip-horizontal"
               >
-                <span className="inline-flex items-center gap-1.5"><FaArrowsAltH aria-hidden="true" /> Flip H</span>
+                <span className="inline-flex items-center gap-1.5"><FaArrowsAltH aria-hidden="true" /> {t('Flip H')}</span>
               </button>
               <button
                 type="button"
@@ -876,21 +878,21 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 disabled={!canTransformTrace}
                 onClick={() => transformTrace('flip-vertical')}
                 title={transformTraceTitle}
-                aria-label="Flip traced board vertically"
+                aria-label={t('Flip traced board vertically')}
                 data-photo-board-transform="flip-vertical"
               >
-                <span className="inline-flex items-center gap-1.5"><FaArrowsAltV aria-hidden="true" /> Flip V</span>
+                <span className="inline-flex items-center gap-1.5"><FaArrowsAltV aria-hidden="true" /> {t('Flip V')}</span>
               </button>
               <button
                 type="button"
                 className={traceTransformButtonClass}
                 disabled={!canTransformTrace}
                 onClick={swapTraceColors}
-                title={canTransformTrace ? 'Swap traced black and white stones' : 'Trace stones before swapping colors'}
-                aria-label="Swap traced stone colors"
+                title={canTransformTrace ? t('Swap traced black and white stones') : t('Trace stones before swapping colors')}
+                aria-label={t('Swap traced stone colors')}
                 data-photo-board-transform="swap-colors"
               >
-                <span className="inline-flex items-center gap-1.5"><FaExchangeAlt aria-hidden="true" /> Swap</span>
+                <span className="inline-flex items-center gap-1.5"><FaExchangeAlt aria-hidden="true" /> {t('Swap')}</span>
               </button>
             </div>
 
@@ -901,11 +903,11 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="text-[0.6875rem] font-semibold uppercase tracking-wide ui-text-faint">
-                    Current diff
+                    {t('Current diff')}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-xs ui-text-faint">
-                      {canCompareCurrentBoard ? `${deltaCounts.total} change${deltaCounts.total === 1 ? '' : 's'}` : 'Size mismatch'}
+                      {canCompareCurrentBoard ? t('{count} change{s}', { count: deltaCounts.total, s: deltaCounts.total === 1 ? '' : 's' }) : t('Size mismatch')}
                     </div>
                     <button
                       type="button"
@@ -913,10 +915,10 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                       onClick={() => setShowDeltaOverlay((value) => !value)}
                       disabled={!canCompareCurrentBoard || deltaCounts.total === 0}
                       aria-pressed={showDeltaOverlay}
-                      title={showDeltaOverlay ? 'Hide diff markers' : 'Show diff markers'}
+                      title={showDeltaOverlay ? t('Hide diff markers') : t('Show diff markers')}
                       data-photo-board-delta-toggle="true"
                     >
-                      Overlay {showDeltaOverlay ? 'on' : 'off'}
+                      {t('Overlay')} {t(showDeltaOverlay ? 'on' : 'off')}
                     </button>
                   </div>
                 </div>
@@ -924,21 +926,21 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                   <div className="grid gap-2">
                     <div
                       className="flex flex-wrap items-center gap-2 text-[0.6875rem] font-medium text-[var(--ui-text-muted)]"
-                      aria-label="Photo board diff legend"
+                      aria-label={t('Photo board diff legend')}
                       data-photo-board-delta-legend="true"
                     >
                       <span className="inline-flex items-center gap-1">
                         <span className={deltaLegendMarkerClass('added')} aria-hidden="true">+</span>
-                        Added in trace
+                        {t('Added in trace')}
                       </span>
                       <span className="inline-flex items-center gap-1">
                         <span className={deltaLegendMarkerClass('removed')} aria-hidden="true">-</span>
-                        Missing from trace
+                        {t('Missing from trace')}
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {deltaCounts.total === 0 && (
-                        <span className={deltaChipClass('matched')}>Matched</span>
+                        <span className={deltaChipClass('matched')}>{t('Matched')}</span>
                       )}
                       {deltaCounts.addedBlack > 0 && (
                         <span className={deltaChipClass('added')}>{deltaCountLabel('added', 'black', deltaCounts.addedBlack)}</span>
@@ -954,21 +956,21 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                       )}
                       {playMoveDelta && (
                         <span className={deltaChipClass('move')}>
-                          Move {playMoveDelta.player === 'black' ? 'B' : 'W'} {gtpPoint(playMoveDelta.y * boardSize + playMoveDelta.x, boardSize)}
+                          {t('Move {player} {point}', { player: playMoveDelta.player === 'black' ? 'B' : 'W', point: gtpPoint(playMoveDelta.y * boardSize + playMoveDelta.x, boardSize) })}
                         </span>
                       )}
                     </div>
                     {deltaSummary.items.length > 0 && (
                       <div
                         className="flex flex-wrap gap-1"
-                        aria-label="Changed intersections"
+                        aria-label={t('Changed intersections')}
                         data-photo-board-delta-list="true"
                       >
                         {deltaSummary.items.map((item, index) => (
                           <span
                             key={`${item.type}-${item.player}-${item.x}-${item.y}-${index}`}
                             className={deltaChipClass(item.type)}
-                            title={`${item.type === 'added' ? 'Added' : 'Removed'} ${item.player} at ${item.pointLabel}`}
+                            title={t('{action} {player} at {point}', { action: item.type === 'added' ? t('Added') : t('Removed'), player: item.player === 'black' ? t('Black') : t('White'), point: item.pointLabel })}
                             data-photo-board-delta-list-item={item.type}
                             data-photo-board-delta-list-player={item.player}
                           >
@@ -977,7 +979,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                         ))}
                         {deltaSummary.hiddenCount > 0 && (
                           <span className={deltaChipClass('matched')} data-photo-board-delta-list-more="true">
-                            +{deltaSummary.hiddenCount} more
+                            +{t('{count} more', { count: deltaSummary.hiddenCount })}
                           </span>
                         )}
                       </div>
@@ -985,7 +987,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                   </div>
                 ) : (
                   <div className="text-xs text-[var(--ui-text-muted)]">
-                    Current board is {currentBoardSize ?? '?'}x{currentBoardSize ?? '?'}.
+                    {t('Current board is {size}x{size}.', { size: currentBoardSize ?? '?' })}
                   </div>
                 )}
               </div>
@@ -1001,24 +1003,24 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                     onChange={(event) => setPhotoUnderlay(event.target.checked)}
                     className="h-4 w-4 accent-[var(--ui-accent)] disabled:opacity-50"
                   />
-                  Photo under grid
+                  {t('Photo under grid')}
                 </label>
                 <label className="ml-auto flex items-center gap-2 text-sm">
-                  <span className="ui-text-muted">Fit</span>
+                  <span className="ui-text-muted">{t('Fit')}</span>
                   <select
                     value={photoFit}
                     onChange={(event) => setPhotoFit(event.target.value as PhotoFit)}
                     disabled={!photoUrl || !photoUnderlay}
                     className="min-h-11 ui-input rounded border px-2 py-1 text-sm text-[var(--ui-text)] disabled:opacity-50 desktop-shell:min-h-0"
-                    aria-label="Photo underlay fit"
+                    aria-label={t('Photo underlay fit')}
                   >
-                    <option value="cover">Cover</option>
-                    <option value="contain">Contain</option>
+                    <option value="cover">{t('Cover')}</option>
+                    <option value="contain">{t('Contain')}</option>
                   </select>
                 </label>
               </div>
               <label className="mt-3 grid grid-cols-[auto_minmax(0,1fr)_3rem] items-center gap-2 text-xs">
-                <span className="ui-text-muted">Opacity</span>
+                <span className="ui-text-muted">{t('Opacity')}</span>
                 <input
                   type="range"
                   min={0.15}
@@ -1028,7 +1030,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                   disabled={!photoUrl || !photoUnderlay}
                   onChange={(event) => setPhotoOpacity(Number(event.target.value))}
                   className="h-11 w-full accent-[var(--ui-accent)] disabled:opacity-50 lg:h-6"
-                  aria-label="Photo underlay opacity"
+                  aria-label={t('Photo underlay opacity')}
                 />
                 <span className="text-right font-mono text-[var(--ui-text-muted)]">
                   {Math.round(photoOpacity * 100)}%
@@ -1036,7 +1038,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               </label>
               <div className="mt-3 grid gap-2" data-photo-board-photo-align="true">
                 <label className="grid grid-cols-[auto_minmax(0,1fr)_3.5rem] items-center gap-2 text-xs">
-                  <span className="ui-text-muted">Zoom</span>
+                  <span className="ui-text-muted">{t('Zoom')}</span>
                   <input
                     type="range"
                     min={1}
@@ -1046,7 +1048,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                     disabled={photoAlignmentDisabled}
                     onChange={(event) => setPhotoZoom(Number(event.target.value))}
                     className="h-11 w-full accent-[var(--ui-accent)] disabled:opacity-50 lg:h-6"
-                    aria-label="Photo underlay zoom"
+                    aria-label={t('Photo underlay zoom')}
                     data-photo-board-photo-zoom="true"
                   />
                   <span className="text-right font-mono text-[var(--ui-text-muted)]">
@@ -1065,7 +1067,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                       disabled={photoAlignmentDisabled}
                       onChange={(event) => setPhotoOffsetX(Number(event.target.value))}
                       className="h-11 w-full accent-[var(--ui-accent)] disabled:opacity-50 lg:h-6"
-                      aria-label="Photo underlay horizontal position"
+                      aria-label={t('Photo underlay horizontal position')}
                       data-photo-board-photo-offset-x="true"
                     />
                     <span className="text-right font-mono text-[var(--ui-text-muted)]">
@@ -1083,7 +1085,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                       disabled={photoAlignmentDisabled}
                       onChange={(event) => setPhotoOffsetY(Number(event.target.value))}
                       className="h-11 w-full accent-[var(--ui-accent)] disabled:opacity-50 lg:h-6"
-                      aria-label="Photo underlay vertical position"
+                      aria-label={t('Photo underlay vertical position')}
                       data-photo-board-photo-offset-y="true"
                     />
                     <span className="text-right font-mono text-[var(--ui-text-muted)]">
@@ -1097,33 +1099,33 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                     className={traceTransformButtonClass}
                     disabled={photoAlignmentDisabled}
                     onClick={() => rotatePhoto(-90)}
-                    title="Rotate photo underlay left"
-                    aria-label="Rotate photo underlay left"
+                    title={t('Rotate photo underlay left')}
+                    aria-label={t('Rotate photo underlay left')}
                     data-photo-board-photo-rotate="left"
                   >
-                    <span className="inline-flex items-center gap-1.5"><FaUndo aria-hidden="true" /> Rotate L</span>
+                    <span className="inline-flex items-center gap-1.5"><FaUndo aria-hidden="true" /> {t('Rotate L')}</span>
                   </button>
                   <button
                     type="button"
                     className={traceTransformButtonClass}
                     disabled={photoAlignmentDisabled}
                     onClick={() => rotatePhoto(90)}
-                    title="Rotate photo underlay right"
-                    aria-label="Rotate photo underlay right"
+                    title={t('Rotate photo underlay right')}
+                    aria-label={t('Rotate photo underlay right')}
                     data-photo-board-photo-rotate="right"
                   >
-                    <span className="inline-flex items-center gap-1.5"><FaRedo aria-hidden="true" /> Rotate R</span>
+                    <span className="inline-flex items-center gap-1.5"><FaRedo aria-hidden="true" /> {t('Rotate R')}</span>
                   </button>
                   <button
                     type="button"
                     className={traceTransformButtonClass}
                     disabled={photoAlignmentDisabled || !hasPhotoAlignmentChanges}
                     onClick={resetPhotoAlignment}
-                    title="Reset photo underlay alignment"
-                    aria-label="Reset photo underlay alignment"
+                    title={t('Reset photo underlay alignment')}
+                    aria-label={t('Reset photo underlay alignment')}
                     data-photo-board-photo-reset="true"
                   >
-                    Reset
+                    {t('Reset')}
                   </button>
                   <span
                     className="ml-auto text-xs font-mono text-[var(--ui-text-muted)]"
@@ -1138,7 +1140,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
             <div className="mx-auto w-full max-w-[min(78vh,640px)] rounded-lg border border-[var(--ui-border)] bg-[#c89a55] p-2 shadow-inner">
               <div
                 className="relative overflow-hidden rounded border border-black/35 bg-[#d7ad68]"
-                aria-label={`${boardSize} by ${boardSize} trace board`}
+                aria-label={t('{size} by {size} trace board', { size: boardSize })}
               >
                 {photoUrl && photoUnderlay && (
                   <img
@@ -1197,7 +1199,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                           }
                           setStoneAt(index, getPhotoBoardTracePaintValue(stones[index] ?? null, toolRef.current));
                         }}
-                        aria-label={`${gtpPoint(index, boardSize)} ${stoneLabel(stone)}`}
+                        aria-label={t('{point} {state}', { point: gtpPoint(index, boardSize), state: t(stoneLabel(stone)) })}
                       >
                         {stone && (
                           <span
@@ -1236,15 +1238,15 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
 
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-lg bg-[var(--ui-surface)] px-2 py-2">
-                <div className="text-[0.6875rem] uppercase tracking-wide ui-text-faint">Black</div>
+                <div className="text-[0.6875rem] uppercase tracking-wide ui-text-faint">{t('Black')}</div>
                 <div className="text-sm font-semibold">{counts.black}</div>
               </div>
               <div className="rounded-lg bg-[var(--ui-surface)] px-2 py-2">
-                <div className="text-[0.6875rem] uppercase tracking-wide ui-text-faint">White</div>
+                <div className="text-[0.6875rem] uppercase tracking-wide ui-text-faint">{t('White')}</div>
                 <div className="text-sm font-semibold">{counts.white}</div>
               </div>
               <div className="rounded-lg bg-[var(--ui-surface)] px-2 py-2">
-                <div className="text-[0.6875rem] uppercase tracking-wide ui-text-faint">Total</div>
+                <div className="text-[0.6875rem] uppercase tracking-wide ui-text-faint">{t('Total')}</div>
                 <div className="text-sm font-semibold">{counts.total}</div>
               </div>
             </div>
@@ -1264,7 +1266,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
             title={clearBoardTitle}
             data-photo-board-clear="true"
           >
-            <span className="inline-flex items-center gap-2"><FaTrash /> Clear</span>
+            <span className="inline-flex items-center gap-2"><FaTrash /> {t('Clear')}</span>
           </button>
           <div className="contents md:flex md:flex-wrap md:items-center md:justify-end md:gap-2">
             <button
@@ -1272,7 +1274,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
               onClick={onClose}
             >
-              Cancel
+              {t('Cancel')}
             </button>
             {onPlayMove && (
               <button
@@ -1282,12 +1284,12 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 onClick={playMove}
                 title={
                   playMoveDelta
-                    ? `Play ${playMoveDelta.player} at ${gtpPoint(playMoveDelta.y * boardSize + playMoveDelta.x, boardSize)}`
-                    : 'Trace exactly one next-player stone to play it as a move'
+                    ? t('Play {player} at {point}', { player: playMoveDelta.player === 'black' ? t('Black') : t('White'), point: gtpPoint(playMoveDelta.y * boardSize + playMoveDelta.x, boardSize) })
+                    : t('Trace exactly one next-player stone to play it as a move')
                 }
               >
                 <span className="inline-flex items-center gap-2">
-                  <FaPlay aria-hidden="true" /> Play Move
+                  <FaPlay aria-hidden="true" /> {t('Play Move')}
                 </span>
               </button>
             )}
@@ -1300,7 +1302,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
                 title={addToCurrentTitle}
               >
                 <span className="inline-flex items-center gap-2">
-                  <FaLayerGroup aria-hidden="true" /> Add to Current
+                  <FaLayerGroup aria-hidden="true" /> {t('Add to Current')}
                 </span>
               </button>
             )}
@@ -1312,7 +1314,7 @@ export const PhotoBoardModal: React.FC<PhotoBoardModalProps> = ({
               title={importBoardTitle}
               data-photo-board-import="true"
             >
-              Import Position
+              {t('Import Position')}
             </button>
           </div>
         </div>

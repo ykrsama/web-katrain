@@ -25,9 +25,9 @@ import { APP_BUILD_LABEL, APP_COMMIT_URL } from '../../utils/appInfo';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 import { useShortcutLabels } from '../../hooks/useShortcutLabels';
 import { formatLibrarySize, formatLibraryTimestamp, type LibraryFile } from '../../utils/library';
-import { getQuickNewGameWarning } from '../../utils/quickNewGame';
 import { APP_LOCALE_OPTIONS, getAppLocaleOption } from '../../utils/locales';
 import type { AppLocaleId, BoardSize } from '../../types';
+import { useT } from '../../i18n';
 
 const MENU_DRAWER_SHORTCUT_IDS = ['new-game', 'save-sgf', 'save-library', 'open-sgf', 'copy-sgf', 'paste-sgf', 'command-palette', 'settings-modal', 'keyboard-help'] as const;
 
@@ -97,8 +97,9 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   recentItems = [],
   onOpenRecent,
 }) => {
+  const t = useT();
   const shortcutLabels = useShortcutLabels(MENU_DRAWER_SHORTCUT_IDS);
-  const quickNewGameWarning = getQuickNewGameWarning(quickNewGameBoardSize);
+  const quickNewGameWarning = t('Quick new game ({size}×{size}): uses your saved defaults and replaces the current game after the unsaved-changes check.', { size: quickNewGameBoardSize });
   const activeLocale = getAppLocaleOption(appLocale);
   const drawerRef = React.useRef<HTMLDivElement>(null);
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
@@ -199,7 +200,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
         <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-3 flex items-start justify-between gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-3" data-menu-header="true">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold" id="menu-title">
-              Menu
+              {t('Menu')}
             </h2>
             <div className="mt-1 text-[0.6875rem] ui-text-faint">
               {APP_COMMIT_URL ? (
@@ -208,8 +209,8 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block max-w-full truncate hover:text-[var(--ui-text)]"
-                  title={`Open build commit: ${APP_BUILD_LABEL}`}
-                  aria-label={`Open build commit ${APP_BUILD_LABEL}`}
+                  title={t('Open build commit: {commit}', { commit: APP_BUILD_LABEL })}
+                  aria-label={t('Open build commit {commit}', { commit: APP_BUILD_LABEL })}
                   data-menu-build-link="true"
                 >
                   {APP_BUILD_LABEL}
@@ -227,15 +228,15 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
               focusInputMode === 'pointer' ? 'menu-drawer-pointer-focus' : '',
             ].join(' ')}
             onClick={onClose}
-            aria-label="Close menu"
+            aria-label={t('Close menu')}
           >
             <FaTimes aria-hidden="true" />
           </button>
         </div>
 
-        <nav className="space-y-4" aria-label="Main menu" data-menu-nav="true">
+        <nav className="space-y-4" aria-label={t('Main menu')} data-menu-nav="true">
           <div>
-            <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">Game</div>
+            <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">{t('Game')}</div>
             <div className={menuActionGrid} data-menu-action-grid="game">
               {onHome && (
                 <button
@@ -245,10 +246,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                     onHome();
                     onClose();
                   }}
-                  aria-label="Open home"
+                  aria-label={t('Open home')}
                 >
                   <span className="flex items-center gap-2">
-                    <FaHome aria-hidden="true" /> Home
+                    <FaHome aria-hidden="true" /> {t('Home')}
                   </span>
                 </button>
               )}
@@ -263,9 +264,9 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                 title={quickNewGameWarning}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <FaBolt className="shrink-0" aria-hidden="true" /> Quick New Game
+                  <FaBolt className="shrink-0" aria-hidden="true" /> {t('Quick New Game')}
                 </span>
-                <span className="mobile-shortcut-hint text-xs ui-text-faint">Defaults</span>
+                <span className="mobile-shortcut-hint text-xs ui-text-faint">{t('Defaults')}</span>
               </button>
               <button
                 type="button"
@@ -274,10 +275,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onNewGame();
                   onClose();
                 }}
-                aria-label={`New game, keyboard shortcut ${shortcutLabels['new-game']}`}
+                aria-label={t('New game, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['new-game'] })}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <FaPlay className="shrink-0" aria-hidden="true" /> New Game
+                  <FaPlay className="shrink-0" aria-hidden="true" /> {t('New Game')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['new-game']}</kbd>
               </button>
@@ -288,7 +289,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onSave();
                   onClose();
                 }}
-                aria-label={`${saveLabel}, keyboard shortcut ${shortcutLabels['save-sgf']}`}
+                aria-label={t('{label}, keyboard shortcut {shortcut}', { label: saveLabel, shortcut: shortcutLabels['save-sgf'] })}
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <FaSave className="shrink-0" aria-hidden="true" /> {saveLabel}
@@ -302,10 +303,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onSaveToLibrary();
                   onClose();
                 }}
-                aria-label={`Save a copy to Library, keyboard shortcut ${shortcutLabels['save-library']}`}
+                aria-label={t('Save a copy to Library, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['save-library'] })}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <FaBook className="shrink-0" aria-hidden="true" /> Save Copy to Library
+                  <FaBook className="shrink-0" aria-hidden="true" /> {t('Save Copy to Library')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['save-library']}</kbd>
               </button>
@@ -316,10 +317,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onLoad();
                   onClose();
                 }}
-                aria-label={`Open SGF file or model weights, keyboard shortcut ${shortcutLabels['open-sgf']}`}
+                aria-label={t('Open SGF file or model weights, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['open-sgf'] })}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <FaFolderOpen className="shrink-0" aria-hidden="true" /> Open SGF / Model
+                  <FaFolderOpen className="shrink-0" aria-hidden="true" /> {t('Open SGF / Model')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['open-sgf']}</kbd>
               </button>
@@ -330,16 +331,16 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onScanBoard();
                   onClose();
                 }}
-                aria-label="Open photo board"
+                aria-label={t('Open photo board')}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <FaCamera className="shrink-0" aria-hidden="true" /> Photo Board
+                  <FaCamera className="shrink-0" aria-hidden="true" /> {t('Photo Board')}
                 </span>
               </button>
             </div>
           </div>
           <div>
-            <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">Edit</div>
+            <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">{t('Edit')}</div>
             <div className={menuActionGrid} data-menu-action-grid="edit">
               <button
                 type="button"
@@ -348,10 +349,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onCopy();
                   onClose();
                 }}
-                aria-label={`Copy SGF, keyboard shortcut ${shortcutLabels['copy-sgf']}`}
+                aria-label={t('Copy SGF, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['copy-sgf'] })}
               >
                 <span className="flex items-center gap-2">
-                  <FaCopy aria-hidden="true" /> Copy SGF
+                  <FaCopy aria-hidden="true" /> {t('Copy SGF')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['copy-sgf']}</kbd>
               </button>
@@ -362,10 +363,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onPaste();
                   onClose();
                 }}
-                aria-label={`Paste SGF or OGS URL, keyboard shortcut ${shortcutLabels['paste-sgf']}`}
+                aria-label={t('Paste SGF or OGS URL, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['paste-sgf'] })}
               >
                 <span className="flex items-center gap-2">
-                  <FaPaste aria-hidden="true" /> Paste SGF / OGS
+                  <FaPaste aria-hidden="true" /> {t('Paste SGF / OGS')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['paste-sgf']}</kbd>
               </button>
@@ -373,7 +374,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
           </div>
           {(onLessons || onScoreQuiz || onRankLadder || onProGames || onGuessMove || onProblem || onDrillMistakes) && (
             <div>
-              <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">Study &amp; Practice</div>
+              <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">{t('Study & Practice')}</div>
               <div className={menuActionGrid} data-menu-action-grid="study">
                 {onLessons && (
                   <button
@@ -384,7 +385,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                       onClose();
                     }}
                   >
-                    <FaGraduationCap aria-hidden="true" /> Lessons
+                    <FaGraduationCap aria-hidden="true" /> {t('Lessons')}
                   </button>
                 )}
                 {onScoreQuiz && (
@@ -396,20 +397,20 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                       onClose();
                     }}
                   >
-                    <FaBalanceScale aria-hidden="true" /> Score Quiz
+                    <FaBalanceScale aria-hidden="true" /> {t('Score Quiz')}
                   </button>
                 )}
                 {onDrillMistakes && (
                   <button
                     type="button"
                     className={menuAction}
-                    title="Replay your mistakes with the answer hidden and find a better move"
+                    title={t('Replay your mistakes with the answer hidden and find a better move')}
                     onClick={() => {
                       onDrillMistakes();
                       onClose();
                     }}
                   >
-                    <FaRedo aria-hidden="true" /> Drill Mistakes
+                    <FaRedo aria-hidden="true" /> {t('Drill Mistakes')}
                   </button>
                 )}
                 {onGuessMove && (
@@ -421,7 +422,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                       onClose();
                     }}
                   >
-                    <FaBullseye aria-hidden="true" /> Guess the Move
+                    <FaBullseye aria-hidden="true" /> {t('Guess the Move')}
                   </button>
                 )}
                 {onProblem && (
@@ -433,7 +434,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                       onClose();
                     }}
                   >
-                    <FaPuzzlePiece aria-hidden="true" /> Problem Practice
+                    <FaPuzzlePiece aria-hidden="true" /> {t('Problem Practice')}
                   </button>
                 )}
                 {onRankLadder && (
@@ -445,7 +446,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                       onClose();
                     }}
                   >
-                    <FaTrophy aria-hidden="true" /> Rank Ladder
+                    <FaTrophy aria-hidden="true" /> {t('Rank Ladder')}
                   </button>
                 )}
                 {onProGames && (
@@ -457,18 +458,18 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                       onClose();
                     }}
                   >
-                    <FaBook aria-hidden="true" /> Pro Game Library
+                    <FaBook aria-hidden="true" /> {t('Pro Game Library')}
                   </button>
                 )}
               </div>
             </div>
           )}
           <div>
-            <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">Settings</div>
+            <div className="px-3 text-xs uppercase tracking-wide ui-text-faint mb-2">{t('Settings')}</div>
             <label htmlFor="menu-app-locale" className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded">
               <span className="flex min-w-0 flex-col">
-                <span className="text-sm text-[var(--ui-text)]">Document language</span>
-                <span className="text-xs ui-text-faint truncate">Metadata · {activeLocale.label}</span>
+                <span className="text-sm text-[var(--ui-text)]">{t('Document language')}</span>
+                <span className="text-xs ui-text-faint truncate">{t('Metadata · {label}', { label: activeLocale.label })}</span>
               </span>
               <select
                 id="menu-app-locale"
@@ -492,10 +493,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onCommandPalette();
                   onClose();
                 }}
-                aria-label={`Open command palette, keyboard shortcut ${shortcutLabels['command-palette']}`}
+                aria-label={t('Open command palette, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['command-palette'] })}
               >
                 <span className="flex items-center gap-2">
-                  <FaSearch aria-hidden="true" /> Command Palette
+                  <FaSearch aria-hidden="true" /> {t('Command Palette')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['command-palette']}</kbd>
               </button>
@@ -506,10 +507,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onSettings();
                   onClose();
                 }}
-                aria-label={`Open settings, keyboard shortcut ${shortcutLabels['settings-modal']}`}
+                aria-label={t('Open settings, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['settings-modal'] })}
               >
                 <span className="flex items-center gap-2">
-                  <FaCog aria-hidden="true" /> Settings
+                  <FaCog aria-hidden="true" /> {t('Settings')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['settings-modal']}</kbd>
               </button>
@@ -520,10 +521,10 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onKeyboardHelp();
                   onClose();
                 }}
-                aria-label={`Open keyboard shortcuts, keyboard shortcut ${shortcutLabels['keyboard-help']}`}
+                aria-label={t('Open keyboard shortcuts, keyboard shortcut {shortcut}', { shortcut: shortcutLabels['keyboard-help'] })}
               >
                 <span className="flex items-center gap-2">
-                  <FaKeyboard aria-hidden="true" /> Keyboard Shortcuts
+                  <FaKeyboard aria-hidden="true" /> {t('Keyboard Shortcuts')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['keyboard-help']}</kbd>
               </button>
@@ -534,12 +535,12 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   onAbout();
                   onClose();
                 }}
-                aria-label="Open about dialog"
+                aria-label={t('Open about dialog')}
               >
                 <span className="flex items-center gap-2">
-                  <FaInfoCircle aria-hidden="true" /> About
+                  <FaInfoCircle aria-hidden="true" /> {t('About')}
                 </span>
-                <span className="text-xs ui-text-faint">Build</span>
+                <span className="text-xs ui-text-faint">{t('Build')}</span>
               </button>
             </div>
           </div>
@@ -547,7 +548,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
 
         {recentItems.length > 0 && onOpenRecent && (
           <div className="mt-2 border-t border-[var(--ui-border)] pt-2 space-y-2" data-menu-recent="true">
-            <div className="text-xs ui-text-faint px-3 uppercase tracking-wide">Recent</div>
+            <div className="text-xs ui-text-faint px-3 uppercase tracking-wide">{t('Recent')}</div>
             <div className="space-y-1">
               {recentItems.slice(0, 3).map((item) => (
                 <button
@@ -561,7 +562,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                 >
                   <div className="truncate">{item.name}</div>
                   <div className="text-[0.6875rem] ui-text-faint">
-                    {item.moveCount} moves · {formatLibrarySize(item.size)} · {formatLibraryTimestamp(item.updatedAt)}
+                    {t('{count} moves', { count: item.moveCount })} · {formatLibrarySize(item.size)} · {formatLibraryTimestamp(item.updatedAt)}
                   </div>
                 </button>
               ))}

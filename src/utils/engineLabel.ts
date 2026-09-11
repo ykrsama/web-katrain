@@ -1,4 +1,5 @@
 import { stripUnsafeFilenameControls } from './filename';
+import { t } from '../i18n';
 
 export function getEngineModelLabel(
   engineModelName: string | null | undefined,
@@ -8,7 +9,7 @@ export function getEngineModelLabel(
   if (cleanEngineName) return cleanEngineName;
   const rawUrl = modelUrl?.trim();
   if (!rawUrl) return null;
-  if (rawUrl.startsWith('blob:')) return 'Uploaded weights';
+  if (rawUrl.startsWith('blob:')) return t('Uploaded weights');
   const cleanUrl = rawUrl.split('#')[0]?.split('?')[0] ?? rawUrl;
   const base = cleanUrl.split('/').pop();
   if (!base) return null;

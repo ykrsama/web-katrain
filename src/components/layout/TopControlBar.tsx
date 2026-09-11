@@ -47,7 +47,7 @@ import { restoreFocusIfUnclaimed } from '../../utils/focusRestore';
 import { UI_THEME_OPTIONS } from '../../utils/uiThemes';
 import { useShortcutLabels } from '../../hooks/useShortcutLabels';
 import { isFullscreenActive, subscribeFullscreenChange, toggleAppFullscreen } from '../../utils/fullscreen';
-import { getQuickNewGameWarning } from '../../utils/quickNewGame';
+import { useT } from '../../i18n';
 
 const TOP_CONTROL_SHORTCUT_IDS = [
   'settings-modal',
@@ -218,11 +218,12 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   isMobile = false,
   analysisCommandBarVisible = false,
 }) => {
+  const t = useT();
   const topIconClass = 'ui-control';
   const shortcutLabels = useShortcutLabels(TOP_CONTROL_SHORTCUT_IDS);
   const withShortcut = (label: string, id: TopControlShortcutId) => `${label} (${shortcutLabels[id]})`;
-  const saveControlTitle = withShortcut(stripShortcutSuffix(saveTitle), 'save-sgf');
-  const quickNewGameTitle = getQuickNewGameWarning(settings.defaultBoardSize);
+  const saveControlTitle = withShortcut(stripShortcutSuffix(t(saveTitle)), 'save-sgf');
+  const quickNewGameTitle = t('Quick new game ({size}×{size}): uses your saved defaults and replaces the current game after the unsaved-changes check.', { size: settings.defaultBoardSize });
   const boardThemeIndex = BOARD_THEME_OPTIONS.findIndex((theme) => theme.value === settings.boardTheme);
   const activeBoardThemeIndex = boardThemeIndex >= 0 ? boardThemeIndex : 0;
   const activeBoardThemeOption = BOARD_THEME_OPTIONS[activeBoardThemeIndex] ?? BOARD_THEME_OPTIONS[0]!;
@@ -394,7 +395,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
       ].filter(Boolean).join(' ')}
       disabled={disabled}
       aria-pressed={on}
-      aria-label={shortcut ? `${label}, shortcut ${shortcut}` : label}
+      aria-label={shortcut ? t('{label}, shortcut {shortcut}', { label, shortcut }) : label}
       onClick={() => { onToggle(); closeViewMenuIfMobile(); }}
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -410,7 +411,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
       {/* Settings column */}
       <div className="flex flex-col border-r border-[var(--ui-border)]">
         {viewToggleRow({
-          label: 'Fullscreen',
+          label: t('Fullscreen'),
           on: isFullscreen,
           shortcut: shortcutLabels.fullscreen,
           onToggle: toggleFullscreen,
@@ -419,76 +420,76 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { closeViewMenu(); onCommandPalette(); }}
         >
-          <span className="flex items-center gap-2"><FaSearch /> Command palette</span><span className="text-xs ui-text-faint">{shortcutLabels['command-palette']}</span>
+          <span className="flex items-center gap-2"><FaSearch /> {t('Command palette')}</span><span className="text-xs ui-text-faint">{shortcutLabels['command-palette']}</span>
         </button>
         <button type="button"
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { closeViewMenu(); onSettings(); }}
         >
-          <span className="flex items-center gap-2"><FaCog /> Settings</span><span className="text-xs ui-text-faint">{shortcutLabels['settings-modal']}</span>
+          <span className="flex items-center gap-2"><FaCog /> {t('Settings')}</span><span className="text-xs ui-text-faint">{shortcutLabels['settings-modal']}</span>
         </button>
         <button type="button"
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { closeViewMenu(); onKeyboardHelp(); }}
         >
-          <span className="flex items-center gap-2"><FaKeyboard /> Keyboard shortcuts</span><span className="text-xs ui-text-faint">{shortcutLabels['keyboard-help']}</span>
+          <span className="flex items-center gap-2"><FaKeyboard /> {t('Keyboard shortcuts')}</span><span className="text-xs ui-text-faint">{shortcutLabels['keyboard-help']}</span>
         </button>
         <button type="button"
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { closeViewMenu(); onAbout(); }}
         >
-          <span className="flex items-center gap-2"><FaInfoCircle /> About</span><span className="text-xs ui-text-faint">Build</span>
+          <span className="flex items-center gap-2"><FaInfoCircle /> {t('About')}</span><span className="text-xs ui-text-faint">{t('Build')}</span>
         </button>
         <div className="mobile-tools-redundant h-px bg-[var(--ui-border)] w-full" />
         <button type="button"
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { onCopySgf(); closeViewMenuIfMobile(); }}
         >
-          <span className="flex items-center gap-2"><FaCopy /> Copy SGF</span><span className="text-xs ui-text-faint">{shortcutLabels['copy-sgf']}</span>
+          <span className="flex items-center gap-2"><FaCopy /> {t('Copy SGF')}</span><span className="text-xs ui-text-faint">{shortcutLabels['copy-sgf']}</span>
         </button>
         <button type="button"
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { closeViewMenu(); onPasteSgf(); }}
         >
-          <span className="flex items-center gap-2"><FaPaste /> Paste SGF/OGS</span><span className="text-xs ui-text-faint">{shortcutLabels['paste-sgf']}</span>
+          <span className="flex items-center gap-2"><FaPaste /> {t('Paste SGF/OGS')}</span><span className="text-xs ui-text-faint">{shortcutLabels['paste-sgf']}</span>
         </button>
         <button type="button"
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { onScanBoard(); closeViewMenu(); }}
         >
-          <span className="flex items-center gap-2"><FaCamera /> Photo Board</span>
+          <span className="flex items-center gap-2"><FaCamera /> {t('Photo Board')}</span>
         </button>
         <div className="mobile-tools-redundant h-px bg-[var(--ui-border)] w-full" />
         {viewToggleRow({
-          label: 'Coordinates',
+          label: t('Coordinates'),
           on: settings.showCoordinates,
           shortcut: shortcutLabels['toggle-coordinates'],
           onToggle: () => updateSettings({ showCoordinates: !settings.showCoordinates }),
         })}
         {viewToggleRow({
-          label: 'Next move preview',
+          label: t('Next move preview'),
           on: settings.showNextMovePreview,
           shortcut: shortcutLabels['toggle-next-move-preview'],
           onToggle: () => updateSettings({ showNextMovePreview: !settings.showNextMovePreview }),
         })}
         {viewToggleRow({
-          label: 'Move numbers',
+          label: t('Move numbers'),
           on: settings.showMoveNumbers,
           shortcut: shortcutLabels['toggle-move-numbers'],
           onToggle: () => updateSettings({ showMoveNumbers: !settings.showMoveNumbers }),
         })}
         {viewToggleRow({
-          label: 'Board controls',
+          label: t('Board controls'),
           on: settings.showBoardControls,
           onToggle: () => updateSettings({ showBoardControls: !settings.showBoardControls }),
         })}
         {viewToggleRow({
-          label: 'Analysis bar',
+          label: t('Analysis bar'),
           on: settings.showAnalysisBar,
           onToggle: () => updateSettings({ showAnalysisBar: !settings.showAnalysisBar }),
         })}
         {viewToggleRow({
-          label: 'Sound',
+          label: t('Sound'),
           on: settings.soundEnabled,
           shortcut: shortcutLabels['toggle-sound'],
           onToggle: () => updateSettings({ soundEnabled: !settings.soundEnabled }),
@@ -499,62 +500,62 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
 
       {/* Overlays and Themes column */}
       <div className="flex flex-col">
-        <div className="px-3 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider bg-[var(--ui-surface-2)]">Analysis Overlays</div>
+        <div className="px-3 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider bg-[var(--ui-surface-2)]">{t('Analysis Overlays')}</div>
         {viewToggleRow({
-          label: 'Children',
+          label: t('Children'),
           on: settings.analysisShowChildren,
           shortcut: shortcutLabels['toggle-children'],
           onToggle: () => updateControls({ analysisShowChildren: !settings.analysisShowChildren }),
         })}
         {viewToggleRow({
-          label: 'Dots',
+          label: t('Dots'),
           on: settings.analysisShowEval,
           shortcut: shortcutLabels['toggle-eval'],
           onToggle: () => updateControls({ analysisShowEval: !settings.analysisShowEval }),
         })}
         {viewToggleRow({
-          label: 'Top moves',
+          label: t('Top moves'),
           on: settings.analysisShowHints,
           shortcut: shortcutLabels['toggle-hints'],
           onToggle: () => updateControls({ analysisShowHints: !settings.analysisShowHints }),
           disabled: settings.analysisShowPolicy,
         })}
         {viewToggleRow({
-          label: 'Heatmap',
+          label: t('Heatmap'),
           on: settings.analysisShowPolicy,
           shortcut: shortcutLabels['toggle-policy'],
           onToggle: () => updateControls({ analysisShowPolicy: !settings.analysisShowPolicy }),
         })}
         {viewToggleRow({
-          label: 'Territory',
+          label: t('Territory'),
           on: settings.analysisShowOwnership,
           shortcut: shortcutLabels['toggle-territory'],
           onToggle: () => updateControls({ analysisShowOwnership: !settings.analysisShowOwnership }),
         })}
 
         <div className="border-t border-[var(--ui-border)] w-full mt-auto" />
-        <div className="px-3 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider bg-[var(--ui-surface-2)] w-full">Themes</div>
+        <div className="px-3 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider bg-[var(--ui-surface-2)] w-full">{t('Themes')}</div>
         <div className="flex flex-col p-3 gap-3">
           <div>
-            <label htmlFor={VIEW_MENU_UI_THEME_ID} className="text-xs ui-text-faint mb-1 block">UI theme</label>
+            <label htmlFor={VIEW_MENU_UI_THEME_ID} className="text-xs ui-text-faint mb-1 block">{t('UI theme')}</label>
             <select
               id={VIEW_MENU_UI_THEME_ID}
               value={settings.uiTheme}
               onChange={(e) => { updateSettings({ uiTheme: e.target.value as GameSettings['uiTheme'] }); closeViewMenuIfMobile(); }}
               className="w-full ui-input border rounded px-2 py-1 text-xs text-[var(--ui-text)]"
             >
-              {UI_THEME_OPTIONS.map((theme) => <option key={theme.value} value={theme.value}>{theme.label}</option>)}
+              {UI_THEME_OPTIONS.map((theme) => <option key={theme.value} value={theme.value}>{t(theme.label)}</option>)}
             </select>
           </div>
           <div>
-            <label htmlFor={VIEW_MENU_BOARD_THEME_ID} className="text-xs ui-text-faint mb-1 block">Board theme</label>
+            <label htmlFor={VIEW_MENU_BOARD_THEME_ID} className="text-xs ui-text-faint mb-1 block">{t('Board theme')}</label>
             <select
               id={VIEW_MENU_BOARD_THEME_ID}
               value={settings.boardTheme}
               onChange={(e) => { updateSettings({ boardTheme: e.target.value as GameSettings['boardTheme'] }); closeViewMenuIfMobile(); }}
               className="w-full ui-input border rounded px-2 py-1 text-xs text-[var(--ui-text)]"
             >
-              {BOARD_THEME_OPTIONS.map((theme) => <option key={theme.value} value={theme.value}>{theme.label}</option>)}
+              {BOARD_THEME_OPTIONS.map((theme) => <option key={theme.value} value={theme.value}>{t(theme.label)}</option>)}
             </select>
           </div>
         </div>
@@ -568,26 +569,26 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   const mobileToolsMenu = (
     <div className="flex flex-col">
       <div className="border-t border-[var(--ui-border)]">
-        <div className={mobileToolsSectionLabel}>AI Tools</div>
+        <div className={mobileToolsSectionLabel}>{t('AI Tools')}</div>
         <div className={mobileToolsActionGrid} data-mobile-tools-action-grid="true" data-mobile-tools-section="ai">
           <button type="button" className={mobileToolsGridBtn} onClick={() => { analyzeExtra('extra'); closeMobileToolsAfterAction(); }}>
             <FaSearchPlus size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Extra analysis</span>
+            <span className="text-sm font-medium">{t('Extra analysis')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['analysis-extra']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { analyzeExtra('equalize'); closeMobileToolsAfterAction(); }}>
             <FaBalanceScale size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Equalize</span>
+            <span className="text-sm font-medium">{t('Equalize')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['analysis-equalize']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { analyzeExtra('sweep'); closeMobileToolsAfterAction(); }}>
             <FaBroom size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Sweep</span>
+            <span className="text-sm font-medium">{t('Sweep')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['analysis-sweep']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { analyzeExtra('alternative'); closeMobileToolsAfterAction(); }}>
             <FaRandom size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Alternative</span>
+            <span className="text-sm font-medium">{t('Alternative')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['analysis-alternative']}</span>
           </button>
           {/* Once selecting starts there is no region yet, so the Clear entry
@@ -605,44 +606,44 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             }}
           >
             <FaCrosshairs size={18} className={isSelectingRegionOfInterest ? 'text-[var(--ui-accent)]' : 'text-[var(--ui-text-muted)]'} />
-            <span className="text-sm font-medium">{isSelectingRegionOfInterest ? 'Cancel region select' : 'Select region'}</span>
+            <span className="text-sm font-medium">{isSelectingRegionOfInterest ? t('Cancel region select') : t('Select region')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['select-region']}</span>
           </button>
           {regionOfInterest && (
             <button type="button" className={`${mobileToolsGridBtn} text-[var(--ui-danger)]`} onClick={() => { setRegionOfInterest(null); closeMobileToolsAfterAction(); }}>
               <FaTimes size={18} />
-              <span className="text-sm font-medium">Clear region</span>
+              <span className="text-sm font-medium">{t('Clear region')}</span>
             </button>
           )}
         </div>
       </div>
 
       <div className="border-t border-[var(--ui-border)]">
-        <div className={mobileToolsSectionLabel}>Game Control</div>
+        <div className={mobileToolsSectionLabel}>{t('Game Control')}</div>
         <div className={mobileToolsActionGrid} data-mobile-tools-action-grid="true" data-mobile-tools-section="game">
           <button type="button" className={mobileToolsGridBtn} onClick={() => { toggleContinuousAnalysis(); closeMobileToolsAfterAction(); }} aria-pressed={isAnalysisMode}>
             <FaChartLine size={18} className={isAnalysisMode ? "text-[var(--ui-accent)]" : "text-[var(--ui-text-muted)]"} />
-            <span className="text-sm font-medium">Cont. analysis</span>
+            <span className="text-sm font-medium">{t('Cont. analysis')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['continuous-analysis']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { makeAiMove(); closeMobileToolsAfterAction(); }}>
             <FaPlay size={18} className="text-[var(--ui-success)]" />
-            <span className="text-sm font-medium">AI move</span>
+            <span className="text-sm font-medium">{t('AI move')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['ai-move']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { toggleInsertMode(); closeMobileToolsAfterAction(); }} aria-pressed={isInsertMode}>
             <FaLayerGroup size={18} className={isInsertMode ? "text-[var(--ui-accent)]" : "text-[var(--ui-text-muted)]"} />
-            <span className="text-sm font-medium">Insert mode</span>
+            <span className="text-sm font-medium">{t('Insert mode')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['toggle-insert']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { selfplayToEnd(); closeMobileToolsAfterAction(); }}>
             <FaFastForward size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Selfplay to end</span>
+            <span className="text-sm font-medium">{t('Selfplay to end')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels.selfplay}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { onOpenTsumegoFrame(); closeMobileToolsAfterAction(); }}>
             <FaBorderAll size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Frame as tsumego</span>
+            <span className="text-sm font-medium">{t('Frame as tsumego')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['tsumego-frame-modal']}</span>
           </button>
           {/* Stop had no touch route at all: its only caller was the analysis
@@ -653,22 +654,22 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             type="button"
             className={mobileToolsGridBtn}
             disabled={!canStopAnalysis}
-            title={canStopAnalysis ? 'Stop the current analysis' : 'No analysis is running'}
+            title={canStopAnalysis ? t('Stop the current analysis') : t('No analysis is running')}
             onClick={() => { analyzeExtra('stop'); closeMobileToolsAfterAction(); }}
           >
             <FaStop size={18} className="text-[var(--ui-danger)]" />
-            <span className="text-sm font-medium">Stop analysis</span>
+            <span className="text-sm font-medium">{t('Stop analysis')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels.escape}</span>
           </button>
           <button
             type="button"
             className={mobileToolsGridBtn}
             disabled={!canResetAnalysis}
-            title={canResetAnalysis ? 'Remove analysis from this position' : 'This position has no analysis'}
+            title={canResetAnalysis ? t('Remove analysis from this position') : t('This position has no analysis')}
             onClick={() => { resetCurrentAnalysis(); closeMobileToolsAfterAction(); }}
           >
             <FaRedoAlt size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Reset analysis</span>
+            <span className="text-sm font-medium">{t('Reset analysis')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['reset-analysis']}</span>
           </button>
           {/* Confirm-gated in Layout: it refuses while a game analysis is
@@ -677,15 +678,15 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             type="button"
             className={mobileToolsGridBtn}
             disabled={!canClearAnalysisCache}
-            title={canClearAnalysisCache ? 'Clear all cached analysis' : isGameAnalysisRunning ? 'Stop game analysis before clearing the cache' : 'Analysis cache is empty'}
+            title={canClearAnalysisCache ? t('Clear all cached analysis') : isGameAnalysisRunning ? t('Stop game analysis before clearing the cache') : t('Analysis cache is empty')}
             onClick={() => { clearAnalysisCache(); closeMobileToolsAfterAction(); }}
           >
             <FaTrash size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Clear cache</span>
+            <span className="text-sm font-medium">{t('Clear cache')}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { rotateBoard(); closeMobileToolsAfterAction(); }}>
             <FaSyncAlt size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Rotate board</span>
+            <span className="text-sm font-medium">{t('Rotate board')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['rotate-board']}</span>
           </button>
           {/* No Photo Board tile: the mobile sheet appends desktopViewMenu below,
@@ -693,37 +694,37 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
               belongs — two tiles for one action in a single open menu. */}
           <button type="button" className={mobileToolsGridBtn} onClick={() => { toggleTeachMode(); closeMobileToolsAfterAction(); }} aria-pressed={isTeachMode}>
             <FaGraduationCap size={18} className={isTeachMode ? "text-[var(--ui-accent)]" : "text-[var(--ui-text-muted)]"} />
-            <span className="text-sm font-medium">Teach mode</span>
+            <span className="text-sm font-medium">{t('Teach mode')}</span>
           </button>
         </div>
       </div>
 
       <div className="border-t border-[var(--ui-border)]">
-        <div className={mobileToolsSectionLabel}>Reports</div>
+        <div className={mobileToolsSectionLabel}>{t('Reports')}</div>
         <div className={mobileToolsActionGrid} data-mobile-tools-action-grid="true" data-mobile-tools-section="reports">
           <button type="button" className={mobileToolsGridBtn} onClick={() => { if (isGameAnalysisRunning && gameAnalysisType === 'quick') stopGameAnalysis(); else startQuickGameAnalysis(); closeMobileToolsAfterAction(); }}>
             <FaChartLine size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">{isGameAnalysisRunning && gameAnalysisType === 'quick' ? 'Stop' : 'Quick graph'}</span>
+            <span className="text-sm font-medium">{isGameAnalysisRunning && gameAnalysisType === 'quick' ? t('Stop') : t('Quick graph')}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { if (isGameAnalysisRunning && gameAnalysisType === 'fast') stopGameAnalysis(); else startFastGameAnalysis(); closeMobileToolsAfterAction(); }}>
             <FaFastForward size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">{isGameAnalysisRunning && gameAnalysisType === 'fast' ? 'Stop' : 'Fast review'}</span>
+            <span className="text-sm font-medium">{isGameAnalysisRunning && gameAnalysisType === 'fast' ? t('Stop') : t('Fast review')}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { setIsGameAnalysisOpen(true); closeViewMenu(); }}>
             <FaRedoAlt size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Re-analyze</span>
+            <span className="text-sm font-medium">{t('Re-analyze')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['game-analysis-modal']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { setIsGameReportOpen(true); closeViewMenu(); }}>
             <FaFileAlt size={18} className="text-[var(--ui-text-muted)]" />
-            <span className="text-sm font-medium">Game report</span>
+            <span className="text-sm font-medium">{t('Game report')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['game-report-modal']}</span>
           </button>
         </div>
       </div>
 
       <div className="border-t border-[var(--ui-border)]">
-        <div className={mobileToolsSectionLabel}>View Options</div>
+        <div className={mobileToolsSectionLabel}>{t('View Options')}</div>
         <div className="mobile-tools-view-options flex flex-col">
           {desktopViewMenu}
         </div>
@@ -739,7 +740,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           the only menu trigger there, leaving the drawer unreachable. */}
       <div className="desktop-shell:hidden shrink-0">
         <IconButton
-          title="Menu"
+          title={t('Menu')}
           onClick={(event) => {
             const inputMode = event.detail === 0 ? 'keyboard' : 'pointer';
             setMobileMenuInputMode(inputMode);
@@ -768,22 +769,22 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         <IconButton title={quickNewGameTitle} onClick={onQuickNewGame} className={topIconClass}>
           <FaBolt />
         </IconButton>
-        <IconButton title={withShortcut('New game', 'new-game')} onClick={onNewGame} className={topIconClass}>
+        <IconButton title={withShortcut(t('New game'), 'new-game')} onClick={onNewGame} className={topIconClass}>
           <FaPlus />
         </IconButton>
         <IconButton title={saveControlTitle} onClick={onSaveSgf} className={topIconClass}>
           <FaSave />
         </IconButton>
-        <IconButton title={withShortcut('Save copy to Library', 'save-library')} onClick={onSaveToLibrary} className={topIconClass}>
+        <IconButton title={withShortcut(t('Save copy to Library'), 'save-library')} onClick={onSaveToLibrary} className={topIconClass}>
           <FaBook />
         </IconButton>
-        <IconButton title={withShortcut('Load SGF, board photo, or model weights', 'open-sgf')} onClick={onLoadSgf} className={topIconClass}>
+        <IconButton title={withShortcut(t('Load SGF, board photo, or model weights'), 'open-sgf')} onClick={onLoadSgf} className={topIconClass}>
           <FaFolderOpen />
         </IconButton>
-        <IconButton title={withShortcut('Paste SGF / OGS', 'paste-sgf')} onClick={onPasteSgf} className={topIconClass}>
+        <IconButton title={withShortcut(t('Paste SGF / OGS'), 'paste-sgf')} onClick={onPasteSgf} className={topIconClass}>
           <FaPaste />
         </IconButton>
-        <IconButton title="Photo Board" onClick={onScanBoard} className={topIconClass}>
+        <IconButton title={t('Photo Board')} onClick={onScanBoard} className={topIconClass}>
           <FaCamera />
         </IconButton>
       </div>
@@ -815,12 +816,12 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
       <div className="hidden 2xl:flex items-center gap-1.5 text-xs shrink-0">
         {winRateLabel && (
           <div className="px-2 py-0.5 rounded-md ui-success-soft border text-[var(--ui-success)] font-medium">
-            B win {winRateLabel}
+            {t('B win {win}', { win: winRateLabel })}
           </div>
         )}
         {scoreLeadLabel && (
           <div className="px-2 py-0.5 rounded-md bg-[var(--ui-warning-soft)] border border-[var(--ui-warning)] text-[var(--ui-warning)] font-medium">
-            Score {scoreLeadLabel}
+            {t('Score {score}', { score: scoreLeadLabel })}
           </div>
         )}
         {pointsLostLabel && (
@@ -836,7 +837,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           <button
             type="button"
             className="px-2 py-0.5 rounded-md border ui-success-soft text-xs font-semibold hover:brightness-110 transition-colors"
-            title="Region of interest active (tap to clear)"
+            title={t('Region of interest active (tap to clear)')}
             onClick={() => setRegionOfInterest(null)}
           >
             ROI
@@ -844,12 +845,12 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         )}
         {isInsertMode && (
           <div className="px-2 py-0.5 rounded-md border ui-accent-soft text-xs font-semibold">
-            Insert
+            {t('Insert')}
           </div>
         )}
         {isEditMode && (
           <div className="px-2 py-0.5 rounded-md border border-[var(--ui-warning)] bg-[var(--ui-warning-soft)] text-[var(--ui-warning)] text-xs font-semibold">
-            Edit
+            {t('Edit')}
           </div>
         )}
       </div>
@@ -864,7 +865,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
                 ? 'border border-transparent text-[var(--ui-accent)] shadow-[inset_0_-2px_0_var(--ui-accent)]'
                 : 'border border-transparent text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]',
             ].join(' ')}
-            title={withShortcut('Toggle analysis mode', 'toggle-analysis')}
+            title={withShortcut(t('Toggle analysis mode'), 'toggle-analysis')}
             /* The accent colour and underline say whether analysis is on; without
                aria-pressed this reads as a plain "Analyze" button either way, and
                it is the only analysis switch on a phone. The dot beside it is
@@ -873,7 +874,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             onClick={toggleAnalysisMode}
           >
             <span className={['inline-block h-2 w-2 rounded-full', engineDot].join(' ')} />
-            Analyze
+            {t('Analyze')}
           </button>
         )}
       </div>
@@ -886,9 +887,9 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
               type="button"
               className={mobileHeaderToggleClass}
               onClick={() => updateSettings({ soundEnabled: !settings.soundEnabled })}
-              aria-label={settings.soundEnabled ? `Sound on. Tap to mute. Shortcut ${shortcutLabels['toggle-sound']}` : `Sound off. Tap to turn on. Shortcut ${shortcutLabels['toggle-sound']}`}
+              aria-label={settings.soundEnabled ? t('Sound on. Tap to mute. Shortcut {shortcut}', { shortcut: shortcutLabels['toggle-sound'] }) : t('Sound off. Tap to turn on. Shortcut {shortcut}', { shortcut: shortcutLabels['toggle-sound'] })}
               aria-pressed={settings.soundEnabled}
-              title={settings.soundEnabled ? withShortcut('Sound on. Tap to mute.', 'toggle-sound') : withShortcut('Sound off. Tap to turn on.', 'toggle-sound')}
+              title={settings.soundEnabled ? withShortcut(t('Sound on. Tap to mute.'), 'toggle-sound') : withShortcut(t('Sound off. Tap to turn on.'), 'toggle-sound')}
               data-mobile-sound-toggle="true"
             >
               {settings.soundEnabled ? <FaVolumeUp aria-hidden="true" /> : <FaVolumeMute aria-hidden="true" />}
@@ -897,8 +898,8 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
               type="button"
               className={mobileHeaderToggleClass}
               onClick={cycleBoardTheme}
-              aria-label={`Board theme: ${activeBoardThemeOption.label}. Tap for ${nextBoardThemeOption.label}.`}
-              title={`Board theme: ${activeBoardThemeOption.label}. Tap for ${nextBoardThemeOption.label}.`}
+              aria-label={t('Board theme: {current}. Tap for {next}.', { current: activeBoardThemeOption.label, next: nextBoardThemeOption.label })}
+              title={t('Board theme: {current}. Tap for {next}.', { current: activeBoardThemeOption.label, next: nextBoardThemeOption.label })}
               data-mobile-board-theme-cycle="true"
               data-current-board-theme={activeBoardThemeOption.value}
               data-next-board-theme={nextBoardThemeOption.value}
@@ -925,13 +926,13 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           </>
         )}
         <div className="hidden 2xl:flex items-center gap-1.5">
-          <IconButton title={withShortcut('Command palette', 'command-palette')} onClick={onCommandPalette} className={topIconClass}>
+          <IconButton title={withShortcut(t('Command palette'), 'command-palette')} onClick={onCommandPalette} className={topIconClass}>
             <FaSearch />
           </IconButton>
-          <IconButton title={withShortcut('Settings', 'settings-modal')} onClick={onSettings} className={topIconClass}>
+          <IconButton title={withShortcut(t('Settings'), 'settings-modal')} onClick={onSettings} className={topIconClass}>
             <FaCog />
           </IconButton>
-          <IconButton title={withShortcut('Keyboard shortcuts', 'keyboard-help')} onClick={onKeyboardHelp} className={topIconClass}>
+          <IconButton title={withShortcut(t('Keyboard shortcuts'), 'keyboard-help')} onClick={onKeyboardHelp} className={topIconClass}>
             <FaKeyboard />
           </IconButton>
         </div>
@@ -942,7 +943,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         >
           {isMobile ? (
             <IconButton
-              title="Tools"
+              title={t('Tools')}
               buttonRef={viewMenuButtonRef}
               onPointerDown={() => updateMobileToolsInputMode('pointer')}
               onClick={(event) => {
@@ -969,12 +970,12 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
               onClick={() => {
                 setViewMenuOpen(!viewMenuOpen);
               }}
-              title="View options"
+              title={t('View options')}
               aria-haspopup="dialog"
               aria-expanded={viewMenuOpen}
               aria-controls={viewPopoverId}
             >
-              <FaSlidersH size={14} /> View <FaChevronDown size={10} className="opacity-80" />
+              <FaSlidersH size={14} /> {t('View')} <FaChevronDown size={10} className="opacity-80" />
             </button>
           )}
           {viewMenuOpen && (
@@ -1003,7 +1004,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
                     className="sticky top-0 z-10 ui-bar ui-bar-height ui-bar-pad border-b flex items-center justify-between bg-[var(--ui-bar)]/95 backdrop-blur-md"
                     data-mobile-tools-header="true"
                   >
-                    <div id={mobileToolsTitleId} className="text-sm font-semibold">Tools</div>
+                    <div id={mobileToolsTitleId} className="text-sm font-semibold">{t('Tools')}</div>
                     <button
                       ref={mobileToolsCloseRef}
                       type="button"
@@ -1015,8 +1016,8 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
                         true,
                         event.detail === 0 ? 'keyboard' : 'pointer',
                       )}
-                      aria-label="Close tools"
-                      title="Close tools"
+                      aria-label={t('Close tools')}
+                      title={t('Close tools')}
                     >
                       <FaTimes />
                     </button>
@@ -1035,7 +1036,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
                 aria-labelledby={viewPopoverTitleId}
                 data-top-view-menu="true"
               >
-                <div id={viewPopoverTitleId} className="sr-only">View options</div>
+                <div id={viewPopoverTitleId} className="sr-only">{t('View options')}</div>
                 {desktopViewMenu}
               </div>
             )

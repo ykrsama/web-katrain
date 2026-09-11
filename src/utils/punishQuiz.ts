@@ -2,6 +2,7 @@ import type { CandidateMove, GameNode } from '../types';
 import { computeNodePointsLost } from './nodeAnalysis';
 import { BLUNDER_LOSS } from './moveTreeNodeMarkers';
 import { formatBoardMoveLabel } from './playedMoveQuality';
+import { t } from '../i18n';
 
 // Auto-triggered "find the punish" quiz: offered when the move just played
 // was a blunder and the position has analysis to grade a guess against.
@@ -67,14 +68,20 @@ export function gradePunishGuess(node: GameNode, guess: { x: number; y: number }
 }
 
 export function punishQuizPromptText(prompt: PunishQuizPrompt): string {
-  return `${prompt.blunderer} just lost ${prompt.pointsLost.toFixed(1)} points — find the punish!`;
+  return t('{blunderer} just lost {points} points — find the punish!', {
+    blunderer: t(prompt.blunderer),
+    points: prompt.pointsLost.toFixed(1),
+  });
 }
 
 export function punishQuizVerdictText(verdict: PunishQuizVerdict): string {
-  if (verdict.verdict === 'best') return `Spot on — ${verdict.bestLabel} is the engine's top punish.`;
+  if (verdict.verdict === 'best') return t("Spot on — {move} is the engine's top punish.", { move: verdict.bestLabel });
   if (verdict.verdict === 'close') {
     const lost = verdict.guessPointsLost ?? 0;
-    return `${verdict.guessLabel} works (−${lost.toFixed(1)} vs best). Engine's pick: ${verdict.bestLabel}.`;
+    return t(
+      "{guess} works (−{lost} vs best). Engine's pick: {move}.",
+      { guess: verdict.guessLabel, lost: lost.toFixed(1), move: verdict.bestLabel }
+    );
   }
-  return `Not quite — the engine punishes with ${verdict.bestLabel}.`;
+  return t('Not quite — the engine punishes with {move}.', { move: verdict.bestLabel });
 }

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { FaEdit, FaSave, FaStickyNote, FaTimes, FaMinus, FaPlus } from 'react-icons/fa';
 import { shallow } from 'zustand/shallow';
+import { useT, t as translate } from '../i18n';
 import { useGameStore } from '../store/gameStore';
 import type { CandidateMove, FloatArray, GameNode, Move, Player } from '../types';
 import { formatRootInfoText } from '../utils/gameInfoText';
@@ -35,17 +36,17 @@ const clampNoteFontScale = (value: number): number => {
 };
 
 function moveToLabel(move: Move | null, boardSize: number): string {
-  if (!move) return 'Root';
-  if (move.x < 0 || move.y < 0) return 'Pass';
+  if (!move) return translate('Root');
+  if (move.x < 0 || move.y < 0) return translate('Pass');
   const col = String.fromCharCode(65 + (move.x >= 8 ? move.x + 1 : move.x));
   const row = boardSize - move.y;
   return `${col}${row}`;
 }
 
 function noMoveNodeLabel(currentNode: GameNode): string {
-  if (!currentNode.parent) return 'Root';
-  if (isGameNodeStep(currentNode)) return `Setup ${getCurrentLineMoveNumber(currentNode)}`;
-  return 'Node';
+  if (!currentNode.parent) return translate('Root');
+  if (isGameNodeStep(currentNode)) return translate('Setup {n}', { n: getCurrentLineMoveNumber(currentNode) });
+  return translate('Node');
 }
 
 function playerToShort(player: Player): string {
@@ -286,6 +287,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
     }),
     shallow
   );
+  const t = useT();
   const fontScale = clampNoteFontScale(noteFontScale ?? 1);
   const adjustNoteFontScale = (delta: number) => {
     updateSettings({ noteFontScale: clampNoteFontScale(fontScale + delta) });
@@ -349,7 +351,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
     topMove?.x == null
       ? null
       : topMove.x < 0 || topMove.y < 0
-        ? 'Pass'
+        ? t('Pass')
         : `${String.fromCharCode(65 + (topMove.x >= 8 ? topMove.x + 1 : topMove.x))}${boardSize - topMove.y}`;
 
   const showInfoBlock = showInfo || detailed;
@@ -358,7 +360,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   const shortcutLabels = useShortcutLabels(NOTE_SHORTCUT_IDS);
   const currentNote = currentNode.note ?? '';
   const noteHasContent = currentNote.trim().length > 0;
-  const noteActionLabel = noteHasContent ? 'Edit note' : 'Add note';
+  const noteActionLabel = noteHasContent ? t('Edit note') : t('Add note');
   const noteShortcutLabel = shortcutLabels['edit-note'];
   const noteActionTitle = noteShortcutLabel === 'Disabled' ? noteActionLabel : `${noteActionLabel} (${noteShortcutLabel})`;
   const [isEditingNote, setIsEditingNote] = React.useState(false);
@@ -497,15 +499,15 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   const touchOnly = useMemo(() => mediaQueryMatches(TOUCH_ONLY_MEDIA), []);
 
   const analysisStatusText = useMemo(() => {
-    if (!isAnalysisMode) return touchOnly ? 'Analysis off' : 'Analysis off (Tab to enable)';
-    if (engineStatus === 'error') return engineError ? `Engine error: ${engineError}` : 'Engine error';
+    if (!isAnalysisMode) return touchOnly ? t('Analysis off') : t('Analysis off (Tab to enable)');
+    if (engineStatus === 'error') return engineError ? t('Engine error: {error}', { error: engineError }) : t('Engine error');
     // Turning analysis on before the engine is up left this saying "Analyzing
     // move..." while a ~30MB model was still downloading and compiling —
     // nothing was being analyzed, and the wait reads as a stall. Say what the
     // header pill says, from the same constant, rather than a third wording.
     if (engineStatus === 'loading') return `${ENGINE_LOADING_LABEL}…`;
-    return 'Analyzing move...';
-  }, [engineError, engineStatus, isAnalysisMode, touchOnly]);
+    return t('Analyzing move...');
+  }, [engineError, engineStatus, isAnalysisMode, touchOnly, t]);
 
   const infoText = (() => {
     if (!showInfoBlock) return '';
@@ -515,7 +517,9 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
     }
 
     if (!move) {
-      return `${currentNoMoveLabel}\n${playerToShort(currentNode.gameState.currentPlayer)} to play`;
+      return t('{line} to play', {
+        line: `${currentNoMoveLabel}\n${playerToShort(currentNode.gameState.currentPlayer)}`,
+      });
     }
 
     // The move line needs nothing from the engine — it is the move that was
@@ -523,7 +527,11 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
     // with analysis off got a status string where the move should be, under a
     // heading that already says the analysis is off. Lead with the move either
     // way and let the status follow it.
-    const moveLine = `Move ${depth}: ${playerToShort(move.player)} ${label}\n`;
+    const moveLine = `${t('Move {depth}: {player} {label}', {
+      depth,
+      player: playerToShort(move.player),
+      label,
+    })}\n`;
 
     if (!currentNode.analysis) return `${moveLine}${analysisStatusText}`;
 
@@ -531,30 +539,33 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
 
     if (showProDetails && topMove && topMoveLabel) {
       const topScore = typeof topMove.scoreLead === 'number' ? `${topMove.scoreLead > 0 ? '+' : ''}${topMove.scoreLead.toFixed(1)}` : '?';
-      if (topMoveLabel !== label) text += `Top move: ${topMoveLabel} (${topScore})\n`;
-      else text += 'Best move\n';
-      if (topMove.pv && topMove.pv.length > 0) text += `PV: ${playerToShort(move.player)} ${topMove.pv.join(' ')}\n`;
+      if (topMoveLabel !== label) text += `${t('Top move: {label} ({score})', { label: topMoveLabel, score: topScore })}\n`;
+      else text += `${t('Best move')}\n`;
+      if (topMove.pv && topMove.pv.length > 0) text += `${t('PV: {player} {pv}', { player: playerToShort(move.player), pv: topMove.pv.join(' ') })}\n`;
     }
 
     if (showProDetails && policyStats?.rank) {
-      text += `Policy rank: #${policyStats.rank} (${(policyStats.prob * 100).toFixed(2)}%)\n`;
+      text += `${t('Policy rank: #{rank} ({pct}%)', { rank: policyStats.rank, pct: (policyStats.prob * 100).toFixed(2) })}\n`;
       if (policyStats.rank !== 1 && policyStats.best) {
-        text += `Policy best: ${policyStats.best.isPass ? 'Pass' : moveToLabel({ x: policyStats.best.x, y: policyStats.best.y, player: move.player }, boardSize)} (${(policyStats.best.prob * 100).toFixed(2)}%)\n`;
+        text += `${t('Policy best: {label} ({pct}%)', {
+          label: policyStats.best.isPass ? t('Pass') : moveToLabel({ x: policyStats.best.x, y: policyStats.best.y, player: move.player }, boardSize),
+          pct: (policyStats.best.prob * 100).toFixed(2),
+        })}\n`;
       }
     }
 
     if (showProDetails && humanStats) {
       const rankPart = humanStats.rank ? ` #${humanStats.rank}` : '';
-      text += `Human ${humanProfileLabel}${rankPart}: ${(humanStats.prob * 100).toFixed(2)}%\n`;
+      text += `${t('Human {profile}{rankPart}: {pct}%', { profile: humanProfileLabel, rankPart, pct: (humanStats.prob * 100).toFixed(2) })}\n`;
       if (humanStats.rank !== 1 && humanStats.best) {
         const bestLabel = humanStats.best.isPass
-          ? 'Pass'
+          ? t('Pass')
           : moveToLabel({ x: humanStats.best.x, y: humanStats.best.y, player: move.player }, boardSize);
-        text += `Human pick: ${bestLabel} (${(humanStats.best.prob * 100).toFixed(2)}%)\n`;
+        text += `${t('Human pick: {label} ({pct}%)', { label: bestLabel, pct: (humanStats.best.prob * 100).toFixed(2) })}\n`;
       }
     }
 
-    if (showProDetails && currentNode.aiThoughts) text += `\nAI thoughts: ${currentNode.aiThoughts}`;
+    if (showProDetails && currentNode.aiThoughts) text += `\n${t('AI thoughts: {ai}', { ai: currentNode.aiThoughts })}`;
 
     return text;
   })();
@@ -585,7 +596,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
         >
           <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
             <div className="min-w-0">
-              <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">Shape coach</div>
+              <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Shape coach')}</div>
               <div className="truncate font-semibold text-[var(--ui-text)]">{moveInsight.label}</div>
             </div>
             <span className="shrink-0 rounded border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-1.5 py-0.5 text-[0.625rem] font-semibold capitalize text-[var(--ui-accent)]">
@@ -594,12 +605,12 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
           </div>
           <div className="grid gap-1.5">
             <div>
-              <span className="font-semibold text-[var(--ui-text)]">Beginner: </span>
+              <span className="font-semibold text-[var(--ui-text)]">{t('Beginner')}: </span>
               <span className="ui-text-muted">{moveInsightCoach.beginner}</span>
             </div>
             {showProDetails && (
               <div>
-                <span className="font-semibold text-[var(--ui-text)]">Pro: </span>
+                <span className="font-semibold text-[var(--ui-text)]">{t('Pro')}: </span>
                 <span className="ui-text-muted">{moveInsightCoach.pro}</span>
               </div>
             )}
@@ -617,13 +628,13 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
               className="panel-action-button"
               onClick={addShapeCoachToNote}
               disabled={hasShapeCoachNoteBlock}
-              title={hasShapeCoachNoteBlock ? 'Shape Coach is already in this note' : 'Add Shape Coach to note'}
+              title={hasShapeCoachNoteBlock ? t('Shape Coach is already in this note') : t('Add Shape Coach to note')}
               aria-label={hasShapeCoachNoteBlock
-                ? `In note: ${moveInsight.label} Shape Coach is already in this note`
-                : `Add to note: ${moveInsight.label} Shape Coach`}
+                ? t('{label} Shape Coach is already in this note', { label: moveInsight.label })
+                : t('Add to note: {label} Shape Coach', { label: moveInsight.label })}
             >
               <FaStickyNote size={11} aria-hidden="true" />
-              <span>{hasShapeCoachNoteBlock ? 'In note' : 'Add to note'}</span>
+              <span>{hasShapeCoachNoteBlock ? t('In note') : t('Add to note')}</span>
             </button>
             {moveInsight.learnMoreUrl ? (
               <a
@@ -631,9 +642,9 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                 target="_blank"
                 rel="noopener noreferrer"
                 className="panel-action-button font-semibold text-[var(--ui-accent)]"
-                aria-label={`Learn more about ${moveInsight.label}`}
+                aria-label={t('Learn more about {label}', { label: moveInsight.label })}
               >
-                Learn more
+                {t('Learn more')}
               </a>
             ) : null}
           </div>
@@ -649,18 +660,18 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <div className="text-xs font-semibold ui-text-faint" title="Saved as an SGF comment (C property) with the game">Note</div>
+              <div className="text-xs font-semibold ui-text-faint" title={t('Saved as an SGF comment (C property) with the game')}>{t('Note')}</div>
               {/* Nothing to size until there is text: the steppers only stood
                   next to an empty placeholder. */}
               {(noteHasContent || isEditingNote) && (
-              <div className="flex items-center rounded border border-[var(--ui-border)] bg-[var(--ui-surface)]" role="group" aria-label="Note text size">
+              <div className="flex items-center rounded border border-[var(--ui-border)] bg-[var(--ui-surface)]" role="group" aria-label={t('Note text size')}>
                 <button
                   type="button"
                   className="grid h-11 w-11 place-items-center text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] disabled:opacity-40 desktop-shell:h-7 desktop-shell:w-7"
                   onClick={() => adjustNoteFontScale(-NOTE_FONT_SCALE_STEP)}
                   disabled={fontScale <= NOTE_FONT_SCALE_MIN + 0.001}
-                  title="Smaller note text"
-                  aria-label="Decrease note text size"
+                  title={t('Smaller note text')}
+                  aria-label={t('Decrease note text size')}
                 >
                   <FaMinus size={9} aria-hidden="true" />
                 </button>
@@ -669,8 +680,8 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                   className="grid h-11 w-11 place-items-center text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] disabled:opacity-40 desktop-shell:h-7 desktop-shell:w-7"
                   onClick={() => adjustNoteFontScale(NOTE_FONT_SCALE_STEP)}
                   disabled={fontScale >= NOTE_FONT_SCALE_MAX - 0.001}
-                  title="Larger note text"
-                  aria-label="Increase note text size"
+                  title={t('Larger note text')}
+                  aria-label={t('Increase note text size')}
                 >
                   <FaPlus size={9} aria-hidden="true" />
                 </button>
@@ -683,23 +694,23 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                   type="button"
                   className="panel-action-button"
                   onClick={saveNote}
-                  title="Save note (Enter, Ctrl+S, Cmd+S)"
-                  aria-label="Save note, keyboard shortcut Enter, Control+S, or Command+S"
+                  title={t('Save note (Enter, Ctrl+S, Cmd+S)')}
+                  aria-label={t('Save note, keyboard shortcut Enter, Control+S, or Command+S')}
                   data-note-save="true"
                 >
                   <FaSave size={11} aria-hidden="true" />
-                  <span>Save</span>
+                  <span>{t('Save')}</span>
                 </button>
                 <button
                   type="button"
                   className="panel-action-button"
                   onClick={cancelNoteEdit}
-                  title="Cancel note edit (Escape)"
-                  aria-label="Cancel note edit, keyboard shortcut Escape"
+                  title={t('Cancel note edit (Escape)')}
+                  aria-label={t('Cancel note edit, keyboard shortcut Escape')}
                   data-note-cancel="true"
                 >
                   <FaTimes size={11} aria-hidden="true" />
-                  <span>Cancel</span>
+                  <span>{t('Cancel')}</span>
                 </button>
               </div>
             ) : noteHasContent ? (
@@ -711,12 +722,12 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                 aria-label={
                   noteShortcutLabel === 'Disabled'
                     ? noteActionLabel
-                    : `${noteActionLabel}, keyboard shortcut ${noteShortcutLabel}`
+                    : t('{label}, keyboard shortcut {shortcut}', { label: noteActionLabel, shortcut: noteShortcutLabel })
                 }
                 data-note-edit="true"
               >
                 <FaEdit size={11} aria-hidden="true" />
-                <span>Edit</span>
+                <span>{t('Edit')}</span>
                 {noteShortcutLabel !== 'Disabled' && (
                   <kbd className="font-mono text-[0.625rem] ui-text-faint">{noteShortcutLabel}</kbd>
                 )}
@@ -730,11 +741,11 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
               onChange={(e) => setNoteDraft(e.target.value)}
               onKeyDown={handleNoteKeyDown}
               onFocus={scrollNoteEditorIntoView}
-              aria-label="User note"
+              aria-label={t('User note')}
               aria-keyshortcuts="Enter Control+S Meta+S Escape"
               data-note-editor="true"
               data-note-keyboard-aware="true"
-              placeholder="Write a note for this position..."
+              placeholder={t('Write a note for this position...')}
               className="w-full min-h-[88px] max-h-44 ui-input rounded p-2 border focus:border-[var(--ui-accent)] outline-none text-sm font-mono resize-y"
               style={{
                 fontSize: `${fontScale * 0.875}rem`,
@@ -760,8 +771,8 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                 <NotePreview note={currentNote} />
               ) : (
                 <div className="flex h-full min-h-[4.5rem] flex-col items-center justify-center text-xs ui-text-faint">
-                  <span className="font-semibold text-[var(--ui-text-muted)]">Add a note</span>
-                  <span>{noteShortcutLabel === 'Disabled' || touchOnly ? 'Select this area to start writing' : `Select this area or press ${noteShortcutLabel}`}</span>
+                  <span className="font-semibold text-[var(--ui-text-muted)]">{t('Add a note')}</span>
+                  <span>{noteShortcutLabel === 'Disabled' || touchOnly ? t('Select this area to start writing') : t('Select this area or press {shortcut}', { shortcut: noteShortcutLabel })}</span>
                 </div>
               )}
             </div>
