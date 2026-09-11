@@ -20,7 +20,7 @@ export default {
   // "captured stones" insight (previously mapped to '提子' by zh/reports.ts);
   // the glossary for the modals maps it to 拍照, which is what the camera
   // button needs. The shared key cannot carry both meanings — see the report.
-  'Capture': '拍照',
+  //'Capture': '拍照',
 
   // ================= CommandPaletteModal =================
   'Command Palette': '命令面板',
