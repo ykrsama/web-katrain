@@ -888,14 +888,6 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <button type="button" className="iconbtn drawer-close" title="Close" style={{ margin: '6px 6px 6px 0' }} onClick={() => setSidebarOpen(false)}><Icon name="x" size={14} /></button>
           </div>
           <div className="sidebar-scroll">
-            {/* Game info */}
-            <div className={`section${sections.info ? ' open' : ''}`}>
-              {sectionHead('info', 'Game info', 'info')}
-              <div className="section-body">
-                <GameInfoPanel />
-              </div>
-            </div>
-
             {/* Game tree */}
             <div className={`section${sections.tree ? ' open' : ''}`}>
               {sectionHead('tree', 'Game tree', 'sitemap')}
@@ -1100,6 +1092,14 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     other shell honours it, this one used to show the PV and
                     policy text regardless. */}
                 <NotesPanel showInfo detailed={!(mode === 'play' && settings.trainerLockAi)} showNotes />
+              </div>
+            </div>
+
+            {/* Game info */}
+            <div className={`section${sections.info ? ' open' : ''}`}>
+              {sectionHead('info', 'Game info', 'info')}
+              <div className="section-body">
+                <GameInfoPanel />
               </div>
             </div>
           </div>
