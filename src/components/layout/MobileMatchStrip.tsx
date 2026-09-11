@@ -70,7 +70,9 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
   boardSize,
   komi,
   handicap,
-}) => (
+}) => {
+  const t = useT();
+  return (
   <div className="mobile-match-strip" role="group" aria-label={t('Match status')} data-mobile-match-strip="true">
     <MatchPlayer
       color="black"
@@ -94,6 +96,7 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
       <span className="mobile-match-fact">komi {komi}</span>
     </div>
   </div>
-);
+  );
+};
 
 MobileMatchStrip.displayName = 'MobileMatchStrip';
