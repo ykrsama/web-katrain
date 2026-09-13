@@ -35,6 +35,11 @@ describe('shape coach display setting', () => {
     expect(layout).toContain('const shapeCoachEnabled = settings.showShapeCoach;');
     expect(layout).toContain('updateSettings({ showShapeCoach: !settings.showShapeCoach })');
     expect(layout).toContain('shapeCoachEnabled={shapeCoachEnabled}');
+
+    // The desktop dashboard mounts its own NotesPanel, so it has to forward the
+    // setting too; otherwise the coach vanishes there and no switch brings it back.
+    const dashboard = read('src/components/dashboard/DesktopDashboard.tsx');
+    expect(dashboard).toContain('showShapeCoach={settings.showShapeCoach}');
   });
 
   it('no longer lives in the transient UI layout state', () => {

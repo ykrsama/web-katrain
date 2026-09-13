@@ -1080,7 +1080,12 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 {/* "Lock AI details (Play mode)" is a teacher's setting; the
                     other shell honours it, this one used to show the PV and
                     policy text regardless. */}
-                <NotesPanel showInfo detailed={!(mode === 'play' && settings.trainerLockAi)} showNotes />
+                <NotesPanel
+                  showInfo
+                  detailed={!(mode === 'play' && settings.trainerLockAi)}
+                  showNotes
+                  showShapeCoach={settings.showShapeCoach}
+                />
               </div>
             </div>
 
