@@ -25,8 +25,8 @@ describe('visit preset utilities', () => {
   });
 
   it('merges the current custom value into sorted presets', () => {
-    expect(mergeVisitPresets(ANALYSIS_VISIT_PRESETS, 750)).toEqual([500, 750, 5000, 50000, 500000]);
-    expect(mergeVisitPresets(ANALYSIS_VISIT_PRESETS, 5000)).toEqual([500, 5000, 50000, 500000]);
+    expect(mergeVisitPresets(ANALYSIS_VISIT_PRESETS, 750)).toEqual([500, 750, 5000, 50000, 300000]);
+    expect(mergeVisitPresets(ANALYSIS_VISIT_PRESETS, 5000)).toEqual([500, 5000, 50000, 300000]);
   });
 
   it('labels default and depth bands', () => {
@@ -35,20 +35,20 @@ describe('visit preset utilities', () => {
     expect(visitPresetLabel(500)).toBe('Fast');
     expect(visitPresetLabel(5000)).toBe('Balanced');
     expect(visitPresetLabel(50000)).toBe('Deep');
-    expect(visitPresetLabel(500000)).toBe('Thorough');
+    expect(visitPresetLabel(300000)).toBe('Thorough');
   });
 
   it('describes preset depth tradeoffs for the live selector', () => {
     expect(visitPresetDescription(500)).toMatch(/minimal waiting/i);
     expect(visitPresetDescription(5000)).toMatch(/steady feedback/i);
     expect(visitPresetDescription(50000)).toMatch(/deeper reading/i);
-    expect(visitPresetDescription(500000)).toMatch(/slower/i);
+    expect(visitPresetDescription(300000)).toMatch(/slower/i);
   });
 
   it('cycles to the next merged live preset', () => {
     expect(nextVisitPreset(500)).toBe(5000);
     expect(nextVisitPreset(750)).toBe(5000);
-    expect(nextVisitPreset(500000)).toBe(500);
+    expect(nextVisitPreset(300000)).toBe(500);
     expect(nextVisitPreset(ENGINE_MAX_VISITS, [16, 250, 1000, 5000, ENGINE_MAX_VISITS])).toBe(16);
   });
 

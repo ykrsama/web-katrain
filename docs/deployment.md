@@ -56,9 +56,23 @@ devices) or a higher one:
 VITE_KATAGO_MAX_VISITS=250000 npm run build
 ```
 
-The value must be a positive integer; anything else falls back to 500,000. Note
-that `ENGINE_MAX_TIME_MS` (5 minutes) still cuts a search off, so a large cap only
-matters if the maximum time is raised to match.
+The value must be a positive integer; anything else falls back to 500,000.
+
+## Analysis Time Cap
+
+The browser engine also refuses to search longer than `ENGINE_MAX_TIME_MS`
+(`src/engine/katago/limits.ts`), which defaults to 10 minutes. Every engine call
+clamps its own maximum time to it, so a large visit cap only matters if the time
+cap is raised to match.
+
+Override the default at build time:
+
+```sh
+VITE_KATAGO_MAX_TIME_MS=1200000 npm run build
+```
+
+The value is a positive integer in milliseconds; anything else falls back to
+600,000 (10 minutes).
 
 ## GitHub Pages
 

@@ -91,7 +91,9 @@ search. A normal analysis request can control:
 
 - Visits and maximum time. The visit ceiling is `ENGINE_MAX_VISITS`
   (`src/engine/katago/limits.ts`), 500,000 by default and overridable at build
-  time with `VITE_KATAGO_MAX_VISITS`; every request is clamped to it.
+  time with `VITE_KATAGO_MAX_VISITS`; the time ceiling is
+  `ENGINE_MAX_TIME_MS`, 10 minutes by default and overridable with
+  `VITE_KATAGO_MAX_TIME_MS`. Every request is clamped to both.
 - Batch size.
 - Maximum child moves.
 - Top-K candidate count.

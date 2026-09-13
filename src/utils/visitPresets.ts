@@ -1,7 +1,7 @@
 import { ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { t } from '../i18n';
 
-export const ANALYSIS_VISIT_PRESETS = [500, 5000, 50000, 500000] as const;
+export const ANALYSIS_VISIT_PRESETS = [500, 5000, 50000, 300000] as const;
 export const ANALYSIS_MIN_VISITS = 16;
 export const ANALYSIS_VISIT_SLIDER_MIN = Math.log10(ANALYSIS_MIN_VISITS);
 export const ANALYSIS_VISIT_SLIDER_MAX = Math.log10(ENGINE_MAX_VISITS);

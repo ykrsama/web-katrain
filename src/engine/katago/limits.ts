@@ -26,4 +26,29 @@ export const parseEngineMaxVisits = (value: unknown): number => {
 
 export const ENGINE_MAX_VISITS = parseEngineMaxVisits(import.meta.env.VITE_KATAGO_MAX_VISITS);
 
-export const ENGINE_MAX_TIME_MS = 300_000;
+/**
+ * Search-time ceiling (in milliseconds) for a single analysis request.
+ *
+ * Like the visit cap above, this is a responsiveness guard: the browser engine
+ * keeps the search on the page, so a request that runs too long freezes the UI
+ * and builds a large tree. Every engine call clamps its own time to this value.
+ *
+ * Override it at build time with `VITE_KATAGO_MAX_TIME_MS`, e.g.
+ *   VITE_KATAGO_MAX_TIME_MS=1200000 npm run build
+ */
+export const DEFAULT_ENGINE_MAX_TIME_MS = 600_000;
+
+/** The engine never searches for less than 25 ms, so a smaller cap is useless. */
+const MIN_ENGINE_MAX_TIME_MS = 25;
+
+/**
+ * Turns a configured value (the Vite env string, a number, or junk) into a
+ * usable time cap, falling back to the default when nothing sensible is given.
+ */
+export const parseEngineMaxTimeMs = (value: unknown): number => {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_ENGINE_MAX_TIME_MS;
+  return Math.max(MIN_ENGINE_MAX_TIME_MS, Math.floor(parsed));
+};
+
+export const ENGINE_MAX_TIME_MS = parseEngineMaxTimeMs(import.meta.env.VITE_KATAGO_MAX_TIME_MS);

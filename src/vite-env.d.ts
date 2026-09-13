@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   /** Build-time override for `ENGINE_MAX_VISITS`; see `src/engine/katago/limits.ts`. */
   readonly VITE_KATAGO_MAX_VISITS?: string;
+  /** Build-time override for `ENGINE_MAX_TIME_MS`; see `src/engine/katago/limits.ts`. */
+  readonly VITE_KATAGO_MAX_TIME_MS?: string;
 }
 
 interface ImportMeta {
