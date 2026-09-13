@@ -9,7 +9,7 @@ describe('DesktopDashboard', () => {
 
     expect(source).toContain('APP_ISSUE_REPORT_URL');
     expect(source).toContain('data-dashboard-report-issue="true"');
-    expect(source).toContain('aria-label="Report an issue on GitHub"');
+    expect(source).toContain("aria-label={t('Report an issue on GitHub')}");
     expect(source).toContain('rel="noopener noreferrer"');
     expect(source).toContain('<Icon name="bug" />');
     expect(icons).toContain('bug:');
@@ -39,7 +39,7 @@ describe('DesktopDashboard', () => {
     expect(source.match(/^\s+data-dashboard-popover="true"/gm) ?? []).toHaveLength(4);
     expect(source.match(/aria-modal="false"/g) ?? []).toHaveLength(4);
     for (const label of ['File actions', 'Help', 'Engine details', 'View options']) {
-      expect(source).toContain(`aria-label="${label}"`);
+      expect(source).toContain(`aria-label={t('${label}')}`);
     }
   });
 
@@ -68,10 +68,10 @@ describe('DesktopDashboard', () => {
     expect(metricBlock).toContain('padding: 7px 10px;');
     expect(css).not.toContain('.wk-dashboard[data-layout="compact"] .cb-metric {');
     expect(source).not.toContain('<div className="sub">score lead</div>');
-    expect(source).toContain("`${(bestMove.winRate * 100).toFixed(0)}% Black win · ${formatVisitCount(bestMove.visits)} visits`");
-    expect(source).toContain("`${(bestMove.winRate * 100).toFixed(1)}% Black win rate · ${bestMove.visits} visits`");
+    expect(source).toContain("t('{pct}% Black win · {visits} visits', { pct: (bestMove.winRate * 100).toFixed(0), visits: formatVisitCount(bestMove.visits) })");
+    expect(source).toContain("t('{pct}% Black win rate · {visits} visits', { pct: (bestMove.winRate * 100).toFixed(1), visits: bestMove.visits })");
     // Coach mode keeps the engine's numbers off the best-move tile.
-    expect(source).toContain("isProDetail ? `${(bestMove.winRate * 100).toFixed(0)}% Black win");
+    expect(source).toContain("isProDetail ? t('{pct}% Black win");
     expect(css).toMatch(/\.wk-dashboard\[data-layout="compact"\] \.cb-metric \.sub \{\s*display: none;/);
   });
 
@@ -97,6 +97,6 @@ describe('DesktopDashboard', () => {
     for (const control of ['navigateForward', 'jumpForward', 'navigateEnd']) {
       expect(source).toMatch(new RegExp(`onClick=\\{${control}\\} disabled=\\{!canNavigateForward\\}`));
     }
-    expect(source).toMatch(/title=\{canNavigateBack \? 'Undo' : 'No move to undo'\}[\s\S]{0,80}disabled=\{!canNavigateBack\}/);
+    expect(source).toMatch(/title=\{canNavigateBack \? t\('Undo'\) : t\('No move to undo'\)\}[\s\S]{0,80}disabled=\{!canNavigateBack\}/);
   });
 });

@@ -7,7 +7,7 @@ describe('CandidatePvTiles mobile affordances', () => {
 
     expect(source).toContain('candidate-pv-strip');
     expect(source).toContain('candidate-pv-tile');
-    expect(source).toContain('aria-label="Clear continuation preview"');
+    expect(source).toContain("aria-label={t('Clear continuation preview')}");
   });
 
   it('provides touch-sized, snapping tiles with a trailing overflow fade', () => {

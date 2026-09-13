@@ -44,7 +44,7 @@ describe('PhotoBoardModal', () => {
 
     expect(source).toContain("'Take board photo with camera'");
     expect(source).toContain("'No camera detected for board photo'");
-    expect(source).toContain('aria-label="Choose board photo file"');
+    expect(source).toContain('aria-label={t(\'Choose board photo file\')}');
     expect(source).toContain('data-photo-board-source-name="true"');
   });
 

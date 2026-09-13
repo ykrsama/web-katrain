@@ -32,7 +32,7 @@ describe('desktop sidebar mode switcher', () => {
     const start = text.indexOf('<div className="mode-tabs">');
     const tabs = text.slice(start, text.indexOf('drawer-close', start));
 
-    expect(tabs).toContain('>Review</button>');
+    expect(tabs).toContain(">{t('Review')}</button>");
     expect(tabs).not.toContain('>Analysis</button>');
   });
 });

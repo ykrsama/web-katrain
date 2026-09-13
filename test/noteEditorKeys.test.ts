@@ -24,10 +24,10 @@ describe('note editor keyboard actions', () => {
   it('exposes save and cancel shortcuts on note editor controls', () => {
     const source = readFileSync('src/components/NotesPanel.tsx', 'utf8');
 
-    expect(source).toContain('title="Save note (Enter, Ctrl+S, Cmd+S)"');
-    expect(source).toContain('aria-label="Save note, keyboard shortcut Enter, Control+S, or Command+S"');
-    expect(source).toContain('title="Cancel note edit (Escape)"');
-    expect(source).toContain('aria-label="Cancel note edit, keyboard shortcut Escape"');
+    expect(source).toContain("title={t('Save note (Enter, Ctrl+S, Cmd+S)')}");
+    expect(source).toContain("aria-label={t('Save note, keyboard shortcut Enter, Control+S, or Command+S')}");
+    expect(source).toContain("title={t('Cancel note edit (Escape)')}");
+    expect(source).toContain("aria-label={t('Cancel note edit, keyboard shortcut Escape')}");
     expect(source).toContain('aria-keyshortcuts="Enter Control+S Meta+S Escape"');
     expect(source).toContain('data-note-save="true"');
     expect(source).toContain('data-note-cancel="true"');
@@ -44,7 +44,7 @@ describe('note editor keyboard actions', () => {
     // header "Add" button beside it repeated the action and the hint, and the
     // text-size steppers had nothing to size.
     expect(source).toContain('    ) : noteHasContent ? (');
-    expect(source).toContain("<span>Edit</span>");
+    expect(source).toContain("<span>{t('Edit')}</span>");
     expect(source).not.toContain("<span>{noteHasContent ? 'Edit' : 'Add'}</span>");
     expect(source).toContain('{(noteHasContent || isEditingNote) && (');
   });

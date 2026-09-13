@@ -24,7 +24,7 @@ describe('GameReportModal empty state', () => {
   it('does not repeat the selected phase and coverage below their controls', () => {
     const source = readFileSync('src/components/GameReportModal.tsx', 'utf8');
 
-    expect(source).toContain('aria-label="Report analysis coverage"');
+    expect(source).toContain('aria-label={t(\'Report analysis coverage\')}');
     expect(source).not.toContain('Filter applies to report metrics.');
     expect(source).not.toContain('Based on moves with analysis data.');
   });

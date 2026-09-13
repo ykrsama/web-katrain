@@ -44,7 +44,7 @@ describe('GameAnalysisModal', () => {
     expect(source).toContain('{isRunning && (');
     expect(source).toContain("isRunning ? 'grid-cols-2' : 'grid-cols-1'");
     expect(source).toContain('data-game-analysis-progress="true"');
-    expect(source).toContain('>Progress</div>');
+    expect(source).toContain('>{t(\'Progress\')}</div>');
     expect(source).toContain('role="status"');
     expect(source).toContain('aria-labelledby={STATUS_LABEL_ID}');
     expect(source).toContain('{gameAnalysisDone}/{gameAnalysisTotal}');

@@ -37,6 +37,14 @@ const PRO_GAME_EDITORIALS: Record<string, string> = {
     'The deciding third game of a Samsung Cup semi-final. Luo Xihe — renowned for raw reading strength and fearless ko fighting — beats Choi Cheolhan by 7.5 points as White, booking his place in the final he went on to win. Heavy, committed fighting from the opening on.',
   'Shin Jinseo vs Kang Yootaek - 2015 Korean League (2015-09-20)':
     'A curiosity from the Korean League: Shin Jinseo as a 15-year-old 3-dan, years before he became the world\'s top player. The record ends with a rare "Void" result — the game itself is a snapshot of a prodigy already playing well beyond his rank.',
+  'AlphaGo vs 柯洁 - 2017人机大战第二局':
+    'The second game of the 2017 Future of Go Summit in Wuzhen, the match that fixed AlphaGo in the public imagination. Ke Jie, then the world\'s top-ranked human, had come within half a point in the opener; here AlphaGo takes Black and the game becomes a study in quiet, relentless pressure rather than a highlight reel. Move by move it shows why the machine\'s strength lay in accumulating small, unavoidable advantages.',
+  '柯洁 vs 党毅飞 - 第6届嵊州杯中国王中王争霸赛总决赛':
+    'The final of the 6th Shengzhou Cup Wangzhongwang, a Chinese invitational that gathers the previous season\'s title winners. Ke Jie takes Black against Dang Yifei, whose calm, territory-minded style has made him a fixture in Chinese finals, and the record ends in a Black resignation win. The middle game is where the study pays off: both players commit to one running fight, and the game turns on who reads the follow-ups more accurately.',
+  '柯洁 vs 王星昊 - 第6届嵊州杯中国王中王争霸赛胜者组4强':
+    'A winners\'-bracket semi-final at the 6th Shengzhou Cup, played on the same day as the bracket final. Ke Jie holds Black against Wang Xinghao, one of the generation of Chinese players born in the 2000s who have since pushed into the top titles. It is a compact illustration of the modern Chinese style — fast, territorial openings that turn into a single large fight once one side commits — and good practice for judging unsettled positions.',
+  '李轩豪 vs 柯洁 - 第6届嵊州杯中国王中王争霸赛胜者组决赛':
+    'The winners\'-bracket final of the 6th Shengzhou Cup, and Ke Jie\'s second game of the day: this time White against Li Xuanhao, whose reputation rests on exceptionally deep reading. With White in a Chinese-rules game Ke Jie has to make the running while Li absorbs and counterattacks, so the game becomes a long technical struggle. Study it for the timing of invasions and the handling of thin groups.',
 };
 
 /** Read a single SGF property value from the root-node header. */

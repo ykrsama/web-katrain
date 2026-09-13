@@ -11,7 +11,7 @@ describe('region select on touch', () => {
     // rendered, and cancelSelectRegionOfInterest had exactly one caller: the
     // Escape key. On touch that made region select enterable but not leavable.
     expect(text).toContain('if (isSelectingRegionOfInterest) cancelSelectRegionOfInterest();');
-    expect(text).toContain("isSelectingRegionOfInterest ? 'Cancel region select' : 'Select region'");
+    expect(text).toContain("isSelectingRegionOfInterest ? t('Cancel region select') : t('Select region')");
     expect(text).toContain('aria-pressed={isSelectingRegionOfInterest}');
   });
 

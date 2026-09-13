@@ -27,7 +27,7 @@ describe('desktop dashboard layout', () => {
     const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
     const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
 
-    expect(dashboardSource).toContain('!libraryOpen && <span className="edge-toggle-label">Library</span>');
+    expect(dashboardSource).toContain("!libraryOpen && <span className=\"edge-toggle-label\">{t('Library')}</span>");
     expect(css).toContain('.wk-dashboard .edge-toggle.left:not(.open):has(.edge-toggle-label)');
     expect(css).toContain('writing-mode: vertical-rl;');
   });
@@ -39,9 +39,9 @@ describe('desktop dashboard layout', () => {
     const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
     const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
 
-    expect(dashboardSource).toContain('!sidebarOpen && <span className="edge-toggle-label">Analysis</span>');
-    expect(dashboardSource).toContain('!gamestripOpen && <span className="edge-toggle-label">Game info</span>');
-    expect(dashboardSource).toContain('!commandbarOpen && <span className="edge-toggle-label">Metrics</span>');
+    expect(dashboardSource).toContain("!sidebarOpen && <span className=\"edge-toggle-label\">{t('Analysis')}</span>");
+    expect(dashboardSource).toContain("!gamestripOpen && <span className=\"edge-toggle-label\">{t('Game info')}</span>");
+    expect(dashboardSource).toContain("!commandbarOpen && <span className=\"edge-toggle-label\">{t('Metrics')}</span>");
     expect(css).toContain('.wk-dashboard .edge-toggle.right:not(.open):has(.edge-toggle-label)');
     expect(css).toContain('.wk-dashboard .edge-toggle.top:not(.open):has(.edge-toggle-label)');
     expect(css).toContain('.wk-dashboard .edge-toggle.bottom:not(.open):has(.edge-toggle-label)');
@@ -57,7 +57,7 @@ describe('desktop dashboard layout', () => {
     const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
 
     expect(dashboardSource).toContain('data-dashboard-hero="true"');
-    expect(dashboardSource).toContain('<div className="hero-title">Start here</div>');
+    expect(dashboardSource).toContain("<div className=\"hero-title\">{t('Start here')}</div>");
     expect(dashboardSource).not.toContain('className="hero-tips"');
     expect(css).toContain('grid-template-rows: minmax(0, 1fr) auto;');
     expect(css).toContain('min-height: 46px;');
@@ -80,9 +80,9 @@ describe('desktop dashboard layout', () => {
     const menuStart = source.indexOf('const ViewMenu');
     const viewMenu = source.slice(menuStart);
 
-    expect(viewMenu).toContain("item('Coordinates'");
-    expect(viewMenu).toContain("item('Library panel'");
-    expect(viewMenu).toContain("item('Analysis panel'");
+    expect(viewMenu).toContain("item(t('Coordinates')");
+    expect(viewMenu).toContain("item(t('Library panel')");
+    expect(viewMenu).toContain("item(t('Analysis panel')");
     // Settings and About each already have a dedicated home (the header icon
     // cluster and the Help popover), so the menu does not repeat them.
     expect(viewMenu).not.toContain("item('Settings'");
@@ -136,7 +136,7 @@ describe('desktop dashboard layout', () => {
     expect(dashboardSource).toContain('{libraryPanel}');
     expect(layoutSource).toContain('libraryPanel={');
     expect(layoutSource).toContain('showCloseButtonOnDesktop');
-    expect(librarySource).toContain('aria-label="Import SGF, ZIP, or board image files"');
+    expect(librarySource).toContain("aria-label={t('Import SGF, ZIP, or board image files')}");
   });
 
   it('lets the dashboard library container own embedded panel width', () => {
@@ -155,8 +155,8 @@ describe('desktop dashboard layout', () => {
     const layoutSource = readFileSync('src/components/Layout.tsx', 'utf8');
 
     expect(dashboardSource).toContain('onCopySgf: () => void');
-    expect(dashboardSource).toContain('aria-label="More file actions"');
-    expect(dashboardSource).toContain('<span className="mi-label">Copy SGF</span>');
+    expect(dashboardSource).toContain("aria-label={t('More file actions')}");
+    expect(dashboardSource).toContain("<span className=\"mi-label\">{t('Copy SGF')}</span>");
     expect(dashboardSource).toContain('onClick={() => { closePop(); onCopySgf(); }}');
     expect(layoutSource).toContain('onCopySgf={handleCopySgf}');
   });
@@ -194,7 +194,7 @@ describe('desktop dashboard layout', () => {
     const moveCounterBlock = dashboardSource.slice(moveCounterStart, moveCounterEnd);
 
     expect(moveCounterBlock).toContain('type="number"');
-    expect(moveCounterBlock).toContain('aria-label="Move number"');
+    expect(moveCounterBlock).toContain("aria-label={t('Move number')}");
     expect(moveCounterBlock).toContain('inputMode="numeric"');
     expect(moveCounterBlock).toContain('min={0}');
     expect(moveCounterBlock).toContain('max={totalMoves}');
@@ -244,26 +244,26 @@ describe('desktop dashboard layout', () => {
     const gameTreeBlock = dashboardSource.slice(gameTreeStart, analysisStart);
     const analysisBlock = dashboardSource.slice(analysisStart, notesStart);
 
-    expect(gameTreeBlock).toContain('aria-label="Previous branch"');
-    expect(gameTreeBlock).toContain('aria-label="Next branch"');
-    expect(gameTreeBlock).toContain('aria-label="Back to branch point"');
-    expect(gameTreeBlock).toContain('aria-label="Make current move the main branch"');
+    expect(gameTreeBlock).toContain("aria-label={t('Previous branch')}");
+    expect(gameTreeBlock).toContain("aria-label={t('Next branch')}");
+    expect(gameTreeBlock).toContain("aria-label={t('Back to branch point')}");
+    expect(gameTreeBlock).toContain("aria-label={t('Make current move the main branch')}");
     // Every control in the strip is branch-only, so the strip itself is gated
     // too — otherwise a straight-line game showed an empty 30px band with a
     // rule under it above the tree.
     expect(gameTreeBlock).toContain('{branchInfo.hasBranches && (\n                  <div className="panel-toolbar">');
     expect(gameTreeBlock).toContain('branchInfo.currentIndex > 1 ? (');
     expect(gameTreeBlock).not.toContain("className={branchInfo.hasBranches ? 'pbtn pico' : 'hidden'}");
-    expect(analysisBlock).toContain('aria-label={legend.winrate ? \'Hide win rate graph\' : \'Show win rate graph\'}');
-    expect(analysisBlock).toContain('aria-label={legend.score ? \'Hide score graph\' : \'Show score graph\'}');
-    expect(analysisBlock).toContain('aria-label={legendOpen ? \'Hide move-quality legend\' : \'Show move-quality legend\'}');
+    expect(analysisBlock).toContain("aria-label={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}");
+    expect(analysisBlock).toContain("aria-label={legend.score ? t('Hide score graph') : t('Show score graph')}");
+    expect(analysisBlock).toContain("aria-label={legendOpen ? t('Hide move-quality legend') : t('Show move-quality legend')}");
     // Gated on legendOpen: the legend only renders while open, so an
     // unconditional aria-controls left a dangling IDREF when it was closed.
     expect(analysisBlock).toContain("aria-controls={legendOpen ? 'dashboard-analysis-quality-legend' : undefined}");
-    expect(analysisBlock).toContain("overlayBtn('analysisShowHints', 'Top moves', 'layers', settings.analysisShowPolicy)");
-    expect(analysisBlock).toContain('aria-label="Run quick graph analysis"');
+    expect(analysisBlock).toContain("overlayBtn('analysisShowHints', t('Top moves'), 'layers', settings.analysisShowPolicy)");
+    expect(analysisBlock).toContain("aria-label={t('Run quick graph analysis')}");
     expect(analysisBlock).toContain('aria-label={dashboardFastMctsLabel}');
-    expect(analysisBlock).toContain('aria-label="Open game report"');
+    expect(analysisBlock).toContain("aria-label={t('Open game report')}");
   });
 
   it('keeps section actions outside the disclosure button', () => {
@@ -301,9 +301,9 @@ describe('desktop dashboard layout', () => {
     }
 
     // Both timer layouts render a bare play/pause icon.
-    const timerButtons = timer.match(/title=\{timerPaused \? 'Resume timer' : 'Pause timer'\}/g) ?? [];
+    const timerButtons = timer.match(/title=\{timerPaused \? t\('Resume timer'\) : t\('Pause timer'\)\}/g) ?? [];
     expect(timerButtons).toHaveLength(2);
-    expect(timer.match(/aria-label=\{timerPaused \? 'Resume timer' : 'Pause timer'\}/g)).toHaveLength(2);
+    expect(timer.match(/aria-label=\{timerPaused \? t\('Resume timer'\) : t\('Pause timer'\)\}/g)).toHaveLength(2);
   });
 
 

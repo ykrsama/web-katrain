@@ -57,8 +57,8 @@ describe('BottomControlBar', () => {
     expect(componentSource).toContain('const parsed = parseIntegerDraft(branchIndexDraft)');
     expect(componentSource).not.toContain('Number.parseInt(moveNumberDraft.trim()');
     expect(componentSource).not.toContain('Number.parseInt(branchIndexDraft.trim()');
-    expect(componentSource).toMatch(/type="number"[\s\S]{0,420}aria-label="Branch number"/);
-    expect(componentSource.match(/type="number"[\s\S]{0,420}aria-label="Move number"/g) ?? []).toHaveLength(2);
+    expect(componentSource).toMatch(/type="number"[\s\S]{0,420}aria-label=\{t\('Branch number'\)\}/);
+    expect(componentSource.match(/type="number"[\s\S]{0,420}aria-label=\{t\('Move number'\)\}/g) ?? []).toHaveLength(2);
   });
 
   it('keeps a compact branch chip reachable on mobile', () => {
@@ -93,7 +93,7 @@ describe('BottomControlBar', () => {
     expect(css).toContain(".mobile-bottom-dock .mobile-bottom-meta [data-bottom-branch-chip='true']");
     expect(css).toMatch(/\.mobile-bottom-move-editor \{[^}]*min-width: 72px;[^}]*white-space: nowrap;/);
     expect(componentSource).toContain('mobile-bottom-overflow-mode-actions');
-    expect(componentSource).toContain('Score position</div>');
+    expect(componentSource).toContain("{t('Score position')}</div>");
     expect(css).toMatch(/@media \(max-width: 340px\)[\s\S]*\.mobile-bottom-mode-actions \{[^}]*display: none !important;[\s\S]*\.mobile-bottom-overflow-mode-actions \{[^}]*display: grid;/);
   });
 
@@ -131,7 +131,7 @@ describe('BottomControlBar', () => {
     expect(componentSource).toContain('className="grid grid-cols-2 gap-1.5 p-2"');
     expect(componentSource).toContain("const mobileMoreActionClass = 'w-full min-h-12 px-2.5 py-2");
     expect(componentSource).toContain('className="col-span-2 h-px bg-[var(--ui-border)] mx-2 my-1"');
-    expect(componentSource).toContain('<div className="flex-1 font-medium">Rotate board</div>');
+    expect(componentSource).toContain('<div className="flex-1 font-medium">{t(\'Rotate board\')}</div>');
     expect(componentSource).not.toContain('px-4 py-3.5 text-left');
     expect(css).toMatch(/@media \(max-height: 520px\) and \(orientation: landscape\)[\s\S]*\[data-bottom-more-grid='true'\][\s\S]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
     expect(css).toMatch(/\[data-bottom-more-grid='true'\] > button:nth-last-of-type\(2\),[\s\S]{0,140}> button:last-of-type \{[^}]*grid-column: span 2;/);

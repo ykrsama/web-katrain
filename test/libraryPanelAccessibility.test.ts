@@ -9,10 +9,10 @@ describe('LibraryPanel accessibility', () => {
     // left the same way; Library alone used a dismiss cross for it. It shares
     // RightPanel's back-button classes so the two headers cannot drift.
     expect(source).toContain('className="mobile-panel-back h-11 min-h-11 min-w-11 shrink-0');
-    expect(source).toContain('<span className="mobile-panel-back-label text-sm font-medium">Board</span>');
-    expect(source).toContain('aria-label="Back to board"');
+    expect(source).toContain('<span className="mobile-panel-back-label text-sm font-medium">{t(\'Board\')}</span>');
+    expect(source).toContain("aria-label={t('Back to board')}");
     // Docked on desktop it is a panel being closed, so the cross stays there.
-    expect(source).toContain('aria-label="Close library"');
+    expect(source).toContain("aria-label={t('Close library')}");
     expect(source).toContain("showCloseButtonOnDesktop ? '' : 'lg:hidden',");
   });
 
@@ -48,11 +48,11 @@ describe('LibraryPanel accessibility', () => {
   it('names toolbar form controls explicitly', () => {
     const source = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
 
-    expect(source).toContain('aria-label="Search library"');
-    expect(source).toContain('aria-label="Clear library search"');
+    expect(source).toContain("aria-label={t('Search library')}");
+    expect(source).toContain("aria-label={t('Clear library search')}");
     expect(source).toContain('data-library-search="true"');
-    expect(source).toContain('aria-label="Sort library"');
-    expect(source).toContain('aria-label="Move selected to folder"');
+    expect(source).toContain("aria-label={t('Sort library')}");
+    expect(source).toContain("aria-label={t('Move selected to folder')}");
   });
 
   it('names compact library row and folder navigation actions', () => {
@@ -78,12 +78,12 @@ describe('LibraryPanel accessibility', () => {
 
     expect(source).toContain('aria-haspopup="menu"');
 
-    expect(source).toContain('aria-label="Go to parent folder"');
-    expect(source).toContain('aria-label="Go to library root"');
-    expect(source).toContain("title={activeFolderId ? 'Go to library root' : 'Already at library root'}");
+    expect(source).toContain("aria-label={t('Go to parent folder')}");
+    expect(source).toContain("aria-label={t('Go to library root')}");
+    expect(source).toContain("title={activeFolderId ? t('Go to library root') : t('Already at library root')}");
     expect(source.match(/disabled=\{!activeFolderId\}/g) ?? []).toHaveLength(2);
-    expect(source).toContain('aria-label={`Open folder ${crumb.name}`}');
-    expect(source).toContain('aria-label="Move selected items"');
+    expect(source).toContain("aria-label={t('Open folder {name}', { name: crumb.name })}");
+    expect(source).toContain("aria-label={t('Move selected items')}");
 
     const rowButtonBlocks = source.match(/<button[\s\S]*?library-tree-node-(?:action|select|arrow)[\s\S]*?<\/button>/g) ?? [];
     expect(rowButtonBlocks.length).toBeGreaterThan(0);
@@ -111,14 +111,14 @@ describe('LibraryPanel accessibility', () => {
   it('keeps infrequent library maintenance actions in one keyboard-accessible menu', () => {
     const source = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
 
-    expect(source).toContain('aria-label="More library actions"');
+    expect(source).toContain("aria-label={t('More library actions')}");
     expect(source).toContain('aria-expanded={headerMenuOpen}');
     expect(source).toContain('onKeyDown={handleHeaderMenuKeyDown}');
-    expect(source).toContain('> Export library as ZIP');
-    expect(source).toContain('> Sync from OGS');
-    expect(source).toContain('> Download backup');
-    expect(source).toContain('> Restore backup');
-    expect(source).toContain('> Clear library');
+    expect(source).toContain("> {t('Export library as ZIP')}");
+    expect(source).toContain("> {t('Sync from OGS')}");
+    expect(source).toContain("> {t('Download backup')}");
+    expect(source).toContain("> {t('Restore backup')}");
+    expect(source).toContain("> {t('Clear library')}");
     expect(source).not.toContain('library-header-secondary-action');
   });
 
@@ -130,8 +130,8 @@ describe('LibraryPanel accessibility', () => {
     expect(source).toContain('className="library-select-all h-6 w-6');
     expect(source).toContain('className="library-breadcrumb-button');
     expect(source.match(/library-header-collapsible-action/g) ?? []).toHaveLength(2);
-    expect(source).toContain('<FaPlus size={12} /> Create new folder');
-    expect(source).toContain('<FaFolderOpen size={12} /> Import files');
+    expect(source).toContain('<FaPlus size={12} /> {t(\'Create new folder\')}');
+    expect(source).toContain('<FaFolderOpen size={12} /> {t(\'Import files\')}');
     expect(source).toContain("maxHeight: isMobile");
     expect(source).toContain("var(--mobile-tabbar-height)");
     expect(source.match(/window\.addEventListener\('resize', close\)/g) ?? []).toHaveLength(2);
@@ -191,19 +191,19 @@ describe('LibraryPanel accessibility', () => {
 
   it('keeps selection exit beside the selection count instead of adding a toolbar row', () => {
     const source = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
-    const selectionSummaryIndex = source.indexOf('{sortedItems.length} items');
-    const clearSelectionIndex = source.indexOf('aria-label="Clear selection"');
+    const selectionSummaryIndex = source.indexOf("t('{count} item{s}', { count: sortedItems.length");
+    const clearSelectionIndex = source.indexOf("aria-label={t('Clear selection')}");
 
     expect(selectionSummaryIndex).toBeGreaterThan(-1);
     expect(clearSelectionIndex).toBeGreaterThan(selectionSummaryIndex);
-    expect(source.match(/aria-label="Clear selection"/g) ?? []).toHaveLength(1);
+    expect(source.match(/aria-label=\{t\('Clear selection'\)\}/g) ?? []).toHaveLength(1);
   });
 
   it('carries the folder trail on the toolbar row rather than a band of its own', () => {
     const source = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
     const toolbarIndex = source.indexOf('<div className="panel-toolbar">');
     const breadcrumbsIndex = source.indexOf('className="library-breadcrumbs');
-    const summaryIndex = source.indexOf('{sortedItems.length} items');
+    const summaryIndex = source.indexOf("t('{count} item{s}', { count: sortedItems.length");
 
     // The trail sat under a toolbar row that was empty between the root button
     // and the item count — 26px of phone panel for one short line.

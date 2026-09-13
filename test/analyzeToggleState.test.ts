@@ -8,7 +8,7 @@ describe('mobile analyze toggle', () => {
     // It is the only analysis switch on a phone, and its state lived purely in
     // an accent colour and an underline. The dot inside it is engine status.
     const text = bar();
-    const start = text.indexOf("title={withShortcut('Toggle analysis mode', 'toggle-analysis')}");
+    const start = text.indexOf("title={withShortcut(t('Toggle analysis mode'), 'toggle-analysis')}");
     expect(start).toBeGreaterThan(-1);
     const toggle = text.slice(start, text.indexOf('</button>', start));
     expect(toggle.length).toBeGreaterThan(50);

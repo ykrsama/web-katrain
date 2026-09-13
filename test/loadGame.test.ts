@@ -567,7 +567,8 @@ describe('GameStore loadGame', () => {
         expect(useGameStore.getState().komi).toBe(0);
 
         store.undoEdit();
-        expect(useGameStore.getState().komi).toBe(6.5);
+        // A fresh game uses the default komi (7.5, Chinese rules).
+        expect(useGameStore.getState().komi).toBe(7.5);
         expect(useGameStore.getState().rootNode.properties?.KM).toBeUndefined();
 
         store.redoEdit();

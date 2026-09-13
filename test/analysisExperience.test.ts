@@ -10,7 +10,7 @@ describe('analysis experience disclosure', () => {
 
     expect(toggle).toContain("updateSettings({ analysisExperience: 'coach' })");
     expect(toggle).toContain("updateSettings({ analysisExperience: 'pro' })");
-    expect(toggle).toContain('aria-label="Analysis detail"');
+    expect(toggle).toContain("aria-label={t('Analysis detail')}");
     expect(desktop).toContain('<AnalysisExperienceToggle />');
     expect(mobile).toContain('actions: <AnalysisExperienceToggle />');
     expect(store).toContain("analysisExperience: 'pro'");

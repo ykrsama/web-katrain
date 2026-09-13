@@ -29,7 +29,16 @@ export interface EngineClient {
  */
 export function getEngineClient(settings: EngineSettings) {
   if (settings.engineMode === 'remote' && settings.remoteEngineUrl) {
-    return getRemoteEngineClient(settings.remoteEngineUrl);
+    const url = settings.remoteEngineUrl.trim();
+    // A relative URL (e.g. "/katago-proxy") is resolved against the document's
+    // origin by the remote client, so it cannot even be constructed without a
+    // DOM. Outside a browser (SSR, unit tests) the local client is the only one
+    // that can exist, so fall back to it rather than throwing "window is not
+    // defined" from deep inside an analysis request.
+    const needsDocument = url.startsWith('/');
+    if (!(needsDocument && typeof window === 'undefined')) {
+      return getRemoteEngineClient(settings.remoteEngineUrl);
+    }
   }
   return getKataGoEngineClient();
 }

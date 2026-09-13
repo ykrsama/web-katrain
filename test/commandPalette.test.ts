@@ -83,7 +83,7 @@ describe('command palette search', () => {
     const source = readFileSync('src/components/Layout.tsx', 'utf8');
 
     expect(source).toContain("id: 'toggle-shape-coach'");
-    expect(source).toContain("label: shapeCoachEnabled ? 'Hide Shape Coach' : 'Show Shape Coach'");
+    expect(source).toContain("label: shapeCoachEnabled ? t('Hide Shape Coach') : t('Show Shape Coach')");
     expect(source).toContain("'move names'");
     expect(source).toContain("'joseki'");
     expect(source).toContain("'sensei'");

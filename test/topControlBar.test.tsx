@@ -286,7 +286,7 @@ describe('TopControlBar', () => {
     // rendered, so the coordination it needed was imaginary. What remains is
     // that the view trigger toggles its own menu and nothing else.
     expect(source).toContain('setViewMenuOpen(!viewMenuOpen);');
-    expect(source).toContain('title="View options"');
+    expect(source).toContain("title={t('View options')}");
     expect(source).not.toContain('setAnalysisMenuOpen');
   });
 

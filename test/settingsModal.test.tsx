@@ -163,7 +163,7 @@ describe('SettingsModal', () => {
       expect(source).toContain(`htmlFor={\`${id}-${'${i}'}\`}`);
       expect(source).toContain(`id={\`${id}-${'${i}'}\`}`);
     });
-    expect(source).toContain('<span className="sr-only"> row {i + 1}</span>');
+    expect(source).toContain('<span className="sr-only"> {t(\'row {count}\', { count: i + 1 })}</span>');
   });
 
   it('binds AI and engine settings labels to their controls', () => {
@@ -222,7 +222,7 @@ describe('SettingsModal', () => {
     });
 
     expect(source).not.toContain('aria-label="Fast review visits"');
-    expect(source).toContain('<div className="text-xs text-[var(--ui-text-faint)]">Upload weights (.bin.gz)</div>');
+    expect(source).toContain('<div className="text-xs text-[var(--ui-text-faint)]">{t(\'Upload weights (.bin.gz)\')}</div>');
     expect(source).toContain('Official model downloads');
     expect(source).toContain('aria-expanded={officialModelsOpen}');
     // Declared only while open: the region is unmounted when collapsed, and a
@@ -250,7 +250,7 @@ describe('SettingsModal', () => {
     expect(source).toContain('data-settings-search-id="settings-katago-backend"');
     expect(source).not.toMatch(/<input[^>]*id="settings-katago-backend"/);
     expect(source).toContain('FaCheck aria-hidden="true"');
-    expect(source).toContain('fallback from <span className="font-mono">{requestedBackendLabel}</span>');
+    expect(source).toContain("{t('fallback from {backend}', { backend: requestedBackendLabel })}");
     expect(source).toContain("event.key === 'ArrowRight'");
     expect(source).toContain("event.key === 'ArrowLeft'");
     expect(source).toContain('tabIndex={active ? 0 : -1}');
@@ -274,7 +274,7 @@ describe('SettingsModal', () => {
   it('shows a board theme description in full instead of clipping it', () => {
     const source = readFileSync('src/components/SettingsModal.tsx', 'utf8');
 
-    const descIndex = source.indexOf('{theme.config.description}');
+    const descIndex = source.lastIndexOf('{t(theme.config.description)}');
     expect(descIndex).toBeGreaterThan(-1);
     const spanStart = source.lastIndexOf('<span', descIndex);
     const span = source.slice(spanStart, descIndex);
@@ -290,10 +290,14 @@ describe('SettingsModal', () => {
   it('lets a backend option name and its badge share the row without crushing the name', () => {
     const source = readFileSync('src/components/SettingsModal.tsx', 'utf8');
 
-    const labelIndex = source.indexOf('{option.label}');
+    // The backend options are the only list that pairs a name with a badge, so
+    // locate the badge first and walk back to the name in the same row; the
+    // engine-mode list also renders `{t(option.label)}` but has no badge.
+    const badgeIndex = source.indexOf('{option.badge');
+    expect(badgeIndex).toBeGreaterThan(-1);
+    const labelIndex = source.lastIndexOf('{t(option.label)}', badgeIndex);
     expect(labelIndex).toBeGreaterThan(-1);
     const rowStart = source.lastIndexOf('<span className="flex', labelIndex);
-    const badgeIndex = source.indexOf('{option.badge}', labelIndex);
     expect(rowStart).toBeGreaterThan(-1);
     expect(badgeIndex).toBeGreaterThan(labelIndex);
     // Guard the slice: an empty string would satisfy nothing below by accident.

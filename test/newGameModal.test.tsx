@@ -188,11 +188,11 @@ describe('NewGameModal', () => {
       ['new-game-event', 'Event'],
       ['new-game-date', 'Date'],
       ['new-game-place', 'Place'],
-      ['new-game-name', 'Game Name'],
-      ['new-game-board-size', 'Board Size'],
+      ['new-game-name', 'Game name'],
+      ['new-game-board-size', 'Board size'],
       ['new-game-rules', 'Rules'],
       ['new-game-komi', 'Komi'],
-      ['new-game-handicap', 'Handicap Stones'],
+      ['new-game-handicap', 'Handicap stones'],
       ['new-game-time-system', 'Time system'],
       ['new-game-main-time', 'Main time (min)'],
       ['new-game-byo-yomi', 'Byo-yomi (sec)'],
@@ -216,28 +216,28 @@ describe('NewGameModal', () => {
     expectLabelPair(scoreLossHtml, 'new-game-ai-scoreloss-strength', 'Strength (c)');
 
     const jigoHtml = renderModal({ ai: aiConfig({ opponent: 'white', strategy: 'jigo' }) });
-    expectLabelPair(jigoHtml, 'new-game-ai-target-score', 'Target Score');
+    expectLabelPair(jigoHtml, 'new-game-ai-target-score', 'Target score');
   });
 
   it('binds labels for advanced AI strategy controls', () => {
     const simpleHtml = renderModal({ ai: aiConfig({ opponent: 'white', strategy: 'simple' }) });
     [
-      ['new-game-ai-ownership-max-points-lost', 'Max Pt Lost'],
-      ['new-game-ai-ownership-settled-weight', 'Settled Wt'],
-      ['new-game-ai-ownership-opponent-factor', 'Opp Fac'],
-      ['new-game-ai-ownership-min-visits', 'Min Visits'],
-      ['new-game-ai-ownership-attach-penalty', 'Attach Pen'],
-      ['new-game-ai-ownership-tenuki-penalty', 'Tenuki Pen'],
+      ['new-game-ai-ownership-max-points-lost', 'Max pt lost'],
+      ['new-game-ai-ownership-settled-weight', 'Settled weight'],
+      ['new-game-ai-ownership-opponent-factor', 'Opponent factor'],
+      ['new-game-ai-ownership-min-visits', 'Min visits'],
+      ['new-game-ai-ownership-attach-penalty', 'Attach penalty'],
+      ['new-game-ai-ownership-tenuki-penalty', 'Tenuki penalty'],
     ].forEach(([id, label]) => expectLabelPair(simpleHtml, id!, label!));
 
     const policyHtml = renderModal({ ai: aiConfig({ opponent: 'white', strategy: 'policy' }) });
-    expectLabelPair(policyHtml, 'new-game-ai-policy-opening-moves', 'Opening Moves');
+    expectLabelPair(policyHtml, 'new-game-ai-policy-opening-moves', 'Opening moves');
 
     const weightedHtml = renderModal({ ai: aiConfig({ opponent: 'white', strategy: 'weighted' }) });
     [
       ['new-game-ai-weighted-override', 'Override'],
       ['new-game-ai-weighted-weaken', 'Weaken'],
-      ['new-game-ai-weighted-lower', 'Lower'],
+      ['new-game-ai-weighted-lower', 'Lower bound'],
     ].forEach(([id, label]) => expectLabelPair(weightedHtml, id!, label!));
 
     const pickHtml = renderModal({ ai: aiConfig({ opponent: 'white', strategy: 'pick' }) });
@@ -269,7 +269,7 @@ describe('NewGameModal', () => {
     [
       ['new-game-ai-edge-override', 'Override'],
       ['new-game-ai-edge-threshold', 'Threshold'],
-      ['new-game-ai-edge-line-weight', 'Line Wt'],
+      ['new-game-ai-edge-line-weight', 'Line weight'],
       ['new-game-ai-edge-pick-n', 'Pick N'],
       ['new-game-ai-edge-pick-frac', 'Pick Frac'],
       ['new-game-ai-edge-endgame', 'Endgame'],

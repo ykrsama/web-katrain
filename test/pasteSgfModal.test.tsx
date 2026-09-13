@@ -9,7 +9,7 @@ describe('PasteSgfModal', () => {
     const layoutSource = readFileSync('src/components/Layout.tsx', 'utf8');
 
     expect(layoutSource).toContain('onSubmit={(text) => handleOpenSgfFromText(text, { notifyFailure: false })}');
-    expect(layoutSource).toContain("if (options.notifyFailure !== false) toast('Failed to load SGF or OGS URL.', 'error');");
+    expect(layoutSource).toContain("if (options.notifyFailure !== false) toast(t('Failed to load SGF or OGS URL.'), 'error');");
   });
 
   it('explains supported SGF and OGS inputs in the empty state', () => {

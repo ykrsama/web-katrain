@@ -7,8 +7,11 @@ const TOO_LARGE_MESSAGE = `SGF files are limited to ${MAX_SGF_IMPORT_LABEL}.`;
  * Counts UTF-8 bytes without allocating a second, encoded copy of the input.
  * The counter stops as soon as the configured ceiling is crossed, which keeps
  * a hostile paste from turning one oversized string into two oversized buffers.
+ *
+ * Exported so the byte accounting can be tested at a small limit instead of
+ * materialising a string the size of the real ceiling.
  */
-function exceedsUtf8ByteLimit(value: string, limit: number): boolean {
+export function exceedsUtf8ByteLimit(value: string, limit: number): boolean {
   let bytes = 0;
   for (let index = 0; index < value.length; index++) {
     const codeUnit = value.charCodeAt(index);

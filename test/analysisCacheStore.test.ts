@@ -103,14 +103,15 @@ describe('analysis cache store actions', () => {
       run: async () => ({ visits: 25 }),
     });
 
-    useGameStore.getState().setKomi(7.5);
+    // The default komi is 7.5 (Chinese rules), so move it somewhere else.
+    useGameStore.getState().setKomi(6.5);
     const changed = useGameStore.getState();
 
-    expect(changed.komi).toBe(7.5);
-    expect(changed.rootNode.properties?.KM).toEqual(['7.5']);
-    expect(changed.rootNode.gameState.komi).toBe(7.5);
-    expect(changed.rootNode.children[0]?.gameState.komi).toBe(7.5);
-    expect(changed.currentNode.gameState.komi).toBe(7.5);
+    expect(changed.komi).toBe(6.5);
+    expect(changed.rootNode.properties?.KM).toEqual(['6.5']);
+    expect(changed.rootNode.gameState.komi).toBe(6.5);
+    expect(changed.rootNode.children[0]?.gameState.komi).toBe(6.5);
+    expect(changed.currentNode.gameState.komi).toBe(6.5);
     expect(changed.analysisData).toBeNull();
     expect(changed.rootNode.analysis).toBeNull();
     expect(changed.rootNode.children[0]?.analysis).toBeNull();
@@ -137,11 +138,14 @@ describe('analysis cache store actions', () => {
     root.analysis = analysis(50);
     useGameStore.setState({ analysisData: root.analysis, analysisCacheSize: 1 });
 
-    useGameStore.getState().setRootProperty('KM', '6.50');
+    // 7.50 is the default komi (7.5) written with a different number of decimal
+    // places: the text is normalized, but the value did not move, so the cached
+    // analysis must survive.
+    useGameStore.getState().setRootProperty('KM', '7.50');
     const changed = useGameStore.getState();
 
-    expect(changed.komi).toBe(6.5);
-    expect(changed.rootNode.properties?.KM).toEqual(['6.5']);
+    expect(changed.komi).toBe(7.5);
+    expect(changed.rootNode.properties?.KM).toEqual(['7.5']);
     expect(changed.rootNode.analysis).not.toBeNull();
     expect(changed.analysisData).not.toBeNull();
     expect(changed.analysisCacheSize).toBe(1);
@@ -172,11 +176,12 @@ describe('analysis cache store actions', () => {
       run: async () => ({ visits: 25 }),
     });
 
-    useGameStore.getState().setRootProperty('RU', 'Chinese');
+    // The default rules are Chinese, so switch to Japanese to force the change.
+    useGameStore.getState().setRootProperty('RU', 'Japanese');
     const changed = useGameStore.getState();
 
-    expect(changed.settings.gameRules).toBe('chinese');
-    expect(changed.rootNode.properties?.RU).toEqual(['Chinese']);
+    expect(changed.settings.gameRules).toBe('japanese');
+    expect(changed.rootNode.properties?.RU).toEqual(['Japanese']);
     expect(changed.analysisData).toBeNull();
     expect(changed.rootNode.analysis).toBeNull();
     expect(changed.currentNode.analysis).toBeNull();

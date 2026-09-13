@@ -93,7 +93,7 @@ describe('RightPanel layout', () => {
     expect(source).toContain("import { parseIntegerDraft } from '../../utils/numberDraft'");
     expect(source).toContain('const parsed = parseIntegerDraft(branchIndexDraft)');
     expect(source).not.toContain('Number.parseInt(branchIndexDraft.trim()');
-    expect(source).toMatch(/type="number"[\s\S]{0,420}aria-label="Branch number"/);
+    expect(source).toMatch(/type="number"[\s\S]{0,420}aria-label=\{t\('Branch number'\)\}/);
   });
 
   it('does not present dead tree navigation actions', () => {
@@ -125,7 +125,7 @@ describe('RightPanel layout', () => {
   it('names the move-list root once instead of rendering placeholder columns', () => {
     const source = readFileSync('src/components/layout/RightPanel.tsx', 'utf8');
 
-    expect(source).toContain("{!node.parent ? 'Initial position' : label}");
+    expect(source).toContain("{!node.parent ? t('Initial position') : label}");
     // The bound guards the *no-move* branch staying short and single-purpose;
     // the move branch grew when the list gained its move-quality dot.
     expect(source).toMatch(/\{move \? \([\s\S]{0,1000}\) : \([\s\S]{0,180}Initial position/);

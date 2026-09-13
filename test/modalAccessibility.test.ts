@@ -79,12 +79,12 @@ describe('modal accessibility semantics', () => {
     expect(source).toContain('flex flex-col items-stretch gap-3');
     expect(source).toContain('sm:flex-row sm:items-center sm:justify-between');
     expect(source).toContain('absolute right-3 top-3');
-    expect(source).toContain("const printActionLabel = canPrint ? 'Print kifu or save as PDF' : 'No moves to print';");
+    expect(source).toContain("const printActionLabel = canPrint ? t('Print kifu or save as PDF') : t('No moves to print');");
     expect(source).toContain('aria-label={printActionLabel}');
-    expect(source).toContain('<span className="hidden lg:inline">Print / PDF</span>');
-    expect(source).toContain('<span className="sm:hidden">All</span>');
-    expect(source).toContain('<span className="hidden sm:inline">{opt.label}</span>');
-    expect(source).toContain('<span className="sr-only">Print Kifu: </span>');
+    expect(source).toContain('<span className="hidden lg:inline">{t(\'Print / PDF\')}</span>');
+    expect(source).toContain('<span className="sm:hidden">{t(\'All\')}</span>');
+    expect(source).toContain('<span className="hidden sm:inline">{t(opt.label)}</span>');
+    expect(source).toContain('<span className="sr-only">{t(\'Print Kifu\')}: </span>');
   });
 
   it('moves focus into dialogs that use the shared focus hook and wraps Tab inside them', () => {
@@ -263,7 +263,7 @@ describe('modal accessibility semantics', () => {
     // where Settings, Keyboard Shortcuts, Photo Board and the rest all say
     // what they are. aria-label wins over the labelledby heading, and still
     // contains the visible text, so the visible name is preserved.
-    expect(source).toContain('aria-label="About Web KaTrain"');
+    expect(source).toContain('aria-label={t(\'About Web KaTrain\')}');
     expect(source).toContain('aria-labelledby="about-title"');
     expect(source).toContain('>\n              Web KaTrain\n            </h2>');
   });

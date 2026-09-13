@@ -5,7 +5,7 @@ describe('NotesPanel analysis status line', () => {
   it('says the engine is loading rather than claiming to analyze', () => {
     const source = readFileSync('src/components/NotesPanel.tsx', 'utf8');
     const start = source.indexOf('const analysisStatusText');
-    const end = source.indexOf('}, [engineError, engineStatus, isAnalysisMode, touchOnly]);', start);
+    const end = source.indexOf('}, [engineError, engineStatus, isAnalysisMode, touchOnly, t]);', start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const block = source.slice(start, end);
@@ -19,12 +19,12 @@ describe('NotesPanel analysis status line', () => {
     expect(block).toContain('if (engineStatus === \'loading\') return `${ENGINE_LOADING_LABEL}\u2026`;');
     expect(source).toContain("import { ENGINE_LOADING_LABEL } from '../utils/engineStatusSummary';");
     const statusSummary = readFileSync('src/utils/engineStatusSummary.ts', 'utf8');
-    expect(statusSummary).toContain("return { state: 'loading', label: ENGINE_LOADING_LABEL }");
+    expect(statusSummary).toContain("return { state: 'loading', label: t(ENGINE_LOADING_LABEL) }");
     expect(readFileSync('src/components/Layout.tsx', 'utf8')).toContain('getEngineActivityPresentation({');
     expect(source).not.toContain("'Loading engine...'");
     // "(Tab to enable)" is an instruction a touch-only device cannot follow,
     // so the hint is dropped there and the state still named.
-    expect(block).toContain("return touchOnly ? 'Analysis off' : 'Analysis off (Tab to enable)';");
+    expect(block).toContain("return touchOnly ? t('Analysis off') : t('Analysis off (Tab to enable)');");
     expect(block.match(/'Analyzing move\.\.\.'/g) ?? []).toHaveLength(1);
   });
 
@@ -34,7 +34,7 @@ describe('NotesPanel analysis status line', () => {
     // The move line is derived from the played move, not from the engine, but
     // it used to sit behind the analysis check — so with analysis off the block
     // showed only a status string, under a panel that already said as much.
-    const moveLine = source.indexOf('const moveLine = `Move ${depth}:');
+    const moveLine = source.indexOf("const moveLine = `${t('Move {depth}: {player} {label}', {");
     const guard = source.indexOf('if (!currentNode.analysis) return `${moveLine}${analysisStatusText}`;');
     expect(moveLine).toBeGreaterThan(-1);
     expect(guard).toBeGreaterThan(moveLine);
@@ -51,7 +51,7 @@ describe('NotesPanel human policy line', () => {
     // when that network produced a policy for the parent position.
     expect(source).toContain('const parentHumanPolicy = parent?.analysis?.humanPolicy;');
     expect(source).toContain('if (!showProDetails || !move || !parentHumanPolicy) return null;');
-    expect(source).toContain('text += `Human ${humanProfileLabel}${rankPart}:');
-    expect(source).toContain('text += `Human pick: ${bestLabel}');
+    expect(source).toContain("text += `${t('Human {profile}{rankPart}: {pct}%', { profile: humanProfileLabel, rankPart, pct:");
+    expect(source).toContain("text += `${t('Human pick: {label} ({pct}%)', { label: bestLabel, pct:");
   });
 });

@@ -23,7 +23,7 @@ describe('command palette game actions', () => {
     const text = registry();
 
     expect(text).toContain(id);
-    expect(text).toContain(`label: '${label}'`);
+    expect(text).toContain(`label: t('${label}')`);
   });
 
   it('calls resign lazily because it is declared after the registry', () => {

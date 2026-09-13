@@ -56,9 +56,9 @@ describe('EditToolbar accessibility', () => {
 
     expect(source).toContain('countBranchNodes(currentNode)');
     expect(source).toContain('countBranchNodes(copiedBranch)');
-    expect(source).toContain('`Copy current branch (${currentBranchNodeLabel})`');
-    expect(source).toContain('`Paste copied branch (${copiedBranchNodeLabel})`');
-    expect(source).toContain('`Delete current branch (${currentBranchNodeLabel})`');
+    expect(source).toContain("t('Copy current branch ({count})', { count: currentBranchNodeLabel })");
+    expect(source).toContain("t('Paste copied branch ({count})', { count: copiedBranchNodeLabel })");
+    expect(source).toContain("t('Delete current branch ({count})', { count: currentBranchNodeLabel })");
     expect(source).not.toContain("const deleteCurrentNodeLabel = 'Delete current node'");
   });
 });

@@ -555,7 +555,7 @@ describe('computeGameReport', () => {
     });
     expect(focus?.beginnerTip).toContain('Replay move 72');
     expect(focus?.beginnerTip).toContain('D4');
-    expect(focus?.proTip).toContain('middle game');
+    expect(focus?.proTip).toContain('Middle Game');
   });
 
   it('respects phase and player filters when choosing report study focus', () => {

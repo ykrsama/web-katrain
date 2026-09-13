@@ -25,8 +25,8 @@ describe('study tool components render without crashing', () => {
     expect(html).toContain('Score Estimation Quiz');
     expect(html).toContain('Who is ahead');
     expect(html).toContain('aria-label="Predicted leader"');
-    expect(html).toMatch(/aria-pressed="true"[^>]*>black</);
-    expect(html).toMatch(/aria-pressed="false"[^>]*>white</);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>Black</);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>White</);
     expect(html).toContain('This is the starting position.');
     expect(html).toContain('class="min-h-11 w-24');
     expect(html).toContain('<svg');
