@@ -1076,6 +1076,7 @@ const defaultSettings: GameSettings = {
   uiTheme: 'system',
   uiDensity: 'comfortable',
   analysisExperience: 'pro',
+  showShapeCoach: false,
   gamepadNavigation: true,
   hapticFeedback: true,
   defaultBoardSize: DEFAULT_BOARD_SIZE,

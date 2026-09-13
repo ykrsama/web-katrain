@@ -196,7 +196,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   lockAiDetails,
   currentNode,
   currentMoveInsight = null,
-  shapeCoachEnabled = true,
+  shapeCoachEnabled = false,
   onToggleShapeCoach,
   noteFocusRequest = 0,
 }) => {

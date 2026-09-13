@@ -511,7 +511,7 @@ export const Layout: React.FC = () => {
 
   const mode = uiState.mode;
   const boardUiMode = reportHoverMove ? 'analyze' : mode;
-  const shapeCoachEnabled = uiState.shapeCoachEnabled;
+  const shapeCoachEnabled = settings.showShapeCoach;
   const modeControls = uiState.analysisControls[mode];
   const modePanels = uiState.panels[mode];
   const lastAppliedModeControlsRef = useRef<UiMode | null>(null);
@@ -1552,7 +1552,7 @@ export const Layout: React.FC = () => {
   };
 
   const toggleShapeCoach = () => {
-    setUiState((prev) => ({ ...prev, shapeCoachEnabled: !prev.shapeCoachEnabled }));
+    updateSettings({ showShapeCoach: !settings.showShapeCoach });
   };
 
   useEffect(() => {

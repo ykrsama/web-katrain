@@ -1163,6 +1163,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                                         <p className={subtextClass}>
                                             {t('Coach keeps the review to move quality and plain-language guidance. Pro adds win rate, score, visits, policy and the engine’s own detail everywhere. The same switch sits at the top of the Analysis panel.')}
                                         </p>
+
+                                        <div className={rowClass}>
+                                            <label htmlFor="settings-analysis-show-shape-coach" className={labelClass}>{t('Shape Coach')}</label>
+                                            <input
+                                                id="settings-analysis-show-shape-coach"
+                                                type="checkbox"
+                                                checked={settings.showShapeCoach}
+                                                onChange={(e) => updateSettings({ showShapeCoach: e.target.checked })}
+                                                className="toggle"
+                                            />
+                                        </div>
+                                        <p className={subtextClass}>
+                                            {t('Explains the shape a move makes — named patterns and good or bad shape — in the comment panel. Off by default; the star button in the comment panel toggles the same setting.')}
+                                        </p>
                                     </div>
                                 </div>
 

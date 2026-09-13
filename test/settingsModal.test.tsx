@@ -147,6 +147,7 @@ describe('SettingsModal', () => {
       ['settings-analysis-lock-ai-details', 'Lock AI details (Play mode)'],
       ['settings-analysis-last-n-eval-dots', 'Show Last N Eval Dots'],
       ['settings-analysis-mistake-threshold', 'Mistake Threshold (Points)'],
+      ['settings-analysis-show-shape-coach', 'Shape Coach'],
     ].forEach(([id, label]) => {
       expect(source).toContain(`htmlFor="${id}"`);
       expect(source).toContain(`id="${id}"`);

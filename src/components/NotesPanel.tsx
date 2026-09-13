@@ -256,7 +256,7 @@ function NotePreview({ note }: { note: string }) {
   );
 }
 
-export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, showNotes, showShapeCoach = true, focusRequest = 0 }) => {
+export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, showNotes, showShapeCoach = false, focusRequest = 0 }) => {
   const {
     rootNode,
     currentNode,

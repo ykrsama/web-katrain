@@ -107,8 +107,8 @@ export default {
   'Mistake': '失误',
   'Inaccuracy': '问题手',
   'Slight loss': '轻微损失',
-  'Good': '好棋',
-  'Best': '一选',
+  'Good': '较好',
+  'Best': '好棋',
 
   // ================= Strength / rank =================
   'Kyu': '级',

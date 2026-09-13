@@ -162,6 +162,7 @@ export interface GameSettings {
   uiTheme: UiThemeId;
   uiDensity: UiDensityId;
   analysisExperience: AnalysisExperience; // Coach explains decisions; Pro exposes full engine detail.
+  showShapeCoach: boolean; // Explain the shape a move makes (names, good/bad shape) in the comment panel.
   gamepadNavigation: boolean;
   hapticFeedback: boolean;
   defaultBoardSize: BoardSize;

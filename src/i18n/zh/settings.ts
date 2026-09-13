@@ -77,6 +77,8 @@ export default {
   'Coach': '教学',
   'Pro': '专业',
   'Coach keeps the review to move quality and plain-language guidance. Pro adds win rate, score, visits, policy and the engine’s own detail everywhere. The same switch sits at the top of the Analysis panel.': '教学模式把复盘限定为走法质量和通俗易懂的指导。专业模式则会在各处增加胜率、目数、计算量、策略以及引擎自身的细节。同样的开关也位于“分析”面板顶部。',
+  'Shape Coach': '棋形讲解',
+  'Explains the shape a move makes — named patterns and good or bad shape — in the comment panel. Off by default; the star button in the comment panel toggles the same setting.': '在评论面板中讲解走法形成的棋形——包括棋形名称与好坏棋形。默认关闭；评论面板中的星标按钮可切换同一设置。',
   'Analysis Overlays': '分析叠加显示',
   'Show Children ({shortcut})': '显示分支 ({shortcut})',
   'Evaluation Dots ({shortcut})': '显示评点 ({shortcut})',

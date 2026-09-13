@@ -16,7 +16,6 @@ export type NotesOptions = { info: boolean; infoDetails: boolean; notes: boolean
 
 export type UiState = {
   mode: UiMode;
-  shapeCoachEnabled: boolean;
   analysisControls: Record<UiMode, AnalysisControlsState>;
   panels: Record<
     UiMode,
@@ -42,7 +41,6 @@ export const STONE_SIZE = 0.505;
 export function defaultUiState(): UiState {
   return {
     mode: 'play',
-    shapeCoachEnabled: true,
     analysisControls: {
       play: {
         analysisShowChildren: true,
@@ -97,8 +95,6 @@ export function loadUiState(): UiState {
 
     const d = defaultUiState();
     const mode: UiMode = parsed.mode === 'analyze' ? 'analyze' : 'play';
-    const shapeCoachEnabled =
-      typeof parsed.shapeCoachEnabled === 'boolean' ? parsed.shapeCoachEnabled : d.shapeCoachEnabled;
     const analysisControls = {
       play: { ...d.analysisControls.play, ...(parsed.analysisControls?.play ?? {}) },
       analyze: { ...d.analysisControls.analyze, ...(parsed.analysisControls?.analyze ?? {}) },
@@ -125,7 +121,7 @@ export function loadUiState(): UiState {
       play: mergePanel('play'),
       analyze: mergePanel('analyze'),
     };
-    return { mode, shapeCoachEnabled, analysisControls, panels };
+    return { mode, analysisControls, panels };
   } catch {
     return defaultUiState();
   }

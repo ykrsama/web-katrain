@@ -146,22 +146,23 @@ describe('UI state storage', () => {
     });
 
     expect(loadUiState()).toEqual(defaultUiState());
-    expect(loadUiState().shapeCoachEnabled).toBe(true);
     expect(() => saveUiState(defaultUiState())).not.toThrow();
   });
 
   it('loads saved UI state through the safe storage path', () => {
     const storage = installMemoryStorage();
-    storage.setItem(UI_STATE_KEY, JSON.stringify({ mode: 'analyze', shapeCoachEnabled: false }));
+    storage.setItem(UI_STATE_KEY, JSON.stringify({ mode: 'analyze', panels: { analyze: { notesOpen: false } } }));
 
     expect(loadUiState().mode).toBe('analyze');
-    expect(loadUiState().shapeCoachEnabled).toBe(false);
+    expect(loadUiState().panels.analyze.notesOpen).toBe(false);
   });
 
-  it('defaults shape coach to enabled for older UI state saves', () => {
+  it('ignores a shape coach flag left in older UI state saves', () => {
+    // Shape coach moved to GameSettings.showShapeCoach (default off); a stale
+    // ui_state key must not resurrect it or break the load.
     const storage = installMemoryStorage();
-    storage.setItem(UI_STATE_KEY, JSON.stringify({ mode: 'play' }));
+    storage.setItem(UI_STATE_KEY, JSON.stringify({ mode: 'play', shapeCoachEnabled: true }));
 
-    expect(loadUiState().shapeCoachEnabled).toBe(true);
+    expect(loadUiState().mode).toBe('play');
   });
 });
