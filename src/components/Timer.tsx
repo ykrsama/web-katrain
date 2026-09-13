@@ -90,7 +90,7 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
     : display;
   const timeText = useMemo(
     () => (isTimerDisabled ? t('Off') : formatKaTrainClockSeconds(effectiveDisplay.timeSeconds)),
-    [effectiveDisplay.timeSeconds, isTimerDisabled]
+    [effectiveDisplay.timeSeconds, isTimerDisabled, t]
   );
   const timeoutClass = isTimerDisabled
     ? 'text-[var(--ui-text-muted)]'

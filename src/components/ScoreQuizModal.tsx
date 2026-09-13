@@ -82,7 +82,7 @@ export const ScoreQuizModal: React.FC<ScoreQuizModalProps> = ({ onClose }) => {
       setErrorMsg(err instanceof Error ? err.message : t('Evaluation failed. Is the engine loaded?'));
       setPhase('guess');
     }
-  }, [currentNode, settings, winner, margin]);
+  }, [currentNode, settings, winner, margin, t]);
 
   const quizPositions = useMemo(() => collectQuizPositions(rootNode), [rootNode]);
 

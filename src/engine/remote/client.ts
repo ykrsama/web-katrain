@@ -124,7 +124,6 @@ class RemoteEngineClient {
 
   // Signature mirrors `EngineClient.init()`; the remote client takes its model
   // and backend from the server, so the arguments are intentionally unused.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async init(_modelUrl?: string, _backend?: KataGoBackendPreference): Promise<void> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
     this._closing = false;

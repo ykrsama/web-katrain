@@ -315,15 +315,9 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
   const depthHintValue = depthHintVisits ?? liveVisits;
   const depthHintLabel = visitPresetLabel(depthHintValue);
   const depthHintDescription = visitPresetDescription(depthHintValue);
-  const liveVisitPresets = React.useMemo(
-    () => mergeVisitPresets(ANALYSIS_VISIT_PRESETS, liveVisits),
-    [liveVisits]
-  );
-  const liveVisitDepthSegments = React.useMemo(
-    () => ANALYSIS_VISIT_PRESETS.map((preset) => ({ preset, active: liveVisits >= preset })),
-    [liveVisits]
-  );
-  const applyLiveVisits = React.useCallback((visits: number) => {
+  const liveVisitPresets = mergeVisitPresets(ANALYSIS_VISIT_PRESETS, liveVisits);
+  const liveVisitDepthSegments = ANALYSIS_VISIT_PRESETS.map((preset) => ({ preset, active: liveVisits >= preset }));
+  const applyLiveVisits = (visits: number) => {
     const nextVisits = clampAnalysisVisits(visits);
     if (nextVisits === liveVisits) return;
     updateSettings({ katagoVisits: nextVisits });
@@ -332,8 +326,8 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
         void useGameStore.getState().runAnalysis({ force: true, visits: nextVisits });
       }, 0);
     }
-  }, [isAnalysisMode, liveVisits, updateSettings]);
-  const commitDepthDraft = React.useCallback((raw: string) => {
+  };
+  const commitDepthDraft = (raw: string) => {
     const parsed = Number.parseInt(raw, 10);
     if (!Number.isFinite(parsed)) {
       setDepthDraft(String(liveVisits));
@@ -342,7 +336,7 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
     const nextVisits = clampAnalysisVisits(parsed);
     setDepthDraft(String(nextVisits));
     applyLiveVisits(nextVisits);
-  }, [applyLiveVisits, liveVisits]);
+  };
 
   const closeDepthPopover = React.useCallback((restoreFocus = false) => {
     setDepthPopoverOpen(false);
