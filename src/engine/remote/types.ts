@@ -5,7 +5,7 @@
  * See katrain/core/remote_engine.py for the Python reference implementation.
  */
 
-import type { BoardState, FloatArray, GameRules, Move, Player } from '../../types';
+import type { BoardState, FloatArray, GameRules, Move } from '../../types';
 
 // ─── Query (what we send) ────────────────────────────────────────────────
 

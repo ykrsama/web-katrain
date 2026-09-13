@@ -120,7 +120,6 @@ export const GameInfoPanel: React.FC = () => {
   const hasMetadata = hasGameInfoMetadata(rootProps);
   const blackDisplay = formatGameInfoPlayer(blackName, blackRank, 'Black');
   const whiteDisplay = formatGameInfoPlayer(whiteName, whiteRank, 'White');
-  const colorLabel = (color: Player): string => (color === 'black' ? t('Black') : t('White'));
   const rulesName = (rule: GameRules): string => {
     switch (rule) {
       case 'japanese':

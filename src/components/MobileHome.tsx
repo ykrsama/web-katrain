@@ -207,9 +207,13 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
 
   const compactGamepadName = gamepadName ? formatGamepadLabel(gamepadName, 18) : null;
   const hasMultipleGamepads = gamepadCount > 1;
+  // The status text is rendered only under the `compactGamepadName` guard
+  // below, so a named controller is always present; the fallback keeps the
+  // i18n helper's string type satisfied.
+  const gamepadStatusName = gamepadName ?? '';
   const gamepadStatusText = hasMultipleGamepads
-    ? t('Gamepad navigation connected: {name}. {count} controllers connected; using the most recently active. Tap to disable.', { name: gamepadName, count: gamepadCount })
-    : t('Gamepad navigation connected: {name}. Tap to disable.', { name: gamepadName });
+    ? t('Gamepad navigation connected: {name}. {count} controllers connected; using the most recently active. Tap to disable.', { name: gamepadStatusName, count: gamepadCount })
+    : t('Gamepad navigation connected: {name}. Tap to disable.', { name: gamepadStatusName });
   const quickNewGameWarning = t('Quick new game ({size}×{size}): uses your saved defaults and replaces the current game after the unsaved-changes check.', { size: quickNewGameBoardSize });
 
   return (

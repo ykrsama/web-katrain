@@ -14,9 +14,6 @@ import { buildMoveList, coordToGtp, rulesToKataGoString, type RemoteMoveInfo, ty
 
 const DEFAULT_BOARD_SIZE = 19;
 
-const takeLastMoves = (moves: Move[]): Move[] =>
-  moves.length <= 5 ? moves : moves.slice(moves.length - 5);
-
 /** Build a 19×19 policy array from a remote response. */
 function buildPolicy(moveInfos: RemoteMoveInfo[], boardSize: number): number[] {
   const policy = new Array<number>(boardSize * boardSize + 1).fill(-1);
@@ -34,22 +31,6 @@ function buildPolicy(moveInfos: RemoteMoveInfo[], boardSize: number): number[] {
   }
   // Pass is not in moveInfos; leave at -1.
   return policy;
-}
-
-/** Convert remote ownership array (if present) to Float32Array. */
-function buildOwnership(moveInfos: RemoteMoveInfo[], boardSize: number): Float32Array {
-  // Ownership is a per-root property in KataGo; return the root ownership.
-  // For remote, we don't get root-level ownership array directly — it's
-  // typically in the first move's ownership.  Return a zero array if unavailable.
-  return new Float32Array(boardSize * boardSize);
-}
-
-/** Build a board-size×board-size ownership from the move-level data. */
-function buildTerritoryFromResponse(resp: RemoteResponse): number[] | null {
-  // The remote KataGo may include ownership in rootInfo or as a separate field.
-  // For now, we build a simple territory from the root score.
-  // The actual ownership data should come from the server if configured.
-  return null;
 }
 
 // ─── Client ───────────────────────────────────────────────────────────────
@@ -103,7 +84,6 @@ class RemoteEngineClient {
   private _queryBoardSizes = new Map<string, number>();
   private _closing = false;
   private _reconnecting = false;
-  private _reportedDead = false;
   private _connId = 0;
   private _backend = 'remote';
   private _modelName: string | null = null;
@@ -142,10 +122,12 @@ class RemoteEngineClient {
     };
   }
 
+  // Signature mirrors `EngineClient.init()`; the remote client takes its model
+  // and backend from the server, so the arguments are intentionally unused.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async init(_modelUrl?: string, _backend?: KataGoBackendPreference): Promise<void> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
     this._closing = false;
-    this._reportedDead = false;
     this._reconnecting = false;
     this._crashed = null;
     await this._connect();
@@ -172,7 +154,6 @@ class RemoteEngineClient {
 
     // Reset any previous crash state — we're going to try again.
     this._crashed = null;
-    this._reportedDead = false;
 
     // If a reconnect loop is already running, wait for it.
     if (this._reconnecting) {
@@ -447,7 +428,6 @@ class RemoteEngineClient {
           return;
         }
         this._reportConnected();
-        this._reportedDead = false;
         this._crashed = null;
         settle(() => resolve());
       };
@@ -526,7 +506,6 @@ class RemoteEngineClient {
       try {
         await this._connect();
         this._reconnecting = false;
-        this._reportedDead = false;
         console.info('[remote-engine] Reconnected');
         return;
       } catch (err) {
@@ -537,7 +516,6 @@ class RemoteEngineClient {
     // All retries exhausted.
     this._reconnecting = false;
     if (!this._closing) {
-      this._reportedDead = true;
       this._failAllPending(new Error(`Remote engine disconnected: ${reason}`));
       this._crashed = new Error(`Remote engine disconnected: ${reason}`);
     }
