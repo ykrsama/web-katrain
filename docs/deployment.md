@@ -42,6 +42,24 @@ Use an explicit base path when deploying somewhere unusual:
 VITE_BASE_URL=/my/path/ npm run build
 ```
 
+## Analysis Visit Cap
+
+The browser engine refuses to start a search deeper than `ENGINE_MAX_VISITS`
+(`src/engine/katago/limits.ts`), which defaults to 500,000 visits. It bounds one
+analysis request only: the depth selector, the Settings visits fields, and every
+engine call derive their limit from it.
+
+Override the default at build time when you want a lower ceiling (for weaker
+devices) or a higher one:
+
+```sh
+VITE_KATAGO_MAX_VISITS=250000 npm run build
+```
+
+The value must be a positive integer; anything else falls back to 500,000. Note
+that `ENGINE_MAX_TIME_MS` (5 minutes) still cuts a search off, so a large cap only
+matters if the maximum time is raised to match.
+
 ## GitHub Pages
 
 The repository includes `.github/workflows/deploy-pages.yml`. On pushes to

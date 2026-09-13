@@ -326,6 +326,22 @@ const resolveModelUrlForFetch = (value: string): string => {
   return new URL(trimmed, window.location.href).toString();
 };
 
+/**
+ * Visits stored by an older build (or a hand-edited localStorage entry) can sit
+ * outside the current engine cap; fold them back so the stored setting and the
+ * depth controls agree.
+ */
+const clampStoredVisits = (parsed: Record<string, unknown>, key: 'katagoVisits' | 'katagoFastVisits'): void => {
+  if (!(key in parsed)) return;
+  const raw = parsed[key];
+  const num = typeof raw === 'number' ? raw : Number.parseInt(String(raw ?? ''), 10);
+  if (!Number.isFinite(num)) {
+    delete parsed[key];
+    return;
+  }
+  parsed[key] = Math.max(16, Math.min(ENGINE_MAX_VISITS, Math.floor(num)));
+};
+
 const loadStoredSettings = (): Partial<GameSettings> | null => {
   try {
     const rawCurrent = readLocalStorage(SETTINGS_STORAGE_KEY);
@@ -368,6 +384,8 @@ const loadStoredSettings = (): Partial<GameSettings> | null => {
     if ((parsed as { katagoVisits?: unknown }).katagoVisits === OLD_DEFAULT_KATAGO_VISITS) {
       (parsed as { katagoVisits: number }).katagoVisits = DEFAULT_KATAGO_VISITS;
     }
+    clampStoredVisits(parsed as Record<string, unknown>, 'katagoVisits');
+    clampStoredVisits(parsed as Record<string, unknown>, 'katagoFastVisits');
     if ('boardTheme' in parsed) {
       if (!isBoardThemeId((parsed as { boardTheme?: unknown }).boardTheme)) {
         delete (parsed as { boardTheme?: unknown }).boardTheme;

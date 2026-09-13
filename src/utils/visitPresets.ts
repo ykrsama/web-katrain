@@ -1,7 +1,7 @@
 import { ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { t } from '../i18n';
 
-export const ANALYSIS_VISIT_PRESETS = [16, 250, 1000, 5000] as const;
+export const ANALYSIS_VISIT_PRESETS = [500, 5000, 50000, 500000] as const;
 export const ANALYSIS_MIN_VISITS = 16;
 export const ANALYSIS_VISIT_SLIDER_MIN = Math.log10(ANALYSIS_MIN_VISITS);
 export const ANALYSIS_VISIT_SLIDER_MAX = Math.log10(ENGINE_MAX_VISITS);
@@ -56,18 +56,20 @@ export function formatVisitCount(visits: number): string {
   return `${Math.round(thousands)}k`;
 }
 
+// The bands follow the preset buttons, so each preset keeps the label and
+// description it had before the numbers moved.
 export function visitPresetLabel(visits: number, defaultVisits?: number): string {
   if (defaultVisits !== undefined && visits === clampAnalysisVisits(defaultVisits)) return t('Default');
-  if (visits <= 16) return t('Fast');
-  if (visits <= 250) return t('Balanced');
-  if (visits <= 1000) return t('Deep');
+  if (visits <= ANALYSIS_VISIT_PRESETS[0]) return t('Fast');
+  if (visits <= ANALYSIS_VISIT_PRESETS[1]) return t('Balanced');
+  if (visits <= ANALYSIS_VISIT_PRESETS[2]) return t('Deep');
   return t('Thorough');
 }
 
 export function visitPresetDescription(visits: number): string {
   const clamped = clampAnalysisVisits(visits);
-  if (clamped <= 16) return t('Quick shape checks with minimal waiting.');
-  if (clamped <= 250) return t('Everyday review depth for steady feedback.');
-  if (clamped <= 1000) return t('Deeper reading for fights and close choices.');
+  if (clamped <= ANALYSIS_VISIT_PRESETS[0]) return t('Quick shape checks with minimal waiting.');
+  if (clamped <= ANALYSIS_VISIT_PRESETS[1]) return t('Everyday review depth for steady feedback.');
+  if (clamped <= ANALYSIS_VISIT_PRESETS[2]) return t('Deeper reading for fights and close choices.');
   return t('Maximum confidence; slower on large positions.');
 }

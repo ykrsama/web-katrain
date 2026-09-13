@@ -128,7 +128,7 @@ const OFFICIAL_MODELS: Array<{
 ];
 
 const MIN_ANALYSIS_VISITS = 16;
-const FAST_REVIEW_VISIT_PRESETS = [16, 25, 50, 100] as const;
+const FAST_REVIEW_VISIT_PRESETS = [100, 500, 5000, 50000] as const;
 const SETTINGS_TABS = [
     { id: 'general', label: 'General', compactLabel: 'General' },
     { id: 'analysis', label: 'Analysis', compactLabel: 'Analysis' },
@@ -2648,7 +2648,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                                                 min={16}
                                                 max={ENGINE_MAX_VISITS}
                                                 value={settings.katagoVisits}
-                                                onChange={(e) => updateSettings({ katagoVisits: Math.max(16, parseInt(e.target.value || '0', 10)) })}
+                                                onChange={(e) => updateSettings({ katagoVisits: clampSettingsVisits(parseInt(e.target.value || '0', 10)) })}
                                                 className={inputClass}
                                             />
                                             <p className={subtextClass}>{t('How many positions the search reads per move while live analysis is on. More is stronger and slower; the presets in the Analysis panel set the same number.')}</p>

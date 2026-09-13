@@ -1,5 +1,14 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  /** Build-time override for `ENGINE_MAX_VISITS`; see `src/engine/katago/limits.ts`. */
+  readonly VITE_KATAGO_MAX_VISITS?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 declare module '*.sgf?raw' {
   const content: string;
   export default content;

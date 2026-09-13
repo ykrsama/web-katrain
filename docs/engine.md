@@ -89,7 +89,9 @@ analysis does not allocate heavily.
 `MctsSearch` combines neural network policy/value outputs with PUCT-style tree
 search. A normal analysis request can control:
 
-- Visits and maximum time.
+- Visits and maximum time. The visit ceiling is `ENGINE_MAX_VISITS`
+  (`src/engine/katago/limits.ts`), 500,000 by default and overridable at build
+  time with `VITE_KATAGO_MAX_VISITS`; every request is clamped to it.
 - Batch size.
 - Maximum child moves.
 - Top-K candidate count.
