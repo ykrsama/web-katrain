@@ -63,6 +63,9 @@ interface AnalysisCommandBarProps {
   engineModelLabel: string | null;
   requestedBackend: string;
   modelUrl: string;
+  /** 'remote' means a WebSocket server answers, not the browser backend below. */
+  engineMode?: 'local' | 'remote';
+  remoteEngineUrl?: string | null;
   winRate: number | null;
   scoreLead: number | null;
   pointsLost: number | null;
@@ -146,6 +149,8 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
   engineModelLabel,
   requestedBackend,
   modelUrl,
+  engineMode,
+  remoteEngineUrl,
   winRate,
   scoreLead,
   pointsLost,
@@ -219,7 +224,9 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
     activeBackend: engineBackend,
     modelLabel: engineModelLabel,
     modelUrl,
-  }), [engineBackend, engineError, engineModelLabel, engineStatus, modelUrl, requestedBackend]);
+    engineMode,
+    remoteEngineUrl,
+  }), [engineBackend, engineError, engineMode, engineModelLabel, engineStatus, modelUrl, remoteEngineUrl, requestedBackend]);
   const engineStatusTitle = [statusText, engineSummary.title].filter(Boolean).join('\n\n');
   const phoneHeaderAlreadyShowsEngineState = engineSummary.stateLabel === 'Ready'
     && !engineError
@@ -238,14 +245,14 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
     const ok = await copyTextToClipboard(formatEngineErrorReport({
       status: engineStatus,
       requestedBackend,
-      activeBackend: engineBackend ?? requestedBackend,
+      activeBackend: engineMode === 'remote' && remoteEngineUrl?.trim() ? 'remote' : engineBackend ?? requestedBackend,
       modelLabel: engineModelLabel,
       modelUrl,
       error: engineError,
     }));
     setEngineErrorCopied(ok);
     setTimedNotification(t(ok ? 'Copied engine error details.' : 'Could not copy engine error details.'), ok ? 'success' : 'error');
-  }, [engineBackend, engineError, engineModelLabel, engineStatus, modelUrl, requestedBackend, t]);
+  }, [engineBackend, engineError, engineMode, engineModelLabel, engineStatus, modelUrl, remoteEngineUrl, requestedBackend, t]);
 
   const toggleOverlay = (key: keyof AnalysisControlsState) => {
     updateControls({ [key]: !analysisControls[key] });

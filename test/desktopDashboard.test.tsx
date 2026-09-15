@@ -16,6 +16,17 @@ describe('DesktopDashboard', () => {
     expect(APP_ISSUE_REPORT_URL).toBe('https://github.com/Sir-Teo/web-katrain/issues/new/choose');
   });
 
+  it('names the engine after where it actually runs', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+
+    // The popover title and the backend row were hardcoded to the in-browser
+    // engine, so a configured remote engine still read "KataGo · in-browser"
+    // and "Not loaded".
+    expect(source).toContain("settings.engineMode === 'remote' && !!settings.remoteEngineUrl.trim()");
+    expect(source).toContain("t(isRemote ? 'KataGo · remote' : 'KataGo · in-browser')");
+    expect(source).toContain("{isRemote ? t('Remote') : formatEngineBackendLabel(backend)}");
+  });
+
   it('keeps the language switcher on the wide desktop dashboard header', () => {
     const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
     const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');

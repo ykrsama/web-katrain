@@ -1338,10 +1338,14 @@ export const Layout: React.FC = () => {
   }, []);
 
   // Computed values
+  const isRemoteEngine = settings.engineMode === 'remote' && !!settings.remoteEngineUrl.trim();
   const engineModelLabel = useMemo(
     () => getEngineModelLabel(engineModelName, settings.katagoModelUrl),
     [engineModelName, settings.katagoModelUrl]
   );
+  // Remote analysis runs the server's network: the bundled model's filename is
+  // not what is answering, so it is not what the UI should name.
+  const activeEngineModelLabel = isRemoteEngine ? engineModelName ?? t('Remote Server') : engineModelLabel;
 
   const engineSummary = useMemo(() => getEngineStatusSummary({
     status: engineStatus,
@@ -1349,9 +1353,11 @@ export const Layout: React.FC = () => {
     requestedBackend: settings.katagoBackend,
     activeBackend: engineBackend,
     backendNote: engineBackendNote,
-    modelLabel: engineModelLabel,
+    modelLabel: activeEngineModelLabel,
     modelUrl: settings.katagoModelUrl,
-  }), [engineBackend, engineBackendNote, engineError, engineModelLabel, engineStatus, settings.katagoBackend, settings.katagoModelUrl]);
+    engineMode: settings.engineMode,
+    remoteEngineUrl: settings.remoteEngineUrl,
+  }), [activeEngineModelLabel, engineBackend, engineBackendNote, engineError, engineStatus, settings.engineMode, settings.katagoBackend, settings.katagoModelUrl, settings.remoteEngineUrl]);
   const engineDot = engineSummary.dotClass;
   const engineMeta = engineSummary.compactLabel;
   const engineMetaTitle = engineSummary.title;
@@ -3611,7 +3617,7 @@ export const Layout: React.FC = () => {
             engineMeta={engineMeta}
             engineMetaTitle={engineMetaTitle}
             engineBackend={engineBackend ?? ''}
-            engineModelLabel={engineModelLabel ?? ''}
+            engineModelLabel={activeEngineModelLabel ?? ''}
             analysisCacheSize={analysisCacheSize}
             mode={mode}
             setMode={setMode}
@@ -3891,9 +3897,11 @@ export const Layout: React.FC = () => {
                 engineStatus={engineStatus}
                 engineError={engineError}
                 engineBackend={engineBackend}
-                engineModelLabel={engineModelLabel}
+                engineModelLabel={activeEngineModelLabel}
                 requestedBackend={settings.katagoBackend}
                 modelUrl={settings.katagoModelUrl}
+                engineMode={settings.engineMode}
+                remoteEngineUrl={settings.remoteEngineUrl}
                 winRate={winRate ?? null}
                 scoreLead={scoreLead ?? null}
                 pointsLost={pointsLost}
@@ -4020,9 +4028,11 @@ export const Layout: React.FC = () => {
           engineStatus={engineStatus}
           engineError={engineError}
           engineBackend={engineBackend}
-          engineModelLabel={engineModelLabel}
+          engineModelLabel={activeEngineModelLabel}
           requestedBackend={settings.katagoBackend}
           modelUrl={settings.katagoModelUrl}
+          engineMode={settings.engineMode}
+          remoteEngineUrl={settings.remoteEngineUrl}
           statusText={statusText}
           lockAiDetails={lockAiDetails}
           currentNode={currentNode}

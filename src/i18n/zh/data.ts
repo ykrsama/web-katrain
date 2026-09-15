@@ -190,6 +190,7 @@ export default {
   'Compatible CPU analysis path; slower than WebGPU but broadly supported.': '兼容的 CPU 分析路径；比 WebGPU 慢，但兼容性广。',
   'Plain CPU analysis path selected for maximum compatibility.': '为最大兼容性选择的纯 CPU 分析路径。',
   'Analysis engine will start when analysis runs.': '引擎会在分析运行时启动。',
+  'Remote engine at {url}.': '远程引擎：{url}。',
   '{backend} analysis path is active.': '{backend} 分析路径已启用。',
   'Engine status: {label}': '引擎状态：{label}',
   'Requested {requested}, running {active}.': '请求了 {requested}，正在运行 {active}。',

@@ -91,6 +91,26 @@ describe('AnalysisCommandBar', () => {
     expect(html).toContain('data-analysis-actions-overflow="none"');
   });
 
+  it('reports a remote engine as remote, not as the browser backend', () => {
+    const html = renderToStaticMarkup(
+      <AnalysisCommandBar
+        {...baseProps}
+        engineBackend={null}
+        engineModelLabel="Remote Server"
+        engineMode="remote"
+        remoteEngineUrl="ws://engine.example/katago"
+      />
+    );
+
+    expect(html).toContain('Engine status: Ready · Remote');
+    expect(html).toContain('Reason: Remote engine at ws://engine.example/katago.');
+    expect(html).toContain('Source: Remote');
+    // The requested browser backend and the empty backend both described
+    // something that is not running when analysis goes to a server.
+    expect(html).not.toContain('Ready · WebGPU');
+    expect(html).not.toContain('Not loaded');
+  });
+
   it('uses adaptive scroll-edge affordances for narrow action rows', () => {
     const source = readFileSync('src/components/AnalysisCommandBar.tsx', 'utf8');
     const styles = readFileSync('src/index.css', 'utf8');

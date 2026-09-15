@@ -54,6 +54,9 @@ interface AnalysisPanelProps {
   engineModelLabel: string | null;
   requestedBackend: string;
   modelUrl: string;
+  /** 'remote' means a WebSocket server answers, not the browser backend above. */
+  engineMode?: 'local' | 'remote';
+  remoteEngineUrl?: string | null;
   isGameAnalysisRunning: boolean;
   gameAnalysisType: string | null;
   gameAnalysisDone: number;
@@ -243,6 +246,8 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   engineModelLabel,
   requestedBackend,
   modelUrl,
+  engineMode,
+  remoteEngineUrl,
   isGameAnalysisRunning,
   gameAnalysisType,
   gameAnalysisDone,
@@ -275,6 +280,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   const [engineErrorCopied, setEngineErrorCopied] = React.useState(false);
   const [engineDetailsOpen, setEngineDetailsOpen] = React.useState(false);
   const isPro = (analysisExperienceOverride ?? analysisExperience) === 'pro';
+  const isRemoteEngine = engineMode === 'remote' && !!remoteEngineUrl?.trim();
   const engineSummary = React.useMemo(() => getEngineStatusSummary({
     status: engineStatus,
     error: engineError,
@@ -282,8 +288,10 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
     activeBackend: engineBackend,
     modelLabel: engineModelLabel,
     modelUrl,
-  }), [engineBackend, engineError, engineModelLabel, engineStatus, modelUrl, requestedBackend]);
-  const activeBackend = engineBackend ?? requestedBackend;
+    engineMode,
+    remoteEngineUrl,
+  }), [engineBackend, engineError, engineMode, engineModelLabel, engineStatus, modelUrl, remoteEngineUrl, requestedBackend]);
+  const activeBackend = isRemoteEngine ? 'remote' : engineBackend ?? requestedBackend;
   const qualityLegendItems = React.useMemo(() => {
     const colors = getKaTrainEvalColors(trainerTheme);
     const thresholds = trainerEvalThresholds.length > 0

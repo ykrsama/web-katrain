@@ -335,9 +335,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
         { value: 'wasm', label: 'WASM', description: 'Reliable CPU path', icon: <FaGlobe aria-hidden="true" /> },
         { value: 'cpu', label: 'CPU', description: 'Compatibility path', icon: <FaMicrochip aria-hidden="true" /> },
     ];
-    const activeBackendLabel = formatEngineBackendLabel(engineBackend ?? settings.katagoBackend);
+    // Remote analysis runs on the server, so the status line reports the server
+    // rather than a browser backend that is not the one answering.
+    const isRemoteEngine = settings.engineMode === 'remote' && !!settings.remoteEngineUrl.trim();
+    const activeBackendLabel = isRemoteEngine ? t('Remote') : formatEngineBackendLabel(engineBackend ?? settings.katagoBackend);
     const requestedBackendLabel = formatEngineBackendLabel(settings.katagoBackend);
-    const isBackendFallback = !!engineBackend && engineBackend !== settings.katagoBackend;
+    const isBackendFallback = !isRemoteEngine && !!engineBackend && engineBackend !== settings.katagoBackend;
     const focusBackendOption = (value: GameSettings['katagoBackend']) => {
         window.setTimeout(() => {
             document.querySelector<HTMLElement>(`[data-katago-backend-option="${value}"]`)?.focus();

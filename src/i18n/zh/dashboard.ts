@@ -162,6 +162,7 @@ export default {
   // ---- Engine popover ----
   'Engine details': '引擎详情',
   'KataGo · in-browser': 'KataGo · 浏览器内',
+  'KataGo · remote': 'KataGo · 远程',
   'State': '状态',
   'Backend': '后端',
   'Model': '模型',

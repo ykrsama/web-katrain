@@ -52,6 +52,14 @@ export interface EngineStatusSummaryArgs {
   modelUrl?: string | null;
   /** Why the engine is not on the requested backend, from the worker. */
   backendNote?: string | null;
+  /**
+   * 'remote' sends every request to a WebSocket server. The local backend
+   * names, the bundled model and its fallback notes do not describe what is
+   * running, so the summary reports the server instead of reading
+   * "Not loaded"/"WebGPU" while the app is happily analysing remotely.
+   */
+  engineMode?: 'local' | 'remote';
+  remoteEngineUrl?: string | null;
 }
 
 export interface EngineStatusSummary {
@@ -94,6 +102,8 @@ export function formatEngineBackendLabel(backend: string | null | undefined): st
     case undefined:
       return t('Not loaded');
     default:
+      // The remote client reports its backend as `remote (<url>)`.
+      if (normalized?.startsWith('remote')) return t('Remote');
       return backend ?? t('Not loaded');
   }
 }
@@ -129,11 +139,16 @@ function getEngineBackendReason(args: {
   activeBackend?: string | null;
   isFallback: boolean;
   backendNote?: string | null;
+  remoteEngineUrl?: string;
 }): string {
   if (args.error) {
     return args.isFallback
       ? `${args.requestedBackendLabel} failed; ${args.activeBackendLabel} is the active fallback.`
       : `${args.activeBackendLabel} failed to start.`;
+  }
+
+  if (args.remoteEngineUrl) {
+    return t('Remote engine at {url}.', { url: args.remoteEngineUrl });
   }
 
   if (args.status === 'loading') {
@@ -163,8 +178,10 @@ function getEngineBackendReason(args: {
 }
 
 export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineStatusSummary {
-  const hasLoadedBackend = !!args.activeBackend?.trim();
-  const hasConfiguredModel = !!args.modelLabel?.trim();
+  const remoteEngineUrl = args.engineMode === 'remote' ? args.remoteEngineUrl?.trim() ?? '' : '';
+  const isRemote = remoteEngineUrl.length > 0;
+  const hasLoadedBackend = isRemote || !!args.activeBackend?.trim();
+  const hasConfiguredModel = isRemote || !!args.modelLabel?.trim();
   const reportsReadyWhileIdle = args.status === 'idle' && (hasLoadedBackend || hasConfiguredModel);
   // Internal canonical token, kept in English because consumers compare it
   // literally (e.g. `stateLabel === 'Ready'`); display surfaces translate it.
@@ -175,15 +192,15 @@ export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineSta
       : args.status === 'ready' || reportsReadyWhileIdle
         ? 'Ready'
         : 'Idle';
-  const activeBackend = args.activeBackend ?? args.requestedBackend;
+  const activeBackend = isRemote ? 'remote' : args.activeBackend ?? args.requestedBackend;
   const activeBackendLabel = formatEngineBackendLabel(activeBackend);
-  const requestedBackendLabel = formatEngineBackendLabel(args.requestedBackend);
-  const isFallback = !!args.activeBackend && args.activeBackend !== args.requestedBackend;
+  const requestedBackendLabel = isRemote ? t('Remote') : formatEngineBackendLabel(args.requestedBackend);
+  const isFallback = !isRemote && !!args.activeBackend && args.activeBackend !== args.requestedBackend;
   const stateDisplay = isFallback ? t('{state} fallback', { state: t(stateLabel) }) : t(stateLabel);
   // Model names are long developer detail (often a training-run hash); the
   // compact label stays at state · backend and the title carries the model.
   const parts = [stateDisplay, activeBackendLabel];
-  const modelSource = getEngineModelSource(args.modelUrl);
+  const modelSource = isRemote ? t('Remote') : getEngineModelSource(args.modelUrl);
   const isReady = stateLabel === 'Ready';
   const reasonLabel = getEngineBackendReason({
     status: args.status,
@@ -193,6 +210,7 @@ export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineSta
     activeBackend: args.activeBackend,
     isFallback,
     backendNote: args.backendNote,
+    remoteEngineUrl: isRemote ? remoteEngineUrl : undefined,
   });
   const titleLines = [
     t('State: {state}', { state: t(stateLabel) }),

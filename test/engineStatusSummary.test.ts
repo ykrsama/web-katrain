@@ -165,4 +165,45 @@ describe('engine status summary', () => {
 
     expect(summary.reasonLabel).toBe('WebGPU was requested; CPU (WASM) is running.');
   });
+
+  it('reports the remote server instead of a browser backend', () => {
+    // A remote engine answers over the WebSocket, so "Not loaded"/"WebGPU"
+    // described something that was not running: the local backend is never
+    // reported for a remote engine.
+    const summary = getEngineStatusSummary({
+      status: 'idle',
+      requestedBackend: 'webgpu',
+      activeBackend: null,
+      modelLabel: null,
+      modelUrl: '/models/katago-small.bin.gz',
+      engineMode: 'remote',
+      remoteEngineUrl: 'ws://engine.example/katago',
+    });
+
+    expect(summary.compactLabel).toBe('Ready · Remote');
+    expect(summary.activeBackendLabel).toBe('Remote');
+    expect(summary.requestedBackendLabel).toBe('Remote');
+    expect(summary.modelSource).toBe('Remote');
+    expect(summary.isFallback).toBe(false);
+    expect(summary.reasonLabel).toBe('Remote engine at ws://engine.example/katago.');
+    expect(summary.title).toContain('Backend: Remote');
+    expect(summary.title).toContain('Source: Remote');
+    expect(summary.dotClass).toBe('bg-green-400');
+  });
+
+  it('formats the remote client backend string for humans', () => {
+    expect(formatEngineBackendLabel('remote (ws://engine.example/katago)')).toBe('Remote');
+  });
+
+  it('stays on the local backend when remote mode has no URL configured', () => {
+    const summary = getEngineStatusSummary({
+      status: 'idle',
+      requestedBackend: 'webgpu',
+      engineMode: 'remote',
+      remoteEngineUrl: '   ',
+    });
+
+    expect(summary.compactLabel).toBe('Idle · WebGPU');
+    expect(summary.activeBackendLabel).toBe('WebGPU');
+  });
 });

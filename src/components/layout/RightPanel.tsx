@@ -131,6 +131,8 @@ interface RightPanelProps {
   engineModelLabel: string | null;
   requestedBackend: string;
   modelUrl: string;
+  engineMode?: 'local' | 'remote';
+  remoteEngineUrl?: string | null;
   statusText: string;
   lockAiDetails: boolean;
   // Notes
@@ -192,6 +194,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   engineModelLabel,
   requestedBackend,
   modelUrl,
+  engineMode,
+  remoteEngineUrl,
   statusText,
   lockAiDetails,
   currentNode,
@@ -810,6 +814,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                   engineModelLabel={engineModelLabel}
                   requestedBackend={requestedBackend}
                   modelUrl={modelUrl}
+                  engineMode={engineMode}
+                  remoteEngineUrl={remoteEngineUrl}
                   isGameAnalysisRunning={isGameAnalysisRunning}
                   gameAnalysisType={gameAnalysisType}
                   gameAnalysisDone={gameAnalysisDone}

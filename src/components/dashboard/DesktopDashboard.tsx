@@ -395,6 +395,9 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   // printing "BEST MOVE G4" under the board answers the question anyway.
   const bestMove = drillHidesAnswer ? null : currentNode.analysis?.moves?.[0] ?? null;
   const isProDetail = settings.analysisExperience === 'pro';
+  // Remote analysis answers from a WebSocket server, so the browser backend and
+  // bundled model are not what the pill and the engine popover should name.
+  const isRemoteEngine = settings.engineMode === 'remote' && !!settings.remoteEngineUrl.trim();
   // "Fast review" matches the command bar's name for the same operation;
   // avoid exposing MCTS jargon in one surface and not the other.
   const dashboardFastMctsTitle = isGameAnalysisRunning
@@ -554,9 +557,9 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <span id="wk-engine-pill-label">{enginePillLabel}</span>
           {/* Model name and hash are developer detail; the pill stays at
               "status · backend" and the popover carries the full identity. */}
-          {engineBackend ? (
+          {isRemoteEngine || engineBackend ? (
             <span className="meta" id="wk-engine-pill-meta">
-              {formatEngineBackendLabel(engineBackend)}
+              {isRemoteEngine ? t('Remote') : formatEngineBackendLabel(engineBackend)}
             </span>
           ) : null}
         </button>
@@ -1113,7 +1116,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           engineState={engineState}
           backend={engineBackend}
           model={engineModelLabel}
-          modelSource={getEngineModelSource(settings.katagoModelUrl)}
+          modelSource={isRemoteEngine ? t('Remote') : getEngineModelSource(settings.katagoModelUrl)}
+          isRemote={isRemoteEngine}
           cacheSize={analysisCacheSize}
           visits={settings.katagoVisits}
           visitsDisabled={isGameAnalysisRunning}
@@ -1211,12 +1215,14 @@ const EnginePopover: React.FC<{
   backend: string;
   model: string;
   modelSource: string;
+  /** Analysis runs on a remote WebSocket server, not the in-browser backend. */
+  isRemote: boolean;
   cacheSize: number;
   visits: number;
   visitsDisabled: boolean;
   onVisitsChange: (visits: number) => void;
   onClearCache: () => void;
-}> = ({ rect, engineState, backend, model, modelSource, cacheSize, visits, visitsDisabled, onVisitsChange, onClearCache }) => {
+}> = ({ rect, engineState, backend, model, modelSource, isRemote, cacheSize, visits, visitsDisabled, onVisitsChange, onClearCache }) => {
   const t = useT();
   const states: Record<EngineState, [string, string]> = {
     ready: [t('Ready'), 'var(--green)'],
@@ -1237,11 +1243,11 @@ const EnginePopover: React.FC<{
       tabIndex={-1}
       data-dashboard-popover="true"
     >
-      <div className="pop-head"><div className="pop-eyebrow">{t('Engine')}</div><div className="pop-title">{t('KataGo · in-browser')}</div></div>
+      <div className="pop-head"><div className="pop-eyebrow">{t('Engine')}</div><div className="pop-title">{t(isRemote ? 'KataGo · remote' : 'KataGo · in-browser')}</div></div>
       <div className="engine-detail">
         <dl className="ed-grid">
           <div><dt>{t('State')}</dt><dd style={{ color }}>{label}</dd></div>
-          <div><dt>{t('Backend')}</dt><dd>{formatEngineBackendLabel(backend)}</dd></div>
+          <div><dt>{t('Backend')}</dt><dd>{isRemote ? t('Remote') : formatEngineBackendLabel(backend)}</dd></div>
           <div><dt>{t('Model')}</dt><dd>{model || '—'}</dd></div>
           <div><dt>{t('Source')}</dt><dd>{modelSource}</dd></div>
         </dl>
