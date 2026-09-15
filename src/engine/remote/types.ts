@@ -22,6 +22,12 @@ export interface RemoteQuery {
   initialPlayer?: 'B' | 'W';
   rules: string;
   komi: number;
+  /**
+   * Overrides the ruleset's own compensation for Black's handicap stones
+   * ("0", "N", "N-1"). The app already folds that compensation into `komi`, so
+   * it sends "0" to keep KataGo from adding it a second time.
+   */
+  whiteHandicapBonus?: string;
   boardXSize: number;
   boardYSize: number;
   maxVisits?: number;
@@ -324,6 +330,9 @@ export type RemoteAnalysisOptions = {
  * `overrideSettings`: sent at the top level the engine answers "Unexpected or
  * unused field" and ignores them, so a remote search used to run to its visit
  * count no matter what maximum time the app asked for.
+ *
+ * Rules travel as the ruleset name (`japanese`, `chinese`, `new_zealand`, …)
+ * and `komi` as the app's own number, handicap compensation included.
  */
 export function buildAnalysisQuery(args: {
   id: string;
@@ -351,6 +360,16 @@ export function buildAnalysisQuery(args: {
     initialPlayer: position.initialPlayer,
     rules: rulesToKataGoString(rules),
     komi,
+    // `komi` above is already the number the app means: it carries the ruleset's
+    // handicap compensation (see `komiWithHandicapBonus`), because the local
+    // engine takes komi as given and the app's own score count adds the same
+    // bonus by itself. KataGo would add its ruleset's `whiteHandicapBonus` on
+    // top of that — and it reads the handicap stone count off the position the
+    // query hands it, which is a move behind the game's setup — so a 4-stone
+    // Chinese handicap game was analysed as komi 15.5 instead of 11.5. Asking
+    // for "0" leaves the komi as sent. The field has been in the analysis
+    // protocol since at least KataGo v1.4.5, so it is safe to always send.
+    whiteHandicapBonus: '0',
     boardXSize: boardSize,
     boardYSize: boardSize,
     maxVisits: options.visits ?? 500,

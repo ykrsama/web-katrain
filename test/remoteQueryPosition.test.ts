@@ -321,6 +321,26 @@ describe('remote analysis query', () => {
     expect(query.komi).toBe(7.5);
   });
 
+  it('keeps KataGo from adding a handicap bonus the komi already carries', () => {
+    // The app hands the engine komi + the ruleset's handicap compensation (the
+    // local engine takes komi as given). KataGo adds its own
+    // `whiteHandicapBonus` for "chinese", so without this the bonus was counted
+    // twice: a 4-stone Chinese handicap game was analysed at komi 15.5.
+    const query = buildAnalysisQuery({ ...base, options: {} });
+
+    expect(query.whiteHandicapBonus).toBe('0');
+    expect(query.komi).toBe(7.5);
+  });
+
+  it('maps every ruleset to a name KataGo accepts', () => {
+    const names = (['japanese', 'korean', 'chinese', 'aga', 'new-zealand', 'tromp-taylor', 'stone-scoring'] as const)
+      .map((rules) => buildAnalysisQuery({ ...base, rules, options: {} }).rules);
+
+    // KataGo's parseRulesHelper accepts the underscored spellings of the
+    // hyphenated rulesets and nothing else for these.
+    expect(names).toEqual(['japanese', 'korean', 'chinese', 'aga', 'new_zealand', 'tromp_taylor', 'stone_scoring']);
+  });
+
   it('merges region-of-interest avoids with explicit avoid moves and allow moves', () => {
     const query = buildAnalysisQuery({
       ...base,
