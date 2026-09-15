@@ -5,7 +5,7 @@
  * See katrain/core/remote_engine.py for the Python reference implementation.
  */
 
-import type { BoardState, FloatArray, GameRules, Move, Player } from '../../types';
+import type { BoardState, FloatArray, GameRules, Move, Player, RegionOfInterest } from '../../types';
 import { applyCapturesInPlace } from '../../utils/gameLogic';
 
 // ─── Query (what we send) ────────────────────────────────────────────────
@@ -249,4 +249,103 @@ export function rulesToKataGoString(rules: GameRules): string {
     'stone-scoring': 'stone_scoring',
   };
   return map[rules] ?? 'japanese';
+}
+
+/** The analysis arguments that end up in a remote query. */
+export type RemoteAnalysisOptions = {
+  visits?: number;
+  maxTimeMs?: number;
+  ownershipMode?: 'none' | 'root' | 'tree';
+  includeMovesOwnership?: boolean;
+  analysisPvLen?: number;
+  reportDuringSearchEveryMs?: number;
+  wideRootNoise?: number;
+  rootPolicyTemperature?: number;
+  conservativePass?: boolean;
+  fillDameBeforePass?: boolean;
+  regionOfInterest?: RegionOfInterest | null;
+  avoidMoves?: Array<{ x: number; y: number; untilDepth?: number }>;
+  allowMoves?: Array<{ moves: Array<{ x: number; y: number }>; untilDepth?: number }>;
+};
+
+/**
+ * Build the JSON query for one analysis request.
+ *
+ * Search settings (time limit, root noise, pass rules) go into
+ * `overrideSettings`: sent at the top level the engine answers "Unexpected or
+ * unused field" and ignores them, so a remote search used to run to its visit
+ * count no matter what maximum time the app asked for.
+ */
+export function buildAnalysisQuery(args: {
+  id: string;
+  position: RemoteQueryPosition;
+  boardSize: number;
+  komi: number;
+  rules: GameRules;
+  options: RemoteAnalysisOptions;
+}): RemoteQuery {
+  const { id, position, boardSize, komi, rules, options } = args;
+
+  const overrideSettings: Record<string, unknown> = { reportAnalysisWinratesAs: 'BLACK' };
+  if (options.maxTimeMs) overrideSettings.maxTime = options.maxTimeMs / 1000;
+  if (options.wideRootNoise !== undefined) overrideSettings.wideRootNoise = options.wideRootNoise;
+  if (options.rootPolicyTemperature !== undefined) {
+    overrideSettings.rootPolicyTemperature = options.rootPolicyTemperature;
+  }
+  if (options.conservativePass !== undefined) overrideSettings.conservativePass = options.conservativePass;
+  if (options.fillDameBeforePass !== undefined) overrideSettings.fillDameBeforePass = options.fillDameBeforePass;
+
+  const query: RemoteQuery = {
+    id,
+    moves: position.moves,
+    initialStones: position.initialStones,
+    initialPlayer: position.initialPlayer,
+    rules: rulesToKataGoString(rules),
+    komi,
+    boardXSize: boardSize,
+    boardYSize: boardSize,
+    maxVisits: options.visits ?? 500,
+    includePolicy: true,
+    includeOwnership: options.ownershipMode !== 'none',
+    includeMovesOwnership: options.includeMovesOwnership ?? false,
+    includePVVisits: true,
+    analysisPVLen: options.analysisPvLen ?? 15,
+    reportDuringSearchEvery: options.reportDuringSearchEveryMs
+      ? options.reportDuringSearchEveryMs / 1000
+      : 0.5,
+    overrideSettings,
+  };
+
+  // Region of interest: the search may not play outside it.
+  if (options.regionOfInterest) {
+    const roi = options.regionOfInterest;
+    const avoidList: string[] = [];
+    for (let y = 0; y < boardSize; y++) {
+      for (let x = 0; x < boardSize; x++) {
+        if (x < roi.xMin || x > roi.xMax || y < roi.yMin || y > roi.yMax) {
+          avoidList.push(coordToGtp(x, y, boardSize));
+        }
+      }
+    }
+    if (avoidList.length > 0) {
+      query.avoidMoves = avoidList.map((move) => ({ move, untilDepth: 1 }));
+    }
+  }
+
+  if (options.avoidMoves && options.avoidMoves.length > 0) {
+    const existing = query.avoidMoves ?? [];
+    for (const am of options.avoidMoves) {
+      existing.push({ move: coordToGtp(am.x, am.y, boardSize), untilDepth: am.untilDepth ?? 1 });
+    }
+    query.avoidMoves = existing;
+  }
+
+  if (options.allowMoves && options.allowMoves.length > 0) {
+    query.allowMoves = options.allowMoves.map((am) => ({
+      moves: am.moves.map((m) => coordToGtp(m.x, m.y, boardSize)),
+      untilDepth: am.untilDepth ?? 1,
+    }));
+  }
+
+  return query;
 }

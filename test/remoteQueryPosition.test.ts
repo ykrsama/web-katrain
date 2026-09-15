@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildQueryPosition } from '../src/engine/remote/types';
+import { buildAnalysisQuery, buildQueryPosition } from '../src/engine/remote/types';
 import type { BoardState, Move, Player } from '../src/types';
 
 const emptyBoard = (size: number): BoardState =>
@@ -108,5 +108,73 @@ describe('remote query position', () => {
     expect(position.moves).toEqual([]);
     expect(position.initialStones).toEqual([['W', 'Q16']]);
     expect(position.initialPlayer).toBe('B');
+  });
+});
+
+describe('remote analysis query', () => {
+  const position = { initialStones: [['W', 'Q16']] as Array<[string, string]>, moves: [], initialPlayer: 'B' as const };
+  const base = { id: 'Q1', position, boardSize: 19, komi: 7.5, rules: 'chinese' as const };
+
+  it('sends search settings as override settings, not top-level query fields', () => {
+    // KataGo reported maxTime/wideRootNoise/conservativePass/fillDameBeforePass
+    // as "Unexpected or unused field" at the top level and ignored them, so the
+    // remote search ran to maxVisits regardless of the requested time limit.
+    const query = buildAnalysisQuery({
+      ...base,
+      options: {
+        visits: 400,
+        maxTimeMs: 8000,
+        wideRootNoise: 0,
+        rootPolicyTemperature: 1.1,
+        conservativePass: true,
+        fillDameBeforePass: false,
+      },
+    });
+
+    expect(query.maxTime).toBeUndefined();
+    expect(query).not.toHaveProperty('wideRootNoise');
+    expect(query).not.toHaveProperty('conservativePass');
+    expect(query).not.toHaveProperty('fillDameBeforePass');
+    expect(query.overrideSettings).toMatchObject({
+      reportAnalysisWinratesAs: 'BLACK',
+      maxTime: 8,
+      wideRootNoise: 0,
+      rootPolicyTemperature: 1.1,
+      conservativePass: true,
+      fillDameBeforePass: false,
+    });
+  });
+
+  it('never sends topK, which the analysis engine does not accept', () => {
+    const query = buildAnalysisQuery({ ...base, options: { topK: 5 } as never });
+
+    expect(query).not.toHaveProperty('topK');
+    expect(query.overrideSettings).not.toHaveProperty('topK');
+  });
+
+  it('carries the setup stones and the side to move', () => {
+    const query = buildAnalysisQuery({ ...base, options: { visits: 100 } });
+
+    expect(query.initialStones).toEqual([['W', 'Q16']]);
+    expect(query.initialPlayer).toBe('B');
+    expect(query.moves).toEqual([]);
+    expect(query.rules).toBe('chinese');
+    expect(query.komi).toBe(7.5);
+  });
+
+  it('merges region-of-interest avoids with explicit avoid moves and allow moves', () => {
+    const query = buildAnalysisQuery({
+      ...base,
+      options: {
+        regionOfInterest: { xMin: 15, yMin: 0, xMax: 18, yMax: 3 },
+        avoidMoves: [{ x: 15, y: 0 }],
+        allowMoves: [{ moves: [{ x: 15, y: 0 }] }],
+      },
+    });
+
+    // Every point outside the 4x4 corner is avoided, plus the explicit avoid.
+    expect(query.avoidMoves).toHaveLength(19 * 19 - 16 + 1);
+    expect(query.avoidMoves).toContainEqual({ move: 'Q19', untilDepth: 1 });
+    expect(query.allowMoves).toEqual([{ moves: ['Q19'], untilDepth: 1 }]);
   });
 });

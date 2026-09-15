@@ -8,7 +8,7 @@
 
 import type { KataGoAnalysisPayload } from '../katago/types';
 import type { BoardState, GameRules, KataGoBackendPreference, Move, Player, RegionOfInterest } from '../../types';
-import { buildQueryPosition, coordToGtp, rulesToKataGoString, type RemoteMoveInfo, type RemoteResponse } from './types';
+import { buildAnalysisQuery, buildQueryPosition, type RemoteMoveInfo, type RemoteQuery, type RemoteResponse } from './types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -243,70 +243,7 @@ class RemoteEngineClient {
     const rules = args.rules ?? 'japanese';
     const komi = args.komi ?? 6.5;
     const position = buildQueryPosition(args.moveHistory, args.board, boardSize, args.currentPlayer);
-
-    const query: Record<string, unknown> = {
-      id,
-      moves: position.moves,
-      initialStones: position.initialStones,
-      initialPlayer: position.initialPlayer,
-      rules: rulesToKataGoString(rules),
-      komi,
-      boardXSize: boardSize,
-      boardYSize: boardSize,
-      maxVisits: args.visits ?? 500,
-      includePolicy: true,
-      includeOwnership: args.ownershipMode !== 'none',
-      includeMovesOwnership: args.includeMovesOwnership ?? false,
-      includePVVisits: true,
-      analysisPVLen: args.analysisPvLen ?? 15,
-      reportDuringSearchEvery: args.reportDuringSearchEveryMs
-        ? args.reportDuringSearchEveryMs / 1000
-        : 0.5,
-      overrideSettings: { reportAnalysisWinratesAs: 'BLACK' },
-    };
-
-    if (args.maxTimeMs) query.maxTime = args.maxTimeMs / 1000;
-    if (args.topK) query.topK = args.topK;
-    if (args.wideRootNoise !== undefined) query.wideRootNoise = args.wideRootNoise;
-    if (args.rootPolicyTemperature !== undefined) query.rootPolicyTemperature = args.rootPolicyTemperature;
-    if (args.conservativePass !== undefined) query.conservativePass = args.conservativePass;
-    if (args.fillDameBeforePass !== undefined) query.fillDameBeforePass = args.fillDameBeforePass;
-
-    // Region of interest → avoidMoves
-    if (args.regionOfInterest) {
-      const roi = args.regionOfInterest;
-      const avoidList: string[] = [];
-      for (let y = 0; y < boardSize; y++) {
-        for (let x = 0; x < boardSize; x++) {
-          if (x < roi.xMin || x > roi.xMax || y < roi.yMin || y > roi.yMax) {
-            avoidList.push(coordToGtp(x, y, boardSize));
-          }
-        }
-      }
-      if (avoidList.length > 0) {
-        query.avoidMoves = avoidList.map((move) => ({ move, untilDepth: 1 }));
-      }
-    }
-
-    // Custom avoidMoves
-    if (args.avoidMoves && args.avoidMoves.length > 0) {
-      const existing = (query.avoidMoves as Array<{ move: string; untilDepth?: number }> | undefined) ?? [];
-      for (const am of args.avoidMoves) {
-        existing.push({
-          move: coordToGtp(am.x, am.y, boardSize),
-          untilDepth: am.untilDepth ?? 1,
-        });
-      }
-      query.avoidMoves = existing;
-    }
-
-    // Custom allowMoves
-    if (args.allowMoves && args.allowMoves.length > 0) {
-      query.allowMoves = args.allowMoves.map((am) => ({
-        moves: am.moves.map((m) => coordToGtp(m.x, m.y, boardSize)),
-        untilDepth: am.untilDepth ?? 1,
-      }));
-    }
+    const query = buildAnalysisQuery({ id, position, boardSize, komi, rules, options: args });
 
     const promise = new Promise<KataGoAnalysisPayload>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress: args.onProgress });
@@ -531,7 +468,7 @@ class RemoteEngineClient {
 
   // ─── Sending ──────────────────────────────────────────────────────────
 
-  private _send(query: Record<string, unknown>): void {
+  private _send(query: RemoteQuery | Record<string, unknown>): void {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error('Remote engine is not connected');
@@ -593,6 +530,13 @@ class RemoteEngineClient {
 
     if (resp.warning) {
       console.info(`[remote-engine] Warning: ${resp.warning}`);
+    }
+
+    // Warning (and other informational) replies carry no analysis payload, so
+    // there is nothing to convert; treating them as results crashed on the
+    // missing `moveInfos`.
+    if (!resp.rootInfo || !resp.moveInfos) {
+      return;
     }
 
     // Convert remote response to KataGoAnalysisPayload
