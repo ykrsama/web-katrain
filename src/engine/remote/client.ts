@@ -8,7 +8,7 @@
 
 import type { KataGoAnalysisPayload } from '../katago/types';
 import type { BoardState, GameRules, KataGoBackendPreference, Move, Player, RegionOfInterest } from '../../types';
-import { buildMoveList, coordToGtp, rulesToKataGoString, type RemoteMoveInfo, type RemoteResponse } from './types';
+import { buildQueryPosition, coordToGtp, rulesToKataGoString, type RemoteMoveInfo, type RemoteResponse } from './types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -242,10 +242,13 @@ class RemoteEngineClient {
 
     const rules = args.rules ?? 'japanese';
     const komi = args.komi ?? 6.5;
+    const position = buildQueryPosition(args.moveHistory, args.board, boardSize, args.currentPlayer);
 
     const query: Record<string, unknown> = {
       id,
-      moves: buildMoveList(args.moveHistory, args.board, boardSize),
+      moves: position.moves,
+      initialStones: position.initialStones,
+      initialPlayer: position.initialPlayer,
       rules: rulesToKataGoString(rules),
       komi,
       boardXSize: boardSize,
