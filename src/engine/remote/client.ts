@@ -242,7 +242,7 @@ class RemoteEngineClient {
 
     const rules = args.rules ?? 'japanese';
     const komi = args.komi ?? 6.5;
-    const position = buildQueryPosition(args.moveHistory, args.board, boardSize, args.currentPlayer);
+    const position = buildQueryPosition(args.moveHistory, args.board, boardSize, args.currentPlayer, args.previousBoard);
     const query = buildAnalysisQuery({ id, position, boardSize, komi, rules, options: args });
 
     const promise = new Promise<KataGoAnalysisPayload>((resolve, reject) => {

@@ -173,6 +173,41 @@ const replayPosition = (
   return board;
 };
 
+/**
+ * Describe the position as "everything before the last move, then that move".
+ *
+ * `initialStones` derived from the *final* board can never contain the stones
+ * the last move captured: they are off the board, so the replay sees a move
+ * that captured nothing. KataGo then has no ko — on a ko capture it happily
+ * played the immediate recapture, the move the ko rule forbids — and no record
+ * of the repetition either. The board *before* the move still holds the
+ * captured stone, so replaying the move on top of it restores the capture and
+ * with it the ko ban.
+ *
+ * Returns null when this description does not describe `board` (the caller's
+ * "previous board" is not really this move's predecessor, the move is a pass,
+ * or its point is already occupied), so the caller can fall back.
+ */
+const anchorOnPreviousBoard = (
+  previousBoard: BoardState,
+  lastMove: Move,
+  board: BoardState,
+  boardSize: number,
+): RemoteQueryPosition | null => {
+  if (lastMove.x < 0 || lastMove.y < 0) return null;
+  if ((previousBoard[lastMove.y]?.[lastMove.x] ?? null) !== null) return null;
+
+  const initialStones = stonesOnBoard(previousBoard, boardSize);
+  const moves: Array<[string, string]> = [
+    [colorToKataGo(lastMove.player), coordToGtp(lastMove.x, lastMove.y, boardSize)],
+  ];
+  if (!boardsEqual(replayPosition(initialStones, [lastMove], boardSize), board, boardSize)) return null;
+
+  // KataGo alternates from `initialPlayer`, which is the player of the first (and
+  // only) move here, so the side to move after the replay is `currentPlayer`.
+  return { initialStones, moves, initialPlayer: colorToKataGo(lastMove.player) };
+};
+
 const boardsEqual = (a: BoardState, b: BoardState, boardSize: number): boolean => {
   for (let y = 0; y < boardSize; y++) {
     for (let x = 0; x < boardSize; x++) {
@@ -196,13 +231,27 @@ const boardsEqual = (a: BoardState, b: BoardState, boardSize: number): boolean =
  * edit mode) falls back to a pure setup position: the whole board as
  * `initialStones` with no moves, the only honest description of a position
  * that is not a legal continuation.
+ *
+ * `previousBoard` — the board before the last move, which the caller already
+ * has (it is the parent node's board) — is preferred over replaying the whole
+ * history, because it is the only way to carry the last move's captures, and
+ * therefore its ko, intact. See `anchorOnPreviousBoard`.
  */
 export function buildQueryPosition(
   moveHistory: Move[],
   board: BoardState,
   boardSize: number,
   currentPlayer: Player,
+  previousBoard?: BoardState,
 ): RemoteQueryPosition {
+  if (previousBoard) {
+    const lastMove = moveHistory[moveHistory.length - 1];
+    if (lastMove) {
+      const anchored = anchorOnPreviousBoard(previousBoard, lastMove, board, boardSize);
+      if (anchored) return anchored;
+    }
+  }
+
   const movePositions = new Set<string>();
   for (const m of moveHistory) {
     if (m.x >= 0 && m.y >= 0) movePositions.add(`${m.x},${m.y}`);
@@ -309,12 +358,19 @@ export function buildAnalysisQuery(args: {
     includeOwnership: options.ownershipMode !== 'none',
     includeMovesOwnership: options.includeMovesOwnership ?? false,
     includePVVisits: true,
-    analysisPVLen: options.analysisPvLen ?? 15,
     reportDuringSearchEvery: options.reportDuringSearchEveryMs
       ? options.reportDuringSearchEveryMs / 1000
       : 0.5,
     overrideSettings,
   };
+
+  // KataGo rejects `analysisPVLen: 0` ("Must be an integer from 1 to 1000"),
+  // which is what the raw-eval path asked for. Omitting the field is how you
+  // ask for no principal variation.
+  const analysisPvLen = options.analysisPvLen ?? 15;
+  if (analysisPvLen > 0) {
+    query.analysisPVLen = analysisPvLen;
+  }
 
   // Region of interest: the search may not play outside it.
   if (options.regionOfInterest) {
