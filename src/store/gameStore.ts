@@ -1926,7 +1926,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (!s.isAnalysisMode) set({ isAnalysisMode: true });
 
-    const longTimeMs = Math.min(ENGINE_MAX_TIME_MS, 60_000);
+    const longTimeMs = ENGINE_MAX_TIME_MS;
 
     const toast = (message: string) => {
       const notification = { message, type: 'info' as const };
