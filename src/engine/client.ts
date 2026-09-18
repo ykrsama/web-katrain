@@ -21,6 +21,23 @@ export interface EngineClient {
 }
 
 /**
+ * The remote URL these settings resolve to, or null when the local worker is
+ * the engine.
+ *
+ * A relative URL (e.g. "/katago-proxy") is resolved against the document's
+ * origin by the remote client, so it cannot even be constructed without a DOM.
+ * Outside a browser (SSR, unit tests) the local client is the only one that can
+ * exist, so fall back to it rather than throwing "window is not defined" from
+ * deep inside an analysis request.
+ */
+const remoteEngineUrlFor = (settings: EngineSettings): string | null => {
+  if (settings.engineMode !== 'remote' || !settings.remoteEngineUrl) return null;
+  const url = settings.remoteEngineUrl.trim();
+  if (url.startsWith('/') && typeof window === 'undefined') return null;
+  return settings.remoteEngineUrl;
+};
+
+/**
  * Return the active engine client for the given settings.
  *
  * When engineMode is 'remote' and remoteEngineUrl is set, returns the
@@ -28,17 +45,24 @@ export interface EngineClient {
  * Worker-based client.
  */
 export function getEngineClient(settings: EngineSettings) {
-  if (settings.engineMode === 'remote' && settings.remoteEngineUrl) {
-    const url = settings.remoteEngineUrl.trim();
-    // A relative URL (e.g. "/katago-proxy") is resolved against the document's
-    // origin by the remote client, so it cannot even be constructed without a
-    // DOM. Outside a browser (SSR, unit tests) the local client is the only one
-    // that can exist, so fall back to it rather than throwing "window is not
-    // defined" from deep inside an analysis request.
-    const needsDocument = url.startsWith('/');
-    if (!(needsDocument && typeof window === 'undefined')) {
-      return getRemoteEngineClient(settings.remoteEngineUrl);
-    }
-  }
-  return getKataGoEngineClient();
+  const remoteUrl = remoteEngineUrlFor(settings);
+  return remoteUrl ? getRemoteEngineClient(remoteUrl) : getKataGoEngineClient();
+}
+
+/**
+ * Whether the engine behind these settings can deepen a search it has already
+ * run.
+ *
+ * The local worker keeps its search tree between requests (`reuseTree`), so
+ * asking again widens the same search. A remote KataGo analysis engine throws
+ * its tree away for every query (`Search::setPosition` clears it), and the
+ * analysis protocol has no way to ask for more — so a second request starts
+ * from zero. If a time limit cut the first one short, asking again searches the
+ * same thing again and gets no further.
+ *
+ * Continuous analysis uses this to choose between climbing to the requested
+ * depth in steps (local) and asking once for the whole depth (remote).
+ */
+export function engineCanExtendSearch(settings: EngineSettings): boolean {
+  return remoteEngineUrlFor(settings) === null;
 }

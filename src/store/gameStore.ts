@@ -5,7 +5,7 @@ import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLibertie
 import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } from '../utils/sound';
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
 import { isKataGoCanceledError } from '../engine/katago/client';
-import { getEngineClient } from '../engine/client';
+import { engineCanExtendSearch, getEngineClient } from '../engine/client';
 import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
@@ -1597,6 +1597,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const token = ++continuousToken;
       let errorBackoffMs = 1000;
+      // The local worker keeps its search tree between requests, so asking again
+      // deepens the same search and the ladder below can climb to the requested
+      // depth in steps of Max Time. A remote analysis engine throws its tree
+      // away for every query, so asking again starts from zero: once the time
+      // limit cut a search short, the ladder would restart it at the same depth
+      // forever. Ask such an engine once for the whole depth and let Max Time be
+      // the answer; `askedInFullKey` is what keeps the loop from re-asking.
+      const canExtendSearch = engineCanExtendSearch(get().settings);
+      let askedInFullKey: string | null = null;
       void (async () => {
           while (true) {
               const state = get();
@@ -1609,17 +1618,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
               const fast = Number.isFinite(rawFast) ? rawFast : 25;
               const initialVisits = Math.max(16, Math.min(target, Math.floor(fast)));
               const node = state.currentNode;
-              const normalizedVisits = nodeAnalysisVisitCount(node);
 
               let nextVisits: number;
-              if (normalizedVisits < 1) {
-                  nextVisits = initialVisits;
-              } else if (normalizedVisits < target) {
-                  const bumped = Math.max(normalizedVisits + 1, normalizedVisits * 2);
-                  nextVisits = Math.min(target, Math.max(initialVisits, bumped));
+              if (canExtendSearch) {
+                  const normalizedVisits = nodeAnalysisVisitCount(node);
+                  if (normalizedVisits < 1) {
+                      nextVisits = initialVisits;
+                  } else if (normalizedVisits < target) {
+                      const bumped = Math.max(normalizedVisits + 1, normalizedVisits * 2);
+                      nextVisits = Math.min(target, Math.max(initialVisits, bumped));
+                  } else {
+                      await sleep(500);
+                      continue;
+                  }
               } else {
-                  await sleep(500);
-                  continue;
+                  // The node id is in the key because a new game can start from
+                  // the same position, and the position key because a setup edit
+                  // changes the stones in place.
+                  const fullKey = `${node.id}|${nodeAnalysisPositionKey(node, state.settings.gameRules)}|${target}|${state.settings.katagoMaxTimeMs}`;
+                  if (askedInFullKey === fullKey) {
+                      await sleep(500);
+                      continue;
+                  }
+                  askedInFullKey = fullKey;
+                  nextVisits = target;
               }
 
               await get().runAnalysis({
@@ -1632,6 +1654,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   // A dead engine rejects at once; retrying every 50ms raised
                   // an identical error toast as fast as one could be dismissed.
                   errorBackoffMs = Math.min(30_000, errorBackoffMs * 2);
+                  // Let the retry go out after the backoff rather than counting
+                  // the failed request as the full-depth attempt.
+                  askedInFullKey = null;
                   await sleep(errorBackoffMs);
                   continue;
               }
