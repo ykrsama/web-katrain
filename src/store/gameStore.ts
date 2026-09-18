@@ -1645,8 +1645,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   }
                   // The node id is in the key because a new game can start from
                   // the same position, and the position key because a setup edit
-                  // changes the stones in place.
-                  const fullKey = `${node.id}|${nodeAnalysisPositionKey(node, state.settings.gameRules)}|${target}|${state.settings.katagoMaxTimeMs}`;
+                  // changes the stones in place. The time budget is not in it:
+                  // a board read always gets the engine ceiling.
+                  const fullKey = `${node.id}|${nodeAnalysisPositionKey(node, state.settings.gameRules)}|${target}`;
                   if (askedInFullKey === fullKey) {
                       await sleep(500);
                       continue;
@@ -3282,7 +3283,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const nnRandomize = opts?.nnRandomize ?? state.settings.katagoNnRandomize;
           const conservativePass = opts?.conservativePass ?? state.settings.katagoConservativePass;
           const visits = Math.max(16, Math.min(opts?.visits ?? state.settings.katagoVisits, ENGINE_MAX_VISITS));
-          const maxTimeMs = Math.max(25, Math.min(opts?.maxTimeMs ?? state.settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
+          // Reading the position is not on the AI's clock: `Max Time (ms)` is the
+          // budget for choosing a move (makeAiMove, analyzeForPlayout), while a
+          // board read runs to the depth it was asked for and only stops at the
+          // engine time ceiling. Callers that want their own budget (the extra
+          // analysis actions) pass `maxTimeMs`.
+          const maxTimeMs = Math.max(25, Math.min(opts?.maxTimeMs ?? ENGINE_MAX_TIME_MS, ENGINE_MAX_TIME_MS));
           const batchSize = Math.max(1, Math.min(opts?.batchSize ?? state.settings.katagoBatchSize, 64));
           const boardSize = getBoardSizeFromBoard(state.board);
           const maxChildren = Math.max(4, Math.min(opts?.maxChildren ?? state.settings.katagoMaxChildren, boardSize * boardSize));
