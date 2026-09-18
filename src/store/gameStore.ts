@@ -1632,6 +1632,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
                       continue;
                   }
               } else {
+                  // A position that has already been asked for in full is done,
+                  // whether the search reached the target or Max Time decided the
+                  // answer: a remote engine starts every query from zero, so
+                  // asking again would just run the same search again. Both the
+                  // achieved visits and the requested depth are remembered on
+                  // the node, so this holds when the user navigates back to it.
+                  const askedFor = Math.max(nodeAnalysisVisitCount(node), node.analysisVisitsRequested ?? 0);
+                  if (askedFor >= target) {
+                      await sleep(500);
+                      continue;
+                  }
                   // The node id is in the key because a new game can start from
                   // the same position, and the position key because a setup edit
                   // changes the stones in place.
@@ -3243,7 +3254,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
               : true;
         const needsPolicy = state.settings.analysisShowPolicy;
         const policyOk = !needsPolicy || !!existing.policy;
-        if (nodeAnalysisVisitCount(state.currentNode) >= desiredVisits && ownershipOk && policyOk) {
+        // An engine that cannot extend a search it already ran (a remote one)
+        // has nothing more to give for this position: once it has been asked for
+        // this depth, asking again only repeats the same search, so a node whose
+        // search Max Time cut short must still count as done. That is what
+        // `analysisVisitsRequested` records, and it lives on the node, so it
+        // survives navigating away and back.
+        const requestCovered =
+          nodeAnalysisVisitCount(state.currentNode) >= desiredVisits ||
+          (!engineCanExtendSearch(state.settings) &&
+            (state.currentNode.analysisVisitsRequested ?? 0) >= desiredVisits);
+        if (requestCovered && ownershipOk && policyOk) {
           set({ analysisData: existing });
           return;
         }
