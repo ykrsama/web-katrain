@@ -72,7 +72,6 @@ describe('sound helpers', () => {
   });
 
   it('cycles through stone and capture variants', () => {
-    const play = vi.fn(() => Promise.resolve());
     const srcs: string[] = [];
     vi.spyOn(performance, 'now')
       .mockReturnValueOnce(100)
@@ -88,13 +87,19 @@ describe('sound helpers', () => {
       .mockReturnValueOnce(700)
       .mockReturnValueOnce(760);
 
+    // The elements are cached and reused now, so the round-robin is what gets
+    // played, not what gets constructed.
     class MockAudio {
       preload?: string;
       currentTime = 0;
-      play = play;
+      src: string;
       constructor(src: string) {
-        srcs.push(src);
+        this.src = src;
       }
+      play = () => {
+        srcs.push(this.src);
+        return Promise.resolve();
+      };
     }
 
     Object.defineProperty(globalThis, 'window', {

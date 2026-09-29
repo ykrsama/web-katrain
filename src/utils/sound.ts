@@ -77,6 +77,26 @@ const getAudioConstructor = (): typeof Audio | null => {
     }
 };
 
+/**
+ * One reusable, preloaded element per sound file.
+ *
+ * Building a fresh `Audio` for every play put the file request and the decoder
+ * start-up on the click's critical path, which is what made a stone sound land
+ * late. A cached element is already decoded, so `play()` only has to start it.
+ * Replaying restarts that element rather than layering a second copy, which the
+ * same-effect debounce already keeps from turning into machine-gun fire.
+ */
+const audioElementByFile = new Map<string, HTMLAudioElement>();
+
+const getAudioElementForFile = (AudioCtor: typeof Audio, fileName: string): HTMLAudioElement => {
+    const cached = audioElementByFile.get(fileName);
+    if (cached) return cached;
+    const audio = new AudioCtor(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
+    audio.preload = 'auto';
+    audioElementByFile.set(fileName, audio);
+    return audio;
+};
+
 const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
     if (shouldSkipRepeatedSound(key)) return;
 
@@ -89,8 +109,7 @@ const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
     }
 
     try {
-        const audio = new AudioCtor(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
-        audio.preload = 'auto';
+        const audio = getAudioElementForFile(AudioCtor, fileName);
         audio.currentTime = 0;
         const playResult = audio.play();
         if (playResult && typeof playResult.catch === 'function') {
@@ -135,6 +154,7 @@ export const resetAudioContextForTests = (): void => {
     onSoundInitError = null;
     soundFailureReported = false;
     lastSoundTimeByKey.clear();
+    audioElementByFile.clear();
     nextStoneSoundIndex = 0;
     nextCaptureSoundIndex = 0;
 };
