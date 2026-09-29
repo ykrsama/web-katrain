@@ -1451,10 +1451,9 @@ const isAnalysisCanceled = (err: unknown): boolean =>
  * it makes, or the pass sound when the recorded move was a pass.
  *
  * `from` is the node the step starts at; its capture counters say whether that
- * move took anything off the board (they are cumulative along the line). Callers
- * pass null when there is no meaningful "before" and only the stone is wanted.
+ * move took anything off the board (they are cumulative along the line).
  */
-const playStepSound = (args: { enabled: boolean; from: GameNode | null; to: GameNode }): void => {
+const playStepSound = (args: { enabled: boolean; from: GameNode; to: GameNode }): void => {
   if (!args.enabled) return;
   const move = args.to.move;
   if (!move) return;
@@ -1462,16 +1461,14 @@ const playStepSound = (args: { enabled: boolean; from: GameNode | null; to: Game
     playPassSound();
     return;
   }
-  const before = args.from?.gameState;
+  const before = args.from.gameState;
   const after = args.to.gameState;
-  const capturedCount = before
-    ? Math.max(
-        0,
-        move.player === 'white'
-          ? after.capturedBlack - before.capturedBlack
-          : after.capturedWhite - before.capturedWhite,
-      )
-    : 0;
+  const capturedCount = Math.max(
+    0,
+    move.player === 'white'
+      ? after.capturedBlack - before.capturedBlack
+      : after.capturedWhite - before.capturedWhite,
+  );
   playStoneSound();
   if (capturedCount > 0) {
     setTimeout(() => playCaptureSound(capturedCount), 100);
@@ -4911,16 +4908,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     };
   }),
 
-  navigateForward: () => {
-      const state = get();
+  navigateForward: () => set((state) => {
       const nextNode = getActiveChild(state.currentNode, state.activeBranchChildIds);
-      if (!nextNode) return;
-      // Stepping forward through the record plays the move, like playing it
-      // does. Jumping to a position (game tree, winrate graph, report) stays
-      // silent: it can be many moves at once, and there is no single move to
-      // hear.
-      playStepSound({ enabled: state.settings.soundEnabled, from: state.currentNode, to: nextNode });
-      set({
+      if (!nextNode) return {};
+      return {
           currentNode: nextNode,
           board: nextNode.gameState.board,
           currentPlayer: nextNode.gameState.currentPlayer,
@@ -4929,8 +4920,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           capturedWhite: nextNode.gameState.capturedWhite,
           analysisData: nextNode.analysis || null,
           activeBranchChildIds: rememberActiveBranchPath(state.activeBranchChildIds, nextNode),
-      });
-  },
+      };
+  }),
 
   navigateStart: () => set((state) => {
       let node = state.currentNode;
