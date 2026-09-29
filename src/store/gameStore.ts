@@ -1446,6 +1446,38 @@ const PROGRESS_APPLY_MIN_MS = 500;
 const isAnalysisCanceled = (err: unknown): boolean =>
   isKataGoCanceledError(err) || isAnalysisQueueCanceledError(err) || isAnalysisQueueStaleError(err);
 
+/**
+ * The sound of stepping onto a recorded move: the stone it places, the captures
+ * it makes, or the pass sound when the recorded move was a pass.
+ *
+ * `from` is the node the step starts at; its capture counters say whether that
+ * move took anything off the board (they are cumulative along the line). Callers
+ * pass null when there is no meaningful "before" and only the stone is wanted.
+ */
+const playStepSound = (args: { enabled: boolean; from: GameNode | null; to: GameNode }): void => {
+  if (!args.enabled) return;
+  const move = args.to.move;
+  if (!move) return;
+  if (move.x < 0 || move.y < 0) {
+    playPassSound();
+    return;
+  }
+  const before = args.from?.gameState;
+  const after = args.to.gameState;
+  const capturedCount = before
+    ? Math.max(
+        0,
+        move.player === 'white'
+          ? after.capturedBlack - before.capturedBlack
+          : after.capturedWhite - before.capturedWhite,
+      )
+    : 0;
+  playStoneSound();
+  if (capturedCount > 0) {
+    setTimeout(() => playCaptureSound(capturedCount), 100);
+  }
+};
+
 const gameAnalysisTypeLabel = (type: NonNullable<GameStore['gameAnalysisType']>): string => {
   if (type === 'quick') return 'Quick game analysis';
   if (type === 'fast') return 'Fast game review';
@@ -3880,6 +3912,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
        // woken as for a new move: after an undo (or a teaching undo) the
        // same point replayed used to leave the game stalled on the human's
        // clock, because only the new-move path scheduled the reply.
+       //
+       // Stepping into a recorded move is still placing a stone, so it sounds
+       // like one.
+       playStepSound({ enabled: state.settings.soundEnabled, from: state.currentNode, to: existingChild });
        get().jumpToNode(existingChild);
        lastPlayedNodeId = existingChild.id;
        const after = get();
@@ -4875,10 +4911,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     };
   }),
 
-  navigateForward: () => set((state) => {
+  navigateForward: () => {
+      const state = get();
       const nextNode = getActiveChild(state.currentNode, state.activeBranchChildIds);
-      if (!nextNode) return {};
-      return {
+      if (!nextNode) return;
+      // Stepping forward through the record plays the move, like playing it
+      // does. Jumping to a position (game tree, winrate graph, report) stays
+      // silent: it can be many moves at once, and there is no single move to
+      // hear.
+      playStepSound({ enabled: state.settings.soundEnabled, from: state.currentNode, to: nextNode });
+      set({
           currentNode: nextNode,
           board: nextNode.gameState.board,
           currentPlayer: nextNode.gameState.currentPlayer,
@@ -4887,8 +4929,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           capturedWhite: nextNode.gameState.capturedWhite,
           analysisData: nextNode.analysis || null,
           activeBranchChildIds: rememberActiveBranchPath(state.activeBranchChildIds, nextNode),
-      };
-  }),
+      });
+  },
 
   navigateStart: () => set((state) => {
       let node = state.currentNode;
