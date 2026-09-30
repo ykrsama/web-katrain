@@ -704,18 +704,21 @@ export const Layout: React.FC = () => {
 
   useEffect(() => {
     setSoundInitErrorHandler((error) => {
-      updateSettings({ soundEnabled: false });
+      // Do not switch the sound setting off here. One failed play (no user
+      // gesture yet, a busy audio device, a blocked autoplay) says nothing about
+      // the next one, and silently disabling sound left the board quiet for the
+      // rest of the session with no obvious way back.
       const soundDetails = [
         t('Sound error: {error}', { error: error.message }),
         t('Backend: {backend}', { backend: error.backend }),
         t('Platform: {platform}', { platform: error.platform }),
       ].join('\n');
 
-      toast(t('Sound disabled because browser audio is unavailable.'), 'error', soundDetails);
+      toast(t('Could not play sound. It will keep trying.'), 'error', soundDetails);
     });
 
     return () => setSoundInitErrorHandler(null);
-  }, [toast, updateSettings]);
+  }, [toast]);
 
   useEffect(() => {
     if (settings.soundEnabled) resetSoundFailureReport();

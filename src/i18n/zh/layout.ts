@@ -7,7 +7,7 @@ export default {
   'Sound error: {error}': '音效错误：{error}',
   'Backend: {backend}': '后端：{backend}',
   'Platform: {platform}': '平台：{platform}',
-  'Sound disabled because browser audio is unavailable.': '浏览器音频不可用，音效已禁用。',
+  'Could not play sound. It will keep trying.': '音效播放失败，将继续重试。',
   'Finish editing before scoring.': '请先结束编辑再数子。',
   'Score a position with stones before auto-estimating dead stones.': '请先对已落子的局面数目，再自动估算死子。',
   'Auto-marked {count} dead {unit} from {source}.': '已根据 {source} 自动将 {count} 枚{unit}标记为死子。',
