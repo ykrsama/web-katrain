@@ -252,25 +252,25 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
             ) : null}
           </div>
 
-          <div className="space-y-2 rounded-lg border border-[var(--ui-border)] p-3 text-[var(--ui-text-muted)]">
-            <p>{t('The board hides every stone while this runs; the button on the banner brings them back.')}</p>
-            <p>
-              {t('Microphone and speaker both use the system default: the browser speech APIs do not expose device choice.')}
-            </p>
-            {!recognitionSupported ? (
-              <p className="text-[var(--ui-danger,#e53e3e)]">
-                {t('This browser cannot listen for speech. Chrome or Edge is required.')}
-              </p>
-            ) : null}
-            {recognitionSupported && !synthesisSupported ? (
-              <p className="text-[var(--ui-danger,#e53e3e)]">
-                {t('This browser cannot speak the coordinates, so moves will only be shown as text.')}
-              </p>
-            ) : null}
-            {tested && recognitionSupported ? (
-              <p>{t('If you heard nothing, check the system output device and the browser sound permission.')}</p>
-            ) : null}
-          </div>
+          {/* Only support problems and the after-a-test hint live here now, so
+              the box is not rendered when there is nothing to say. */}
+          {!recognitionSupported || !synthesisSupported || (tested && recognitionSupported) ? (
+            <div className="space-y-2 rounded-lg border border-[var(--ui-border)] p-3 text-[var(--ui-text-muted)]">
+              {!recognitionSupported ? (
+                <p className="text-[var(--ui-danger,#e53e3e)]">
+                  {t('This browser cannot listen for speech. Chrome or Edge is required.')}
+                </p>
+              ) : null}
+              {recognitionSupported && !synthesisSupported ? (
+                <p className="text-[var(--ui-danger,#e53e3e)]">
+                  {t('This browser cannot speak the coordinates, so moves will only be shown as text.')}
+                </p>
+              ) : null}
+              {tested && recognitionSupported ? (
+                <p>{t('If you heard nothing, check the system output device and the browser sound permission.')}</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] px-4 py-3">

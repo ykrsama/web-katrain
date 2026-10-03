@@ -294,8 +294,6 @@ export default {
   'Row then column': '先行后列（行之列）',
   'Rows from the top, columns from the left.': '行从上往下数，列从左往右数。',
   'The engine says a point like “{example}”, and expects the same shape back.': 'AI 会念出类似“{example}”的落点，请照同样的格式回答。',
-  'The board hides every stone while this runs; the button on the banner brings them back.': '模式运行期间棋盘会隐藏所有棋子，点横幅上的按钮可以恢复显示。',
-  'Microphone and speaker both use the system default: the browser speech APIs do not expose device choice.': '麦克风和扬声器都使用系统默认设备：浏览器的语音 API 不提供设备选择。',
   'This browser cannot listen for speech. Chrome or Edge is required.': '当前浏览器无法进行语音识别，需要 Chrome 或 Edge。',
   'This browser cannot speak the coordinates, so moves will only be shown as text.': '当前浏览器无法语音播报坐标，落点只会以文字显示。',
   'If you heard nothing, check the system output device and the browser sound permission.': '如果没有听到声音，请检查系统输出设备和浏览器的声音权限。',
