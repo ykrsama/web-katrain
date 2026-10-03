@@ -116,11 +116,17 @@ describe('blindfold mode', () => {
     expect(playerNode.move).toMatchObject({ x: 3, y: 2, player: 'white' });
     // The board area shows the newest point of the round: first what the engine
     // announced, then what the answer was read as.
-    expect(useGameStore.getState().blindfold?.lastPoint).toEqual({ text: '四之十七', from: 'player' });
+    expect(useGameStore.getState().blindfold?.lastPoint).toEqual({
+      text: '四之十七',
+      shape: '小目',
+      from: 'player',
+    });
     // Only the engine's move is spoken. The player's point is shown, not said
     // back, so it must not appear among the announcements.
     const spoken = speakMock.mock.calls.map((call) => call[0]);
-    expect(spoken).toContain('十六之四');
+    // The coordinate comes with the name of the shape the move made, from the
+    // shape coach: (15, 15) on an empty board is the 4-4 point, i.e. 星位.
+    expect(spoken).toContain('十六之四，星位');
     expect(spoken).not.toContain('四之十七');
 
     useGameStore.getState().stopBlindfold();
@@ -145,7 +151,11 @@ describe('blindfold mode', () => {
     // (15, 15) on 19x19 is the 16th column from the left and the 4th row from
     // the bottom.
     await waitFor(() => useGameStore.getState().blindfold?.lastPoint?.text === '十六之四');
-    expect(useGameStore.getState().blindfold?.lastPoint).toEqual({ text: '十六之四', from: 'engine' });
+    expect(useGameStore.getState().blindfold?.lastPoint).toEqual({
+      text: '十六之四',
+      shape: '星位',
+      from: 'engine',
+    });
 
     useGameStore.getState().stopBlindfold();
     pending.release();

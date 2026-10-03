@@ -28,4 +28,13 @@ describe('the blindfold board', () => {
     expect(source).not.toContain("t('Engine is thinking…')");
     expect(source).toContain('data-blindfold-headline="true"');
   });
+
+  it('names the shape of the newest move under its point', () => {
+    const source = boardSource();
+
+    // The engine says the shape out loud, so the same name has to be readable
+    // when the player looks at the covered board.
+    expect(source).toContain("const blindfoldShape = blindfold?.lastPoint?.shape ?? '';");
+    expect(source).toContain('data-blindfold-shape="true"');
+  });
 });

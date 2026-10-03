@@ -342,4 +342,28 @@ export default {
   'White': '白方',
   'White distribution': '白方分布',
   'Win%': '胜率%',
+  // 棋型名：Sabaki 棋型库里只有英文名的那一批。口形/案形/马头形这类是按英文名意译的，
+  // 不是棋界通行术语；狗头形用的是更常见的“酒瓶形”。
+  // 盲棋训练会把棋型名念出来，所以这一批也必须能念中文。
+  'Low Chinese Opening': '低中国流',
+  'High Chinese Opening': '高中国流',
+  'Orthodox Opening': '平行型',
+  'Enclosure Opening': '守角平行型',
+  'Kobayashi Opening': '小林流',
+  'Small Chinese Opening': '小中国流',
+  'Micro Chinese Opening': '迷你中国流',
+  'Sanrensei Opening': '三连星',
+  'Nirensei Opening': '二连星',
+  'Shūsaku Opening': '秀策流',
+  'Mouth Shape': '口形',
+  'Table Shape': '案形',
+  'Tippy Table': '斜案形',
+  'Trapezium': '梯形',
+  'Diamond': '菱形',
+  'Square': '方形',
+  'Throwing Star': '风车形',
+  'Parallelogram': '平行四边形',
+  'Dog’s Head': '酒瓶形',
+  'Horse’s Head': '马头形',
+  'Big Bulge': '大鼓形',
 } as Record<string, string>;

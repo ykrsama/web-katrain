@@ -59,7 +59,7 @@ describe('the blindfold banner', () => {
     const html = render({
       phase: 'confirming',
       mic: { status: 'ready', failure: null },
-      lastPoint: { text: '四之十七', from: 'player' },
+      lastPoint: { text: '四之十七', shape: '小目', from: 'player' },
     });
 
     expect(html).toContain('四之十七');

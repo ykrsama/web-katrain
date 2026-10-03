@@ -31,6 +31,11 @@ export interface BlindfoldMic {
 export interface BlindfoldLastPoint {
   /** The point as the mode spells it, or the note that it was a pass. */
   text: string;
+  /**
+   * What the shape coach (棋形讲解) calls the shape this move made, in Chinese,
+   * or null when it has no name for it (a pass, or a move it cannot place).
+   */
+  shape: string | null;
   from: 'engine' | 'player';
 }
 

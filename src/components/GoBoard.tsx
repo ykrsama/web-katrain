@@ -2949,9 +2949,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   //
   // The layer carries the newest point the mode has announced or read back — the
   // engine's move, then the player's answer — and is blank until there is one.
-  // Status and errors belong to the banner, where the mode's controls are.
+  // The shape the move made goes under the point, because the name is what the
+  // engine says out loud and what the covered board cannot show. Status and
+  // errors belong to the banner, where the mode's controls are.
   const blindfoldAnnounce = blindfold?.announce ?? 'xy';
   const blindfoldHeadline = blindfold?.lastPoint?.text ?? '';
+  const blindfoldShape = blindfold?.lastPoint?.shape ?? '';
 
   return (
     <div
@@ -2974,6 +2977,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
             >
               {blindfoldHeadline}
             </div>
+            {blindfoldShape ? (
+              <div className="text-base font-medium text-[var(--ui-text)]" data-blindfold-shape="true">
+                {blindfoldShape}
+              </div>
+            ) : null}
             <p className="text-sm text-[var(--ui-text-muted)]">
               {blindfoldAnnounce === 'rowcol'
                 ? t('Rows from the top, columns from the left.')

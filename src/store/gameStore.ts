@@ -55,6 +55,11 @@ import {
   type BlindfoldSession,
 } from '../utils/blindfold';
 import { formatBlindfoldCoordinate } from '../utils/blindfoldCoordinates';
+// The shape coach names the shape a move makes. It reports in the app's
+// language, so the blindfold mode asks the Chinese catalogue for the label
+// instead of the interface language; see `blindfoldShapeName`.
+import { getMoveInsight } from '../utils/moveInsight';
+import { translate } from '../i18n/translate';
 import {
   cancelListening,
   cancelSpeech,
@@ -1547,6 +1552,20 @@ const blindfoldMicForFailure = (failure: MicrophoneFailure): Partial<BlindfoldMi
   failure === 'waiting' ? { status: 'permission', failure: null } : { status: 'blocked', failure };
 
 /**
+ * The name the shape coach (棋形讲解) gives this move, in Chinese: the board is
+ * covered in this mode, so "虎口" versus "长" is the one thing the announcement
+ * cannot show by itself. The coach speaks the app's language, so the label goes
+ * through the Chinese catalogue — a label that is already Chinese comes back
+ * unchanged.
+ */
+const blindfoldShapeName = (move: Move, boardSize: number, parentBoard: BoardState | null): string | null => {
+  if (move.x < 0 || move.y < 0) return null;
+  const insight = getMoveInsight(move, boardSize, parentBoard);
+  if (!insight) return null;
+  return translate('zh', insight.label).trim() || null;
+};
+
+/**
  * Mirror the browser's microphone state into the session while the mode runs.
  * The preflight is the answer from the browser itself, but the recogniser's own
  * start event is the ground truth, and it overwrites this as soon as it fires.
@@ -1619,10 +1638,16 @@ const runBlindfoldSession = async (
         nodeMove.x < 0 || nodeMove.y < 0
           ? BLINDFOLD_SPEECH.aiPass
           : formatBlindfoldCoordinate(nodeMove.x, nodeMove.y, boardSize, session.announce);
+      const shape = blindfoldShapeName(nodeMove, boardSize, node.parent?.gameState.board ?? null);
       // The board is covered, so the move the engine just announced is also put
       // on screen: it is the one thing the player has to work from.
-      patch({ phase: 'confirming', transcript: null, lastPoint: { text: announced, from: 'engine' }, message: null });
-      await speak(announced);
+      patch({
+        phase: 'confirming',
+        transcript: null,
+        lastPoint: { text: announced, shape, from: 'engine' },
+        message: null,
+      });
+      await speak(shape ? `${announced}，${shape}` : announced);
       if (!alive()) return;
     }
 
@@ -1736,7 +1761,7 @@ const runBlindfoldSession = async (
       patch({
         phase: 'confirming',
         transcript: heard.transcript,
-        lastPoint: { text: BLINDFOLD_SPEECH.playerPass, from: 'player' },
+        lastPoint: { text: BLINDFOLD_SPEECH.playerPass, shape: null, from: 'player' },
         message: null,
       });
       current.passTurn();
@@ -1767,6 +1792,13 @@ const runBlindfoldSession = async (
       transcript: heard.transcript,
       lastPoint: {
         text: formatBlindfoldCoordinate(interpreted.x, interpreted.y, boardSize, session.announce),
+        // The player's own shape is named on screen too — same rule as the
+        // engine's move, so the board area always answers "what is this point?"
+        shape: blindfoldShapeName(
+          { x: interpreted.x, y: interpreted.y, player: current.currentPlayer },
+          boardSize,
+          current.currentNode.gameState.board
+        ),
         from: 'player',
       },
       message: null,

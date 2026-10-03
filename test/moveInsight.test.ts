@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getMoveInsight, getMoveInsightCoach } from '../src/utils/moveInsight';
+import { CONTACT_MOVE_PATTERNS, FUSEKI_PATTERNS, NAMED_SHAPE_PATTERNS } from '../src/data/boardPatternLibrary';
+import { translate } from '../src/i18n/translate';
 import type { BoardState, Move } from '../src/types';
 
 const blackMove = (x: number, y: number): Move => ({ x, y, player: 'black' });
@@ -410,5 +412,14 @@ describe('move insights', () => {
       pro: expect.stringContaining('seki'),
       checks: expect.arrayContaining(['Eye shape']),
     });
+  });
+  it('has a Chinese name for every shape it can name', () => {
+    // The blindfold mode reads these names out loud and the Chinese interface
+    // shows them, so an English-only library name cannot reach either.
+    const untranslated = [...FUSEKI_PATTERNS, ...NAMED_SHAPE_PATTERNS, ...CONTACT_MOVE_PATTERNS]
+      .map((pattern) => pattern.name)
+      .filter((name) => /[A-Za-z]/.test(translate('zh', name)));
+
+    expect(untranslated).toEqual([]);
   });
 });
