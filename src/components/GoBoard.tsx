@@ -2952,7 +2952,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   // The shape the move made goes under the point, because the name is what the
   // engine says out loud and what the covered board cannot show. Status and
   // errors belong to the banner, where the mode's controls are.
-  const blindfoldAnnounce = blindfold?.announce ?? 'xy';
   const blindfoldHeadline = blindfold?.lastPoint?.text ?? '';
   const blindfoldShape = blindfold?.lastPoint?.shape ?? '';
 
@@ -2982,11 +2981,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 {blindfoldShape}
               </div>
             ) : null}
-            <p className="text-sm text-[var(--ui-text-muted)]">
-              {blindfoldAnnounce === 'rowcol'
-                ? t('Rows from the top, columns from the left.')
-                : t('Columns from the left, rows from the bottom.')}
-            </p>
           </div>
         </div>
       ) : null}

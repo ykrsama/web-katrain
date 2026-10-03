@@ -26,6 +26,10 @@ describe('the blindfold board', () => {
     expect(source).toContain("const blindfoldHeadline = blindfold?.lastPoint?.text ?? '';");
     expect(source).not.toContain("t('Listening for your move…')");
     expect(source).not.toContain("t('Engine is thinking…')");
+    // Nor the "which way are the coordinates counted" hint: the setup dialog
+    // already asked, and the sample sentence reminds the player anyway.
+    expect(source).not.toContain("t('Columns from the left, rows from the bottom.')");
+    expect(source).not.toContain("t('Rows from the top, columns from the left.')");
     expect(source).toContain('data-blindfold-headline="true"');
   });
 
