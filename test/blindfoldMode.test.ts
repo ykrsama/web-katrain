@@ -94,6 +94,9 @@ describe('blindfold mode', () => {
 
     const playerNode = useGameStore.getState().currentNode;
     expect(playerNode.move).toMatchObject({ x: 3, y: 2, player: 'white' });
+    // The hidden board's only confirmation: the point the answer was read as,
+    // spelled the way the mode says it.
+    expect(useGameStore.getState().blindfold?.confirmedPoint).toBe('四之十七');
     const spoken = speakMock.mock.calls.map((call) => call[0]);
     expect(spoken).toContain('十六之四');
     expect(spoken).toContain('四之十七');

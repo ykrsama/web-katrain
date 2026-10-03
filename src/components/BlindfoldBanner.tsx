@@ -24,6 +24,12 @@ export const BlindfoldBanner: React.FC = () => {
         : blindfold.phase === 'confirming'
           ? t('Speaking the point back…')
           : t('Waiting');
+  // A recognized move is shown on its own and stays until the next answer is
+  // being listened for: the raw transcript next to it only made the one thing
+  // worth reading harder to find. Pauses and errors still speak for themselves.
+  const detail = !paused && blindfold.confirmedPoint
+    ? t('Read as {point}', { point: blindfold.confirmedPoint })
+    : blindfold.message ?? status;
 
   return (
     <div
@@ -35,10 +41,10 @@ export const BlindfoldBanner: React.FC = () => {
           <FaAssistiveListeningSystems className="text-[var(--ui-accent)]" aria-hidden="true" />
           {t('Blindfold mode')}
         </span>
-        <span className="text-[var(--ui-text-muted)]">
-          {blindfold.message ?? status}
+        <span className={blindfold.confirmedPoint ? 'font-medium text-[var(--ui-text)]' : 'text-[var(--ui-text-muted)]'}>
+          {detail}
         </span>
-        {blindfold.transcript ? (
+        {blindfold.transcript && !blindfold.confirmedPoint ? (
           <span className="rounded-full bg-[var(--ui-surface-2)] px-2 py-0.5 text-xs text-[var(--ui-text-muted)]">
             {t('Heard: {text}', { text: blindfold.transcript })}
           </span>

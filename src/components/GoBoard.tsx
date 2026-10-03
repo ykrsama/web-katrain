@@ -250,11 +250,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     advanceMistakeDrill,
     resumeMistakeDrill,
     stopMistakeDrill,
-    blindfoldActive,
+    blindfold,
   } = useGameStore(
     (state) => ({
       board: state.board,
-      blindfoldActive: state.blindfold !== null,
+      blindfold: state.blindfold,
       playMove: state.playMove,
       isEditMode: state.isEditMode,
       editTool: state.editTool,
@@ -2942,6 +2942,52 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const boardStoneCount = useMemo(() => countBoardStones(board), [board]);
   const boardQaProps = currentNode.properties ?? {};
 
+  // Blindfold mode takes the board away entirely: what is left is the coordinate
+  // scheme the player has to compute with, and nothing that could leak a stone.
+  // Blindfold mode takes the board away entirely. What is left is the coordinate
+  // scheme to compute with and, in the headline, only facts: a point that was
+  // actually read back, or the state the mode is in. No sample coordinate is
+  // shown — with nothing said yet, a number there reads as the current point.
+  if (blindfold) {
+    const announce = blindfold.announce;
+    const phase = blindfold.phase;
+    const settled = phase !== 'paused' && phase !== 'error';
+    const headline =
+      settled && blindfold.confirmedPoint
+        ? blindfold.confirmedPoint
+        : phase === 'listening'
+          ? t('Listening for your move…')
+          : phase === 'ai-thinking'
+            ? t('Engine is thinking…')
+            : phase === 'confirming'
+              ? t('Speaking the point back…')
+              : blindfold.message ?? t('Waiting');
+    return (
+      <div
+        className="go-board-container w-full h-full min-w-0 max-w-full overflow-hidden flex items-center justify-center p-3"
+        data-board-container="true"
+        data-blindfold-board="true"
+      >
+        <div className="w-full max-w-md space-y-3 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)] p-5 text-center">
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ui-text-faint)]">
+            {t('Blindfold mode')}
+          </div>
+          <div className="font-mono text-2xl text-[var(--ui-text)]" data-blindfold-headline="true">
+            {headline}
+          </div>
+          <p className="text-sm text-[var(--ui-text-muted)]">
+            {announce === 'rowcol'
+              ? t('Rows from the top, columns from the left.')
+              : t('Columns from the left, rows from the bottom.')}
+          </p>
+          <p className="text-xs text-[var(--ui-text-faint)]">
+            {t('The board stays hidden until you leave blindfold mode.')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -2951,10 +2997,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       <div
         className={[
           'relative shadow-lg rounded-sm select-none',
-          // Blindfold mode keeps the grid and the coordinate labels (they are
-          // what the player reads out) and hides every canvas that could show a
-          // stone or where one is going; see `.blindfold-board` in index.css.
-          blindfoldActive ? 'blindfold-board' : '',
           isEditMode || scoringMode ? 'cursor-crosshair' : 'cursor-pointer',
         ].join(' ')}
         data-board-snapshot="true"
@@ -3271,7 +3313,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         {/* Grid + Hoshi */}
         <canvas
           ref={gridCanvasRef}
-          className="blindfold-board__grid absolute pointer-events-none"
+          className="absolute pointer-events-none"
           style={{
             left: 0,
             top: 0,

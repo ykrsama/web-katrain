@@ -24,6 +24,11 @@ export interface BlindfoldSession {
   phase: BlindfoldPhase;
   /** What the recogniser last heard, or null when it heard nothing. */
   transcript: string | null;
+  /**
+   * The point the player's last answer was read as, spelled the way the mode
+   * says it. The board is hidden, so this is the only confirmation they get.
+   */
+  confirmedPoint: string | null;
   /** One-line status for the banner; null while everything is going to plan. */
   message: string | null;
   /** Bumped by `resumeBlindfold` to wake a loop that paused. */
