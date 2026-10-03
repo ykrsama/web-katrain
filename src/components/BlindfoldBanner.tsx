@@ -54,17 +54,13 @@ export const BlindfoldBannerView: React.FC<BlindfoldBannerViewProps> = ({ sessio
   // while it opens is lost, so the "your turn" prompt waits for it and the
   // microphone line speaks for the mode in the meantime.
   const micPending = session.phase === 'listening' && session.mic.status !== 'ready';
-  // The banner carries the state of the turn; the board area carries the newest
-  // point. The only point worth repeating here is the player's own answer, so it
-  // is clear what was just understood.
-  const recognized = session.lastPoint?.from === 'player' ? session.lastPoint.text : null;
-  const detail = paused
-    ? session.message ?? status
-    : micPending
-      ? null
-      : recognized
-        ? t('Read as {point}', { point: recognized })
-        : session.message ?? status;
+  // The banner reports the state of the turn, the board area shows the newest
+  // point, and the point is never repeated here: once an answer has been read
+  // the mode moves on to the engine, and the turn status says so.
+  const detail = micPending ? null : session.message ?? status;
+  // A transcript is only worth showing when the mode could not use it; after a
+  // point is read the board area already shows what was heard.
+  const unreadTranscript = session.lastPoint?.from === 'player' ? null : session.transcript;
 
   return (
     <div
@@ -88,14 +84,10 @@ export const BlindfoldBannerView: React.FC<BlindfoldBannerViewProps> = ({ sessio
             {micText}
           </span>
         ) : null}
-        {detail ? (
-          <span className={recognized ? 'font-medium text-[var(--ui-text)]' : 'text-[var(--ui-text-muted)]'}>
-            {detail}
-          </span>
-        ) : null}
-        {session.transcript && !recognized ? (
+        {detail ? <span className="text-[var(--ui-text-muted)]">{detail}</span> : null}
+        {unreadTranscript ? (
           <span className="rounded-full bg-[var(--ui-surface-2)] px-2 py-0.5 text-xs text-[var(--ui-text-muted)]">
-            {t('Heard: {text}', { text: session.transcript })}
+            {t('Heard: {text}', { text: unreadTranscript })}
           </span>
         ) : null}
         {paused ? (

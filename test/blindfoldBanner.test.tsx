@@ -55,13 +55,18 @@ describe('the blindfold banner', () => {
     expect(html).toContain('data-blindfold-banner="true"');
   });
 
-  it('keeps the read-back point in front of the microphone state', () => {
-    const html = render({
+  it('never repeats the point it just read, and only echoes a transcript it could not use', () => {
+    const read = render({
       phase: 'confirming',
       mic: { status: 'ready', failure: null },
       lastPoint: { text: '四之十七', shape: '小目', from: 'player' },
     });
+    // The board area shows the point and the mode moves on to the engine, so the
+    // banner says nothing about it at all.
+    expect(read).not.toContain('四之十七');
 
-    expect(html).toContain('四之十七');
+    const unread = render({ phase: 'listening', mic: { status: 'ready', failure: null }, transcript: '随便说点什么' });
+    // A transcript is only interesting when it was not understood.
+    expect(unread).toContain('随便说点什么');
   });
 });
