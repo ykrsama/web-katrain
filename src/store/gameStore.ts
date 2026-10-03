@@ -225,7 +225,7 @@ interface GameStore extends GameState {
   /** Leave the mode and put the AI settings back the way they were. */
   stopBlindfold: () => void;
   /** Runtime status of the blindfold loop, written by `useBlindfoldMode`. */
-  updateBlindfold: (patch: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'confirmedPoint' | 'message'>>) => void;
+  updateBlindfold: (patch: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'lastPoint' | 'message'>>) => void;
   /** Wake a loop that paused after repeated misses. */
   resumeBlindfold: () => void;
   resetGame: () => void;
@@ -1541,7 +1541,7 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
   let misses = 0;
 
   const alive = () => token === blindfoldToken && !!get().blindfold;
-  const patch = (partial: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'confirmedPoint' | 'message'>>) => {
+  const patch = (partial: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'lastPoint' | 'message'>>) => {
     if (alive()) get().updateBlindfold(partial);
   };
   const waitForResume = async (): Promise<void> => {
@@ -1565,12 +1565,14 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     // board: the player answers right after hearing it.
     if (!aiToMove && nodeMove && nodeMove.player === session.aiColor && announcedNodeId !== node.id) {
       announcedNodeId = node.id;
-      patch({ phase: 'confirming', transcript: null, message: null });
-      await speak(
+      const announced =
         nodeMove.x < 0 || nodeMove.y < 0
           ? BLINDFOLD_SPEECH.aiPass
-          : formatBlindfoldCoordinate(nodeMove.x, nodeMove.y, boardSize, session.announce)
-      );
+          : formatBlindfoldCoordinate(nodeMove.x, nodeMove.y, boardSize, session.announce);
+      // The board is covered, so the move the engine just announced is also put
+      // on screen: it is the one thing the player has to work from.
+      patch({ phase: 'confirming', transcript: null, lastPoint: { text: announced, from: 'engine' }, message: null });
+      await speak(announced);
       if (!alive()) return;
     }
 
@@ -1583,7 +1585,7 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
         BLINDFOLD_AI_MOVE_TIMEOUT_MS
       );
       if (!moved && alive()) {
-        patch({ phase: 'error', transcript: null, confirmedPoint: null, message: BLINDFOLD_SPEECH.noAiMove });
+        patch({ phase: 'error', transcript: null, message: BLINDFOLD_SPEECH.noAiMove });
         await waitForResume();
         misses = 0;
       }
@@ -1593,7 +1595,7 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     // Two passes in a row end the game: there is no move left to listen for.
     const lastMoves = state.moveHistory.slice(-2);
     if (lastMoves.length === 2 && lastMoves.every((move) => move.x < 0 || move.y < 0)) {
-      patch({ phase: 'paused', transcript: null, confirmedPoint: null, message: BLINDFOLD_SPEECH.finished });
+      patch({ phase: 'paused', transcript: null, message: BLINDFOLD_SPEECH.finished });
       await waitForResume();
       continue;
     }
@@ -1602,7 +1604,6 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     patch({
       phase: 'listening',
       transcript: null,
-      confirmedPoint: null,
       message: `${BLINDFOLD_SPEECH.listening}（例如 ${example}）`,
     });
     const heard = await listenOnce({ timeoutMs: BLINDFOLD_LISTEN_TIMEOUT_MS });
@@ -1612,7 +1613,7 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
       // A microphone that will not open is not a miss: say so and wait for the
       // player instead of asking again and again.
       if (heard.reason === 'unsupported' || heard.reason === 'not-allowed' || heard.reason === 'audio-capture') {
-        patch({ phase: 'error', transcript: null, confirmedPoint: null, message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）` });
+        patch({ phase: 'error', transcript: null, message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）` });
         await waitForResume();
         misses = 0;
         continue;
@@ -1621,7 +1622,7 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
       // prompt; it just listens again, and after a few of those it pauses.
       misses += 1;
       if (misses >= BLINDFOLD_MAX_MISSES) {
-        patch({ phase: 'paused', transcript: null, confirmedPoint: null, message: BLINDFOLD_SPEECH.paused });
+        patch({ phase: 'paused', transcript: null, message: BLINDFOLD_SPEECH.paused });
         await waitForResume();
         misses = 0;
       }
@@ -1631,9 +1632,9 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     const interpreted = interpretBlindfoldTranscript(heard.transcript, boardSize, session.announce);
     if (interpreted.kind === 'unparsed') {
       misses += 1;
-      patch({ phase: 'listening', transcript: heard.transcript, confirmedPoint: null, message: null });
+      patch({ phase: 'listening', transcript: heard.transcript, message: null });
       if (misses >= BLINDFOLD_MAX_MISSES) {
-        patch({ phase: 'paused', transcript: heard.transcript, confirmedPoint: null, message: BLINDFOLD_SPEECH.paused });
+        patch({ phase: 'paused', transcript: heard.transcript, message: BLINDFOLD_SPEECH.paused });
         await waitForResume();
         misses = 0;
       } else {
@@ -1648,7 +1649,12 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     if (current.currentPlayer === session.aiColor) continue;
     if (interpreted.kind === 'pass') {
       misses = 0;
-      patch({ phase: 'confirming', transcript: heard.transcript, confirmedPoint: null, message: null });
+      patch({
+        phase: 'confirming',
+        transcript: heard.transcript,
+        lastPoint: { text: BLINDFOLD_SPEECH.playerPass, from: 'player' },
+        message: null,
+      });
       current.passTurn();
       continue;
     }
@@ -1663,18 +1669,25 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     );
     if (!legal) {
       misses += 1;
-      patch({ phase: 'listening', transcript: heard.transcript, confirmedPoint: null, message: null });
+      patch({ phase: 'listening', transcript: heard.transcript, message: null });
       await speak(BLINDFOLD_SPEECH.illegal);
       continue;
     }
 
     misses = 0;
-    const spokenPoint = formatBlindfoldCoordinate(interpreted.x, interpreted.y, boardSize, session.announce);
-    patch({ phase: 'confirming', transcript: heard.transcript, confirmedPoint: spokenPoint, message: null });
+    // The point is shown on screen rather than spoken back: hearing it again
+    // while the engine starts thinking is just noise. The store schedules the
+    // engine's reply, and the loop goes on to wait for it.
+    patch({
+      phase: 'confirming',
+      transcript: heard.transcript,
+      lastPoint: {
+        text: formatBlindfoldCoordinate(interpreted.x, interpreted.y, boardSize, session.announce),
+        from: 'player',
+      },
+      message: null,
+    });
     current.playMove(interpreted.x, interpreted.y);
-    // The store schedules the engine's reply. Repeating the point is the only
-    // confirmation a hidden board can give.
-    await speak(spokenPoint);
   }
 };
 
@@ -5801,7 +5814,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         announce,
         phase: 'ai-thinking',
         transcript: null,
-        confirmedPoint: null,
+        lastPoint: null,
         message: BLINDFOLD_SPEECH.aiThinking,
         resumeToken: 0,
       },
@@ -5832,7 +5845,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
             ...state.blindfold,
             phase: 'listening',
             transcript: null,
-            confirmedPoint: null,
             message: null,
             resumeToken: state.blindfold.resumeToken + 1,
           },

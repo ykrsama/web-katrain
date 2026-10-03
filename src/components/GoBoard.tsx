@@ -2942,58 +2942,46 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const boardStoneCount = useMemo(() => countBoardStones(board), [board]);
   const boardQaProps = currentNode.properties ?? {};
 
-  // Blindfold mode takes the board away entirely: what is left is the coordinate
-  // scheme the player has to compute with, and nothing that could leak a stone.
-  // Blindfold mode takes the board away entirely. What is left is the coordinate
-  // scheme to compute with and, in the headline, only facts: a point that was
-  // actually read back, or the state the mode is in. No sample coordinate is
-  // shown — with nothing said yet, a number there reads as the current point.
-  if (blindfold) {
-    const announce = blindfold.announce;
-    const phase = blindfold.phase;
-    const settled = phase !== 'paused' && phase !== 'error';
-    const headline =
-      settled && blindfold.confirmedPoint
-        ? blindfold.confirmedPoint
-        : phase === 'listening'
-          ? t('Listening for your move…')
-          : phase === 'ai-thinking'
-            ? t('Engine is thinking…')
-            : phase === 'confirming'
-              ? t('Speaking the point back…')
-              : blindfold.message ?? t('Waiting');
-    return (
-      <div
-        className="go-board-container w-full h-full min-w-0 max-w-full overflow-hidden flex items-center justify-center p-3"
-        data-board-container="true"
-        data-blindfold-board="true"
-      >
-        <div className="w-full max-w-md space-y-3 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)] p-5 text-center">
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ui-text-faint)]">
-            {t('Blindfold mode')}
-          </div>
-          <div className="font-mono text-2xl text-[var(--ui-text)]" data-blindfold-headline="true">
-            {headline}
-          </div>
-          <p className="text-sm text-[var(--ui-text-muted)]">
-            {announce === 'rowcol'
-              ? t('Rows from the top, columns from the left.')
-              : t('Columns from the left, rows from the bottom.')}
-          </p>
-          <p className="text-xs text-[var(--ui-text-faint)]">
-            {t('The board stays hidden until you leave blindfold mode.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Blindfold mode covers the board: the placeholder is an opaque layer over a
+  // board that keeps rendering underneath, so nothing is remounted. Unmounting
+  // it left the freshly created canvases blank, because the drawing effects only
+  // depend on board state and never had a reason to run again.
+  //
+  // The layer carries the newest point the mode has announced or read back — the
+  // engine's move, then the player's answer — and is blank until there is one.
+  // Status and errors belong to the banner, where the mode's controls are.
+  const blindfoldAnnounce = blindfold?.announce ?? 'xy';
+  const blindfoldHeadline = blindfold?.lastPoint?.text ?? '';
 
   return (
     <div
       ref={containerRef}
-      className="go-board-container w-full h-full min-w-0 max-w-full overflow-hidden flex items-center justify-center"
+      className="go-board-container relative w-full h-full min-w-0 max-w-full overflow-hidden flex items-center justify-center"
       data-board-container="true"
     >
+      {blindfold ? (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--ui-bg)] p-3"
+          data-blindfold-board="true"
+        >
+          <div className="w-full max-w-md space-y-3 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)] p-5 text-center">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ui-text-faint)]">
+              {t('Blindfold mode')}
+            </div>
+            <div
+              className="min-h-8 font-mono text-2xl text-[var(--ui-text)]"
+              data-blindfold-headline="true"
+            >
+              {blindfoldHeadline}
+            </div>
+            <p className="text-sm text-[var(--ui-text-muted)]">
+              {blindfoldAnnounce === 'rowcol'
+                ? t('Rows from the top, columns from the left.')
+                : t('Columns from the left, rows from the bottom.')}
+            </p>
+          </div>
+        </div>
+      ) : null}
       <div
         className={[
           'relative shadow-lg rounded-sm select-none',

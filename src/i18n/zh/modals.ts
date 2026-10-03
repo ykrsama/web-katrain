@@ -320,6 +320,5 @@ export default {
   'Could not read a point from that. Say it like “{example}”.': '没能从这句话里读出落点，请照“{example}”的格式说。',
 
   // 盲棋模式：棋盘被挡掉后的坐标提示、以及识别结果显示
-  'The board stays hidden until you leave blindfold mode.': '棋盘会一直隐藏，直到你退出盲棋模式。',
   'Read as {point}': '识别为 {point}',
 } as Record<string, string>;

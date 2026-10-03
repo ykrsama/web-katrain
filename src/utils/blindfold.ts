@@ -17,6 +17,13 @@ export type { BlindfoldAnnounceMode };
 
 export type BlindfoldPhase = 'ai-thinking' | 'listening' | 'confirming' | 'paused' | 'error';
 
+/** The newest point the mode has told the player about. */
+export interface BlindfoldLastPoint {
+  /** The point as the mode spells it, or the note that it was a pass. */
+  text: string;
+  from: 'engine' | 'player';
+}
+
 export interface BlindfoldSession {
   /** The side the engine plays; the player is the other one. */
   aiColor: Player;
@@ -25,10 +32,12 @@ export interface BlindfoldSession {
   /** What the recogniser last heard, or null when it heard nothing. */
   transcript: string | null;
   /**
-   * The point the player's last answer was read as, spelled the way the mode
-   * says it. The board is hidden, so this is the only confirmation they get.
+   * The last point the mode said anything about — the engine's move when it is
+   * announced, or the player's answer when it is read back. Spelled the way the
+   * mode says it, and shown in the board area for as long as it is the newest
+   * thing that happened.
    */
-  confirmedPoint: string | null;
+  lastPoint: BlindfoldLastPoint | null;
   /** One-line status for the banner; null while everything is going to plan. */
   message: string | null;
   /** Bumped by `resumeBlindfold` to wake a loop that paused. */
@@ -40,6 +49,7 @@ export const BLINDFOLD_SPEECH = {
   unparsed: '听不清楚',
   illegal: '此处不能落子，请再说一次',
   aiPass: '对方停一手',
+  playerPass: '你停一手',
   aiThinking: 'AI 正在思考',
   listening: '请说坐标',
   noMic: '麦克风不可用',

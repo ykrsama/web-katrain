@@ -24,11 +24,12 @@ export const BlindfoldBanner: React.FC = () => {
         : blindfold.phase === 'confirming'
           ? t('Speaking the point back…')
           : t('Waiting');
-  // A recognized move is shown on its own and stays until the next answer is
-  // being listened for: the raw transcript next to it only made the one thing
-  // worth reading harder to find. Pauses and errors still speak for themselves.
-  const detail = !paused && blindfold.confirmedPoint
-    ? t('Read as {point}', { point: blindfold.confirmedPoint })
+  // The banner carries the state of the turn; the board area carries the newest
+  // point. The only point worth repeating here is the player's own answer, so it
+  // is clear what was just understood.
+  const recognized = blindfold.lastPoint?.from === 'player' ? blindfold.lastPoint.text : null;
+  const detail = !paused && recognized
+    ? t('Read as {point}', { point: recognized })
     : blindfold.message ?? status;
 
   return (
@@ -41,10 +42,10 @@ export const BlindfoldBanner: React.FC = () => {
           <FaAssistiveListeningSystems className="text-[var(--ui-accent)]" aria-hidden="true" />
           {t('Blindfold mode')}
         </span>
-        <span className={blindfold.confirmedPoint ? 'font-medium text-[var(--ui-text)]' : 'text-[var(--ui-text-muted)]'}>
+        <span className={recognized ? 'font-medium text-[var(--ui-text)]' : 'text-[var(--ui-text-muted)]'}>
           {detail}
         </span>
-        {blindfold.transcript && !blindfold.confirmedPoint ? (
+        {blindfold.transcript && !recognized ? (
           <span className="rounded-full bg-[var(--ui-surface-2)] px-2 py-0.5 text-xs text-[var(--ui-text-muted)]">
             {t('Heard: {text}', { text: blindfold.transcript })}
           </span>

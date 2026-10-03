@@ -76,7 +76,7 @@ describe('blindfold mode', () => {
     useGameStore.setState({ isContinuousAnalysis: false, isAnalysisMode: false, notification: null });
   });
 
-  it('announces the engine move, plays what it hears, and repeats it back', async () => {
+  it('announces the engine move, plays what it hears, and shows the point it read', async () => {
     // In x-y mode (3, 2) on 19x19 is the 4th column from the left and the 17th
     // row from the bottom, i.e. "四之十七".
     listenMock.mockResolvedValue({ ok: true, transcript: '四之十七' });
@@ -94,17 +94,42 @@ describe('blindfold mode', () => {
 
     const playerNode = useGameStore.getState().currentNode;
     expect(playerNode.move).toMatchObject({ x: 3, y: 2, player: 'white' });
-    // The hidden board's only confirmation: the point the answer was read as,
-    // spelled the way the mode says it.
-    expect(useGameStore.getState().blindfold?.confirmedPoint).toBe('四之十七');
+    // The board area shows the newest point of the round: first what the engine
+    // announced, then what the answer was read as.
+    expect(useGameStore.getState().blindfold?.lastPoint).toEqual({ text: '四之十七', from: 'player' });
+    // Only the engine's move is spoken. The player's point is shown, not said
+    // back, so it must not appear among the announcements.
     const spoken = speakMock.mock.calls.map((call) => call[0]);
     expect(spoken).toContain('十六之四');
-    expect(spoken).toContain('四之十七');
+    expect(spoken).not.toContain('四之十七');
 
     useGameStore.getState().stopBlindfold();
     expect(useGameStore.getState().blindfold).toBeNull();
     expect(useGameStore.getState().isAiPlaying).toBe(false);
     expect(useGameStore.getState().aiColor).toBeNull();
+  });
+
+  it('shows the engine move in the board area while it waits for an answer', async () => {
+    // The microphone never answers on its own, so the state the player sits in
+    // can be inspected: the board is covered, and the engine's point is the one
+    // thing it has to show.
+    const pending: { release: () => void } = { release: () => undefined };
+    listenMock.mockImplementation(
+      () => new Promise((resolve) => {
+        pending.release = () => resolve({ ok: false, reason: 'aborted' });
+      })
+    );
+    const { useGameStore } = await import('../src/store/gameStore');
+
+    useGameStore.getState().startBlindfold({ aiColor: 'black', announce: 'xy' });
+    // (15, 15) on 19x19 is the 16th column from the left and the 4th row from
+    // the bottom.
+    await waitFor(() => useGameStore.getState().blindfold?.lastPoint?.text === '十六之四');
+    expect(useGameStore.getState().blindfold?.lastPoint).toEqual({ text: '十六之四', from: 'engine' });
+
+    useGameStore.getState().stopBlindfold();
+    pending.release();
+    expect(useGameStore.getState().blindfold).toBeNull();
   });
 
   it('says "听不清楚" and listens again when the answer is not a point', async () => {
