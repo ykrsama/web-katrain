@@ -19,13 +19,15 @@ export const BlindfoldBannerView: React.FC<BlindfoldBannerViewProps> = ({ sessio
   const t = useT();
 
   const paused = session.phase === 'paused' || session.phase === 'error';
+  // 'confirming' has nothing to say: the mode stopped reading the point back out
+  // loud, so the line would only describe something that does not happen.
   const status =
     session.phase === 'ai-thinking'
       ? t('Engine is thinking…')
       : session.phase === 'listening'
         ? t('Listening for your move…')
         : session.phase === 'confirming'
-          ? t('Speaking the point back…')
+          ? ''
           : t('Waiting');
 
   const micFailureText = (failure: BlindfoldMic['failure']): string => {
