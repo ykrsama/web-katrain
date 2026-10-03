@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FaAssistiveListeningSystems } from 'react-icons/fa';
 import './dashboard.css';
 import { Icon, type IconName } from './icons';
 import type { CandidateMove, GameNode, GameRules, GameSettings, Player } from '../../types';
@@ -505,7 +506,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <button type="button" className="iconbtn" title={t('New game')} aria-label={t('New game')} onClick={onNewGame}><Icon name="plus" /></button>
           <button type="button" className="iconbtn" title={t('Open SGF / photo / weights')} aria-label={t('Load SGF, board photo, or model weights')} onClick={onLoadSgf}><Icon name="folder" /></button>
           <button type="button" className="iconbtn" title={t('Save SGF')} aria-label={t('Save SGF')} onClick={onSaveSgf}><Icon name="save" /></button>
-          <button type="button" className="iconbtn" title={t('Blindfold training')} aria-label={t('Blindfold training')} onClick={onBlindfold}><Icon name="mic" /></button>
+          <button type="button" className="iconbtn" title={t('Blindfold training')} aria-label={t('Blindfold training')} onClick={onBlindfold}><FaAssistiveListeningSystems /></button>
           <button
             type="button"
             className={`iconbtn${pop?.id === 'file' ? ' active' : ''}`}
