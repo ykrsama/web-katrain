@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CandidateMove } from '../src/types';
 
 const analyzeMock = vi.fn();
-const speakMock = vi.fn(async () => true);
-const listenMock = vi.fn();
+const speakMock = vi.fn(async (_text: string): Promise<boolean> => true);
+const listenMock = vi.fn(
+  async (_opts?: { timeoutMs?: number }): Promise<{ ok: true; transcript: string } | { ok: false; reason: string }> => ({
+    ok: false,
+    reason: 'no-speech',
+  })
+);
 const cancelListeningMock = vi.fn();
 const cancelSpeechMock = vi.fn();
 

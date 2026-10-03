@@ -47,7 +47,7 @@ export const BlindfoldBanner: React.FC = () => {
           <button
             type="button"
             onClick={resumeBlindfold}
-            className="ui-control flex items-center gap-2 rounded-full px-3 py-1 text-xs text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
+            className="inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ui-border)] px-3 py-1 text-xs text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
           >
             <FaPlay aria-hidden="true" />
             {t('Keep listening')}
@@ -56,7 +56,7 @@ export const BlindfoldBanner: React.FC = () => {
         <button
           type="button"
           onClick={stopBlindfold}
-          className="ui-control flex items-center gap-2 rounded-full px-3 py-1 text-xs text-[var(--ui-danger,#e53e3e)] hover:bg-[var(--ui-surface-2)]"
+          className="inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ui-border)] px-3 py-1 text-xs text-[var(--ui-danger,#e53e3e)] hover:bg-[var(--ui-surface-2)]"
         >
           <FaStop aria-hidden="true" />
           {t('Leave blindfold mode')}

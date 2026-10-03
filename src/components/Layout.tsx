@@ -3711,6 +3711,7 @@ export const Layout: React.FC = () => {
             onLoadSgf={handleLoadClick}
             onPasteSgf={handlePasteSgf}
             onScanBoard={(returnFocus) => openPhotoBoard(null, returnFocus)}
+            onBlindfold={() => setIsBlindfoldOpen(true)}
             onSettings={() => setIsSettingsOpen(true)}
             onCommandPalette={() => setIsCommandPaletteOpen(true)}
             onKeyboardHelp={openKeyboardHelp}

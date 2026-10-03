@@ -138,21 +138,21 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-[var(--ui-border)] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] px-4 py-3">
           <button
             type="button"
             onClick={handleTest}
             disabled={!synthesisSupported}
-            className="ui-control flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] disabled:opacity-40"
+            className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--ui-border)] px-4 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FaVolumeUp aria-hidden="true" />
             {t('Test the voice')}
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="ui-control rounded-lg px-3 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]"
+              className="min-h-11 whitespace-nowrap rounded-lg px-4 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]"
             >
               {t('Cancel')}
             </button>
@@ -160,7 +160,7 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
               type="button"
               onClick={handleStart}
               disabled={!recognitionSupported}
-              className="ui-control flex items-center gap-2 rounded-lg bg-[var(--ui-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg bg-[var(--ui-accent)] px-4 py-2 text-sm font-semibold text-[var(--ui-accent-contrast)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FaAssistiveListeningSystems aria-hidden="true" />
               {t('Start blindfold mode')}

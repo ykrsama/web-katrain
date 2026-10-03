@@ -140,6 +140,7 @@ export interface DesktopDashboardProps {
   onLoadSgf: () => void;
   onPasteSgf: (returnFocus?: HTMLElement | null) => void;
   onScanBoard: (returnFocus?: HTMLElement | null) => void;
+  onBlindfold: () => void;
   onSettings: () => void;
   onCommandPalette: () => void;
   onKeyboardHelp: (returnFocus?: HTMLElement | null) => void;
@@ -225,7 +226,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     jumpBack, jumpForward, findMistake, canFindPreviousMistake, canFindNextMistake, rotateBoard, switchBranch, undoToBranchPoint, makeCurrentNodeMainBranch,
     passTurn, onUndo, onAiMove, onResign, onPlayBest,
     onNewGame, onSaveSgf, onCopySgf, onSaveToLibrary, onLoadSgf, onPasteSgf, onScanBoard,
-    onSettings, onCommandPalette, onKeyboardHelp, onAbout,
+    onBlindfold, onSettings, onCommandPalette, onKeyboardHelp, onAbout,
     toast, headerNotification,
   } = props;
   const t = useT();
@@ -504,6 +505,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <button type="button" className="iconbtn" title={t('New game')} aria-label={t('New game')} onClick={onNewGame}><Icon name="plus" /></button>
           <button type="button" className="iconbtn" title={t('Open SGF / photo / weights')} aria-label={t('Load SGF, board photo, or model weights')} onClick={onLoadSgf}><Icon name="folder" /></button>
           <button type="button" className="iconbtn" title={t('Save SGF')} aria-label={t('Save SGF')} onClick={onSaveSgf}><Icon name="save" /></button>
+          <button type="button" className="iconbtn" title={t('Blindfold training')} aria-label={t('Blindfold training')} onClick={onBlindfold}><Icon name="mic" /></button>
           <button
             type="button"
             className={`iconbtn${pop?.id === 'file' ? ' active' : ''}`}

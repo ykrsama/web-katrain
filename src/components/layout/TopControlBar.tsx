@@ -585,6 +585,11 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             <span className="text-sm font-medium">{t('Extra analysis')}</span>
             <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['analysis-extra']}</span>
           </button>
+          <button type="button" className={mobileToolsGridBtn} onClick={() => { onBlindfold(); closeMobileToolsAfterAction(); }}>
+            <FaAssistiveListeningSystems size={18} className="text-[var(--ui-text-muted)]" />
+            <span className="text-sm font-medium">{t('Blindfold training')}</span>
+            <span className="text-[0.6875rem] ui-text-faint">{t('Blindfold mode')}</span>
+          </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { analyzeExtra('equalize'); closeMobileToolsAfterAction(); }}>
             <FaBalanceScale size={18} className="text-[var(--ui-text-muted)]" />
             <span className="text-sm font-medium">{t('Equalize')}</span>
@@ -795,9 +800,6 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         </IconButton>
         <IconButton title={t('Photo Board')} onClick={onScanBoard} className={topIconClass}>
           <FaCamera />
-        </IconButton>
-        <IconButton title={t('Blindfold training')} onClick={onBlindfold} className={topIconClass}>
-          <FaAssistiveListeningSystems />
         </IconButton>
       </div>
 
