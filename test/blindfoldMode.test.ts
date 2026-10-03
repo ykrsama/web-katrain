@@ -162,16 +162,27 @@ describe('blindfold mode', () => {
     expect(useGameStore.getState().blindfold).toBeNull();
   });
 
-  it('says "听不清楚" and listens again when the answer is not a point', async () => {
-    listenMock.mockResolvedValue({ ok: true, transcript: '随便说点什么' });
+  it('says "听不清楚" and keeps listening, however many times it misses', async () => {
+    // More misses than the mode used to allow before it gave up and asked the
+    // player to press "继续听" again.
+    let attempts = 0;
+    listenMock.mockImplementation(async () => {
+      attempts += 1;
+      return attempts <= 5
+        ? { ok: true, transcript: '随便说点什么' }
+        : { ok: true, transcript: '四之十七' };
+    });
     const { useGameStore } = await import('../src/store/gameStore');
 
     useGameStore.getState().startBlindfold({ aiColor: 'black', announce: 'xy' });
-    await waitFor(() => speakMock.mock.calls.some((call) => call[0] === '听不清楚'));
+    // The sixth answer is finally a point, so the mode plays it: the retries
+    // never stopped and never paused.
+    await waitFor(() => useGameStore.getState().currentNode.move?.player === 'white');
+    expect(useGameStore.getState().currentNode.move).toMatchObject({ x: 3, y: 2 });
 
-    expect(listenMock.mock.calls.length).toBeGreaterThanOrEqual(2);
-    // Nothing was played for it: the engine is still waiting on the player.
-    expect(useGameStore.getState().currentNode.move?.player).toBe('black');
+    const spoken = speakMock.mock.calls.map((call) => call[0]);
+    expect(spoken.filter((text) => text === '听不清楚').length).toBeGreaterThanOrEqual(5);
+    expect(useGameStore.getState().blindfold?.phase).not.toBe('paused');
 
     useGameStore.getState().stopBlindfold();
     expect(cancelListeningMock).toHaveBeenCalled();

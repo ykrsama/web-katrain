@@ -81,7 +81,6 @@ export const BLINDFOLD_SPEECH = {
   noMic: '麦克风不可用',
   noAiMove: 'AI 没有落子，请检查引擎',
   finished: '双方连续停一手，对局结束',
-  paused: '连续几次没有听清，点“继续听”再试。',
 } as const;
 
 const PASS_PHRASES = ['停一手', '停一着', '停一招', '虚手', '过手', 'pass'] as const;

@@ -243,7 +243,7 @@ interface GameStore extends GameState {
   stopBlindfold: () => void;
   /** Runtime status of the blindfold loop, written by `useBlindfoldMode`. */
   updateBlindfold: (patch: BlindfoldPatch) => void;
-  /** Wake a loop that paused after repeated misses. */
+  /** Wake a loop that paused on a microphone or engine problem. */
   resumeBlindfold: () => void;
   resetGame: () => void;
   loadGame: (sgf: ParsedSgf) => void;
@@ -1518,8 +1518,6 @@ const playStepSound = (args: { enabled: boolean; from: GameNode; to: GameNode })
 let blindfoldToken = 0;
 /** What the AI settings were before the blindfold mode took them over. */
 let blindfoldRestoreAi: { isAiPlaying: boolean; aiColor: Player | null } | null = null;
-/** Misses in a row before the mode stops re-listening and waits for the player. */
-const BLINDFOLD_MAX_MISSES = 3;
 /** How long one listen may last before it counts as "heard nothing". */
 const BLINDFOLD_LISTEN_TIMEOUT_MS = 9000;
 /** How long to wait for the engine's move before saying it stalled. */
@@ -1606,7 +1604,6 @@ const runBlindfoldSession = async (
   preflight: Promise<MicrophonePreflight>
 ): Promise<void> => {
   let announcedNodeId: string | null = null;
-  let misses = 0;
   let micChecked = false;
 
   const alive = () => token === blindfoldToken && !!get().blindfold;
@@ -1662,7 +1659,6 @@ const runBlindfoldSession = async (
       if (!moved && alive()) {
         patch({ phase: 'error', transcript: null, message: BLINDFOLD_SPEECH.noAiMove });
         await waitForResume();
-        misses = 0;
       }
       continue;
     }
@@ -1724,31 +1720,16 @@ const runBlindfoldSession = async (
           mic: { status: 'blocked', failure: microphoneFailureFromListen(heard.reason) },
         });
         await waitForResume();
-        misses = 0;
-        continue;
       }
-      // Silence is not a misunderstanding, so it does not get the "听不清楚"
-      // prompt; it just listens again, and after a few of those it pauses.
-      misses += 1;
-      if (misses >= BLINDFOLD_MAX_MISSES) {
-        patch({ phase: 'paused', transcript: null, message: BLINDFOLD_SPEECH.paused });
-        await waitForResume();
-        misses = 0;
-      }
+      // Silence or a timeout is not a misunderstanding, so it gets no "听不清楚"
+      // either; there is no attempt limit, the mode simply listens again.
       continue;
     }
 
     const interpreted = interpretBlindfoldTranscript(heard.transcript, boardSize, session.announce);
     if (interpreted.kind === 'unparsed') {
-      misses += 1;
       patch({ phase: 'listening', transcript: heard.transcript, message: null });
-      if (misses >= BLINDFOLD_MAX_MISSES) {
-        patch({ phase: 'paused', transcript: heard.transcript, message: BLINDFOLD_SPEECH.paused });
-        await waitForResume();
-        misses = 0;
-      } else {
-        await speak(BLINDFOLD_SPEECH.unparsed);
-      }
+      await speak(BLINDFOLD_SPEECH.unparsed);
       continue;
     }
 
@@ -1757,7 +1738,6 @@ const runBlindfoldSession = async (
     // open, which hands the turn back to the engine: what we heard is stale.
     if (current.currentPlayer === session.aiColor) continue;
     if (interpreted.kind === 'pass') {
-      misses = 0;
       patch({
         phase: 'confirming',
         transcript: heard.transcript,
@@ -1777,13 +1757,11 @@ const runBlindfoldSession = async (
       { multiStoneSuicideLegal: isSuicideLegal(current.settings.gameRules) }
     );
     if (!legal) {
-      misses += 1;
       patch({ phase: 'listening', transcript: heard.transcript, message: null });
       await speak(BLINDFOLD_SPEECH.illegal);
       continue;
     }
 
-    misses = 0;
     // The point is shown on screen rather than spoken back: hearing it again
     // while the engine starts thinking is just noise. The store schedules the
     // engine's reply, and the loop goes on to wait for it.
