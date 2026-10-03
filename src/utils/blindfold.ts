@@ -11,11 +11,21 @@ import {
   parseBlindfoldCoordinate,
   type BlindfoldAnnounceMode,
 } from './blindfoldCoordinates';
+import type { MicrophoneFailure } from './speech';
 import type { Player } from '../types';
 
 export type { BlindfoldAnnounceMode };
 
 export type BlindfoldPhase = 'ai-thinking' | 'listening' | 'confirming' | 'paused' | 'error';
+
+/** How the microphone is doing, as the banner reports it. */
+export type BlindfoldMicStatus = 'checking' | 'permission' | 'starting' | 'ready' | 'blocked';
+
+export interface BlindfoldMic {
+  status: BlindfoldMicStatus;
+  /** Why it is not open, when it is not. */
+  failure: MicrophoneFailure | null;
+}
 
 /** The newest point the mode has told the player about. */
 export interface BlindfoldLastPoint {
@@ -38,11 +48,22 @@ export interface BlindfoldSession {
    * thing that happened.
    */
   lastPoint: BlindfoldLastPoint | null;
+  /**
+   * Whether the microphone is actually capturing. Opening it takes a moment and
+   * anything said before it is open is lost, so the mode holds its "your turn"
+   * prompt back until this says `ready`.
+   */
+  mic: BlindfoldMic;
   /** One-line status for the banner; null while everything is going to plan. */
   message: string | null;
   /** Bumped by `resumeBlindfold` to wake a loop that paused. */
   resumeToken: number;
 }
+
+/** A write to a running session; `mic` merges so callers only name the field they know. */
+export type BlindfoldPatch = Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'lastPoint' | 'message'>> & {
+  mic?: Partial<BlindfoldMic>;
+};
 
 /** Everything the mode says out loud. */
 export const BLINDFOLD_SPEECH = {

@@ -493,4 +493,16 @@ export default {
   'Heard: {text}': '听到：{text}',
   'Keep listening': '继续听',
   'Leave blindfold mode': '退出盲棋模式',
+  // 麦克风状态：横幅上那一个芯片
+  'Microphone: checking…': '麦克风：检测中…',
+  'Microphone: starting…': '麦克风：启动中…',
+  'Microphone: waiting for permission': '麦克风：等待浏览器授权',
+  'Microphone: {state}': '麦克风：{state}',
+  'permission refused': '权限被拒绝',
+  'no microphone found': '未找到可用麦克风',
+  'the device is busy in another app': '设备被其他程序占用',
+  'needs HTTPS or localhost': '需要 HTTPS 或 localhost',
+  'this browser cannot open it': '浏览器无法打开',
+  'still opening': '仍在启动',
+  'it did not open': '无法打开',
 } as Record<string, string>;

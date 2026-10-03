@@ -1,36 +1,68 @@
 import React from 'react';
-import { FaAssistiveListeningSystems, FaStop, FaPlay } from 'react-icons/fa';
+import { FaAssistiveListeningSystems, FaStop, FaPlay, FaMicrophone } from 'react-icons/fa';
 import { useGameStore } from '../store/gameStore';
 import { useT } from '../i18n';
+import type { BlindfoldMic, BlindfoldSession } from '../utils/blindfold';
+
+interface BlindfoldBannerViewProps {
+  session: BlindfoldSession;
+  onResume: () => void;
+  onLeave: () => void;
+}
 
 /**
- * The blindfold mode's only handle on screen: it is on while the board is
- * hidden, so it has to say what the mode is doing and offer the way out.
+ * The blindfold banner's markup, with the session handed in: the store-connected
+ * wrapper below is the only part that has to know where the state comes from,
+ * which keeps this renderable in a test.
  */
-export const BlindfoldBanner: React.FC = () => {
+export const BlindfoldBannerView: React.FC<BlindfoldBannerViewProps> = ({ session, onResume, onLeave }) => {
   const t = useT();
-  const blindfold = useGameStore((state) => state.blindfold);
-  const stopBlindfold = useGameStore((state) => state.stopBlindfold);
-  const resumeBlindfold = useGameStore((state) => state.resumeBlindfold);
 
-  if (!blindfold) return null;
-
-  const paused = blindfold.phase === 'paused' || blindfold.phase === 'error';
+  const paused = session.phase === 'paused' || session.phase === 'error';
   const status =
-    blindfold.phase === 'ai-thinking'
+    session.phase === 'ai-thinking'
       ? t('Engine is thinking…')
-      : blindfold.phase === 'listening'
+      : session.phase === 'listening'
         ? t('Listening for your move…')
-        : blindfold.phase === 'confirming'
+        : session.phase === 'confirming'
           ? t('Speaking the point back…')
           : t('Waiting');
+
+  const micFailureText = (failure: BlindfoldMic['failure']): string => {
+    if (failure === 'denied') return t('permission refused');
+    if (failure === 'no-device') return t('no microphone found');
+    if (failure === 'busy') return t('the device is busy in another app');
+    if (failure === 'insecure') return t('needs HTTPS or localhost');
+    if (failure === 'unsupported') return t('this browser cannot open it');
+    if (failure === 'waiting') return t('still opening');
+    return t('it did not open');
+  };
+  // The line is only there while the microphone is a problem. Once it is open
+  // the mode has nothing to add, and "已就绪" every turn is just noise.
+  const micText =
+    session.mic.status === 'starting'
+      ? t('Microphone: starting…')
+      : session.mic.status === 'permission'
+        ? t('Microphone: waiting for permission')
+        : session.mic.status === 'blocked'
+          ? t('Microphone: {state}', { state: micFailureText(session.mic.failure) })
+          : t('Microphone: checking…');
+
+  // The player cannot answer until the recogniser is capturing: anything said
+  // while it opens is lost, so the "your turn" prompt waits for it and the
+  // microphone line speaks for the mode in the meantime.
+  const micPending = session.phase === 'listening' && session.mic.status !== 'ready';
   // The banner carries the state of the turn; the board area carries the newest
   // point. The only point worth repeating here is the player's own answer, so it
   // is clear what was just understood.
-  const recognized = blindfold.lastPoint?.from === 'player' ? blindfold.lastPoint.text : null;
-  const detail = !paused && recognized
-    ? t('Read as {point}', { point: recognized })
-    : blindfold.message ?? status;
+  const recognized = session.lastPoint?.from === 'player' ? session.lastPoint.text : null;
+  const detail = paused
+    ? session.message ?? status
+    : micPending
+      ? null
+      : recognized
+        ? t('Read as {point}', { point: recognized })
+        : session.message ?? status;
 
   return (
     <div
@@ -42,18 +74,32 @@ export const BlindfoldBanner: React.FC = () => {
           <FaAssistiveListeningSystems className="text-[var(--ui-accent)]" aria-hidden="true" />
           {t('Blindfold mode')}
         </span>
-        <span className={recognized ? 'font-medium text-[var(--ui-text)]' : 'text-[var(--ui-text-muted)]'}>
-          {detail}
-        </span>
-        {blindfold.transcript && !recognized ? (
+        {session.mic.status !== 'ready' ? (
+          <span
+            className={`flex items-center gap-1.5 ${
+              session.mic.status === 'blocked' ? 'text-[var(--ui-danger,#e53e3e)]' : 'text-[var(--ui-accent)]'
+            }`}
+            data-blindfold-mic={session.mic.status}
+            data-blindfold-mic-failure={session.mic.failure ?? undefined}
+          >
+            <FaMicrophone aria-hidden="true" />
+            {micText}
+          </span>
+        ) : null}
+        {detail ? (
+          <span className={recognized ? 'font-medium text-[var(--ui-text)]' : 'text-[var(--ui-text-muted)]'}>
+            {detail}
+          </span>
+        ) : null}
+        {session.transcript && !recognized ? (
           <span className="rounded-full bg-[var(--ui-surface-2)] px-2 py-0.5 text-xs text-[var(--ui-text-muted)]">
-            {t('Heard: {text}', { text: blindfold.transcript })}
+            {t('Heard: {text}', { text: session.transcript })}
           </span>
         ) : null}
         {paused ? (
           <button
             type="button"
-            onClick={resumeBlindfold}
+            onClick={onResume}
             className="inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ui-border)] px-3 py-1 text-xs text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]"
           >
             <FaPlay aria-hidden="true" />
@@ -62,7 +108,7 @@ export const BlindfoldBanner: React.FC = () => {
         ) : null}
         <button
           type="button"
-          onClick={stopBlindfold}
+          onClick={onLeave}
           className="inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-full border border-[var(--ui-border)] px-3 py-1 text-xs text-[var(--ui-danger,#e53e3e)] hover:bg-[var(--ui-surface-2)]"
         >
           <FaStop aria-hidden="true" />
@@ -71,4 +117,19 @@ export const BlindfoldBanner: React.FC = () => {
       </div>
     </div>
   );
+};
+
+/**
+ * The blindfold mode's only handle on screen: it is on while the board is
+ * hidden, so it has to say what the mode is doing, whether the microphone is
+ * open yet, and offer the way out.
+ */
+export const BlindfoldBanner: React.FC = () => {
+  const blindfold = useGameStore((state) => state.blindfold);
+  const stopBlindfold = useGameStore((state) => state.stopBlindfold);
+  const resumeBlindfold = useGameStore((state) => state.resumeBlindfold);
+
+  if (!blindfold) return null;
+
+  return <BlindfoldBannerView session={blindfold} onResume={resumeBlindfold} onLeave={stopBlindfold} />;
 };

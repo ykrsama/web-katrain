@@ -50,10 +50,22 @@ import {
   blindfoldExample,
   interpretBlindfoldTranscript,
   type BlindfoldAnnounceMode,
+  type BlindfoldMic,
+  type BlindfoldPatch,
   type BlindfoldSession,
 } from '../utils/blindfold';
 import { formatBlindfoldCoordinate } from '../utils/blindfoldCoordinates';
-import { cancelListening, cancelSpeech, listenOnce, speak } from '../utils/speech';
+import {
+  cancelListening,
+  cancelSpeech,
+  listenOnce,
+  microphoneFailureFromListen,
+  preflightMicrophone,
+  queryMicrophonePermission,
+  speak,
+  type MicrophoneFailure,
+  type MicrophonePreflight,
+} from '../utils/speech';
 import { humanBotPresets } from '../engine/katago/chosenMove';
 import {
   countMoveTreeDescendants,
@@ -225,7 +237,7 @@ interface GameStore extends GameState {
   /** Leave the mode and put the AI settings back the way they were. */
   stopBlindfold: () => void;
   /** Runtime status of the blindfold loop, written by `useBlindfoldMode`. */
-  updateBlindfold: (patch: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'lastPoint' | 'message'>>) => void;
+  updateBlindfold: (patch: BlindfoldPatch) => void;
   /** Wake a loop that paused after repeated misses. */
   resumeBlindfold: () => void;
   resetGame: () => void;
@@ -1528,6 +1540,39 @@ const blindfoldResetPatch = (): Partial<GameStore> => {
     : { blindfold: null };
 };
 
+/** What a failed microphone check means for the session. */
+const blindfoldMicForFailure = (failure: MicrophoneFailure): Partial<BlindfoldMic> =>
+  // A prompt that is still open is not an error, it is a question the player has
+  // to answer, and the banner says so rather than crying failure.
+  failure === 'waiting' ? { status: 'permission', failure: null } : { status: 'blocked', failure };
+
+/**
+ * Mirror the browser's microphone state into the session while the mode runs.
+ * The preflight is the answer from the browser itself, but the recogniser's own
+ * start event is the ground truth, and it overwrites this as soon as it fires.
+ */
+const watchBlindfoldMic = (get: () => GameStore, token: number, preflight: Promise<MicrophonePreflight>): void => {
+  const alive = () => token === blindfoldToken && !!get().blindfold;
+  const patch = (partial: Partial<BlindfoldMic>) => {
+    if (alive()) get().updateBlindfold({ mic: partial });
+  };
+  // Only the first answer counts: a permission probe can come back after the
+  // device has already opened, and reporting "prompt" then would be a lie.
+  const patchWhileUnsure = (partial: Partial<BlindfoldMic>) => {
+    if (alive() && get().blindfold?.mic.status === 'checking') patch(partial);
+  };
+
+  void queryMicrophonePermission().then((permission) => {
+    if (permission === 'prompt') patchWhileUnsure({ status: 'permission' });
+    else if (permission === 'denied') patchWhileUnsure({ status: 'blocked', failure: 'denied' });
+  });
+  void preflight.then((check) => {
+    if (!alive()) return;
+    if (check.ok) patch({ status: 'starting', failure: null });
+    else patch(blindfoldMicForFailure(check.failure));
+  });
+};
+
 /**
  * The blindfold conversation, one turn at a time: announce the engine's move,
  * listen for the player's answer, play it, repeat. Every write goes through a
@@ -1536,12 +1581,17 @@ const blindfoldResetPatch = (): Partial<GameStore> => {
  * The loop stops when `stopBlindfold` bumps the token, and pauses -- waiting for
  * `resumeBlindfold` -- rather than talking over a player who has gone quiet.
  */
-const runBlindfoldSession = async (get: () => GameStore, token: number): Promise<void> => {
+const runBlindfoldSession = async (
+  get: () => GameStore,
+  token: number,
+  preflight: Promise<MicrophonePreflight>
+): Promise<void> => {
   let announcedNodeId: string | null = null;
   let misses = 0;
+  let micChecked = false;
 
   const alive = () => token === blindfoldToken && !!get().blindfold;
-  const patch = (partial: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'lastPoint' | 'message'>>) => {
+  const patch = (partial: BlindfoldPatch) => {
     if (alive()) get().updateBlindfold(partial);
   };
   const waitForResume = async (): Promise<void> => {
@@ -1601,19 +1651,53 @@ const runBlindfoldSession = async (get: () => GameStore, token: number): Promise
     }
 
     const example = blindfoldExample(boardSize, session.announce);
+    // Whatever the player says while the recogniser is still opening is lost, so
+    // the turn does not begin with "speak now": the banner reports the
+    // microphone instead, and the prompt follows the recogniser's own start.
+    const micBefore = get().blindfold?.mic;
+    const retrying = !micBefore || micBefore.status === 'ready' || micBefore.status === 'starting';
     patch({
       phase: 'listening',
       transcript: null,
-      message: `${BLINDFOLD_SPEECH.listening}（例如 ${example}）`,
+      message: null,
+      ...(retrying ? { mic: { status: 'starting' as const, failure: null } } : {}),
     });
-    const heard = await listenOnce({ timeoutMs: BLINDFOLD_LISTEN_TIMEOUT_MS });
+
+    // Opening the device is what raises the permission prompt, so its answer is
+    // waited for once -- after this the recogniser reports for itself.
+    if (!micChecked) {
+      micChecked = true;
+      let check: MicrophonePreflight;
+      try {
+        check = await preflight;
+      } catch {
+        check = { ok: false, failure: 'error' };
+      }
+      if (!alive()) return;
+      patch({
+        mic: check.ok
+          ? { status: 'starting', failure: null }
+          : blindfoldMicForFailure(check.failure),
+      });
+    }
+
+    const askForPoint = `${BLINDFOLD_SPEECH.listening}（例如 ${example}）`;
+    const heard = await listenOnce({
+      timeoutMs: BLINDFOLD_LISTEN_TIMEOUT_MS,
+      onReady: () => patch({ mic: { status: 'ready', failure: null }, message: askForPoint }),
+    });
     if (!alive()) return;
 
     if (!heard.ok) {
       // A microphone that will not open is not a miss: say so and wait for the
       // player instead of asking again and again.
       if (heard.reason === 'unsupported' || heard.reason === 'not-allowed' || heard.reason === 'audio-capture') {
-        patch({ phase: 'error', transcript: null, message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）` });
+        patch({
+          phase: 'error',
+          transcript: null,
+          message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）`,
+          mic: { status: 'blocked', failure: microphoneFailureFromListen(heard.reason) },
+        });
         await waitForResume();
         misses = 0;
         continue;
@@ -5808,6 +5892,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // loud. Remember what the AI settings were so leaving puts them back.
     blindfoldRestoreAi = { isAiPlaying: state.isAiPlaying, aiColor: state.aiColor };
     const token = ++blindfoldToken;
+    // Ask for the microphone while the click that opened the mode is still the
+    // current task: that is where the browser's permission prompt belongs, not
+    // in the middle of the first answer, and the answer tells the banner
+    // whether the player may speak yet.
+    const preflight = preflightMicrophone();
     set({
       blindfold: {
         aiColor,
@@ -5815,14 +5904,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         phase: 'ai-thinking',
         transcript: null,
         lastPoint: null,
+        mic: { status: 'checking', failure: null },
         message: BLINDFOLD_SPEECH.aiThinking,
         resumeToken: 0,
       },
       isAiPlaying: true,
       aiColor,
     });
+    watchBlindfoldMic(get, token, preflight);
     if (get().currentPlayer === aiColor) setTimeout(() => get().makeAiMove(), 0);
-    void runBlindfoldSession(get, token);
+    void runBlindfoldSession(get, token, preflight);
   },
 
   stopBlindfold: () => {
@@ -5834,9 +5925,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set(blindfoldResetPatch());
   },
 
-  updateBlindfold: (patch) => set((state) => (
-    state.blindfold ? { blindfold: { ...state.blindfold, ...patch } } : {}
-  )),
+  updateBlindfold: (patch) => set((state) => {
+    if (!state.blindfold) return {};
+    const { mic, ...rest } = patch;
+    // `mic` merges: the loop knows one field at a time, and the device name it
+    // learned when the microphone opened has to survive the next turn.
+    return {
+      blindfold: {
+        ...state.blindfold,
+        ...rest,
+        ...(mic ? { mic: { ...state.blindfold.mic, ...mic } } : {}),
+      },
+    };
+  }),
 
   resumeBlindfold: () => set((state) => (
     state.blindfold
