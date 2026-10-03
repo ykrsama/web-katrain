@@ -1,16 +1,40 @@
-import React, { useState } from 'react';
-import { FaTimes, FaAssistiveListeningSystems, FaVolumeUp } from 'react-icons/fa';
+import React, { useEffect, useState } from 'react';
+import { FaTimes, FaAssistiveListeningSystems, FaVolumeUp, FaMicrophone, FaChevronDown } from 'react-icons/fa';
 import { useGameStore } from '../store/gameStore';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { useT } from '../i18n';
-import { blindfoldExample, type BlindfoldAnnounceMode } from '../utils/blindfold';
-import { isSpeechRecognitionSupported, isSpeechSynthesisSupported, speak } from '../utils/speech';
+import {
+  blindfoldExample,
+  interpretBlindfoldTranscript,
+  type BlindfoldAnnounceMode,
+  type BlindfoldInterpretation,
+} from '../utils/blindfold';
+import { formatBlindfoldCoordinate } from '../utils/blindfoldCoordinates';
+import {
+  cancelListening,
+  cancelSpeech,
+  isSpeechRecognitionSupported,
+  isSpeechSynthesisSupported,
+  listenOnce,
+  speak,
+} from '../utils/speech';
+import { BotPersonaPicker } from './BotPersonaPicker';
+import { botPersonaAiPatch, findBotPersona, type BotPersona } from '../data/botPersonas';
+import { describeAiStrength, estimateAiRank } from '../utils/aiStrength';
 import type { Player } from '../types';
 
 interface BlindfoldModalProps {
   onClose: () => void;
 }
+
+type MicTestState =
+  | { status: 'idle' }
+  | { status: 'listening' }
+  | { status: 'failed'; reason: string }
+  | { status: 'heard'; transcript: string; interpretation: BlindfoldInterpretation };
+
+const COLUMN_LETTERS = 'ABCDEFGHJKLMNOPQRST';
 
 const optionClass = (active: boolean): string =>
   [
@@ -32,22 +56,59 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
   const t = useT();
 
   const startBlindfold = useGameStore((state) => state.startBlindfold);
+  const updateSettings = useGameStore((state) => state.updateSettings);
   const boardSize = useGameStore((state) => state.board.length);
+  const settings = useGameStore((state) => state.settings);
   const [aiColor, setAiColor] = useState<Player>('white');
   const [announce, setAnnounce] = useState<BlindfoldAnnounceMode>('xy');
   const [tested, setTested] = useState(false);
+  const [personaId, setPersonaId] = useState<string | null>(null);
+  const [showBots, setShowBots] = useState(true);
+  const [micTest, setMicTest] = useState<MicTestState>({ status: 'idle' });
 
   const recognitionSupported = isSpeechRecognitionSupported();
   const synthesisSupported = isSpeechSynthesisSupported();
   const example = blindfoldExample(boardSize, announce);
+  const currentStrength = describeAiStrength(estimateAiRank(settings.aiStrategy, settings));
+
+  // Closing the dialog must not leave the microphone open.
+  useEffect(() => () => {
+    cancelListening();
+    cancelSpeech();
+  }, []);
 
   const handleTest = () => {
     setTested(true);
     if (synthesisSupported) void speak(example);
   };
 
+  const handleMicTest = async () => {
+    if (!recognitionSupported || micTest.status === 'listening') return;
+    setMicTest({ status: 'listening' });
+    const heard = await listenOnce({ timeoutMs: 9000 });
+    if (!heard.ok) {
+      setMicTest({ status: 'failed', reason: heard.reason });
+      return;
+    }
+    setMicTest({
+      status: 'heard',
+      transcript: heard.transcript,
+      interpretation: interpretBlindfoldTranscript(heard.transcript, boardSize, announce),
+    });
+  };
+
+  const micTestFailureText = (reason: string): string => {
+    if (reason === 'not-allowed') return t('Microphone permission was refused.');
+    if (reason === 'audio-capture') return t('No microphone was found.');
+    if (reason === 'network') return t('The speech service could not be reached.');
+    if (reason === 'unsupported') return t('This browser cannot listen for speech. Chrome or Edge is required.');
+    return t('Nothing was heard. Try again, a little closer to the microphone.');
+  };
+
   const handleStart = () => {
     if (!recognitionSupported) return;
+    const persona = findBotPersona(personaId);
+    if (persona) updateSettings(botPersonaAiPatch(persona));
     startBlindfold({ aiColor, announce });
     onClose();
   };
@@ -115,6 +176,80 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
             <p className="text-[var(--ui-text-muted)]">
               {t('The engine says a point like “{example}”, and expects the same shape back.', { example })}
             </p>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-[var(--ui-border)] p-3">
+            <button
+              type="button"
+              onClick={() => setShowBots((prev) => !prev)}
+              className="flex w-full items-center justify-between text-left font-medium text-[var(--ui-text)]"
+              aria-expanded={showBots}
+            >
+              <span>{t('Bot')}</span>
+              <FaChevronDown
+                aria-hidden="true"
+                className={`transition-transform ${showBots ? '' : '-rotate-90'}`}
+              />
+            </button>
+            {showBots ? (
+              <div className="space-y-2">
+                <BotPersonaPicker selectedId={personaId} onSelect={(persona: BotPersona) => setPersonaId(persona.id)} />
+                <p className="text-[var(--ui-text-muted)]">
+                  {personaId
+                    ? t('The engine plays as the chosen bot.')
+                    : t('No bot chosen: the engine keeps its current settings.')}
+                </p>
+                <p className="text-[var(--ui-text-muted)]">
+                  {t('Current strength: {strength}', { strength: currentStrength })}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-[var(--ui-border)] p-3">
+            <div className="font-medium text-[var(--ui-text)]">{t('Microphone test')}</div>
+            <p className="text-[var(--ui-text-muted)]">
+              {t('Speak a point the way the mode expects it, for example {example}, and see what comes back.', { example })}
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleMicTest()}
+              disabled={!recognitionSupported || micTest.status === 'listening'}
+              className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--ui-border)] px-4 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <FaMicrophone aria-hidden="true" />
+              {micTest.status === 'listening' ? t('Listening…') : t('Test the microphone')}
+            </button>
+            {micTest.status === 'listening' ? (
+              <p className="text-[var(--ui-text-muted)]">{t('Say the point now.')}</p>
+            ) : null}
+            {micTest.status === 'failed' ? (
+              <p className="text-[var(--ui-danger,#e53e3e)]">{micTestFailureText(micTest.reason)}</p>
+            ) : null}
+            {micTest.status === 'heard' ? (
+              <div className="space-y-1">
+                <p className="text-[var(--ui-text)]">{t('Heard: {text}', { text: micTest.transcript })}</p>
+                {micTest.interpretation.kind === 'move' ? (
+                  <p className="text-[var(--ui-text-muted)]">
+                    {t('Read as {point} ({coordinate})', {
+                      point: formatBlindfoldCoordinate(
+                        micTest.interpretation.x,
+                        micTest.interpretation.y,
+                        boardSize,
+                        announce
+                      ),
+                      coordinate: `${COLUMN_LETTERS[micTest.interpretation.x] ?? '?'}${boardSize - micTest.interpretation.y}`,
+                    })}
+                  </p>
+                ) : micTest.interpretation.kind === 'pass' ? (
+                  <p className="text-[var(--ui-text-muted)]">{t('That reads as a pass.')}</p>
+                ) : (
+                  <p className="text-[var(--ui-danger,#e53e3e)]">
+                    {t('Could not read a point from that. Say it like “{example}”.', { example })}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-2 rounded-lg border border-[var(--ui-border)] p-3 text-[var(--ui-text-muted)]">

@@ -301,4 +301,21 @@ export default {
   'If you heard nothing, check the system output device and the browser sound permission.': '如果没有听到声音，请检查系统输出设备和浏览器的声音权限。',
   'Test the voice': '试听播报',
   'Start blindfold mode': '开始盲棋',
+
+  // 盲棋训练：机器人选择与麦克风测试
+  'The engine plays as the chosen bot.': 'AI 会使用所选机器人来下。',
+  'No bot chosen: the engine keeps its current settings.': '未选择机器人：沿用当前 AI 设置。',
+  'Current strength: {strength}': '当前强度：{strength}',
+  'Microphone test': '麦克风测试',
+  'Speak a point the way the mode expects it, for example {example}, and see what comes back.': '按模式要求念一个落点（例如 {example}），看看能识别成什么。',
+  'Test the microphone': '测试麦克风',
+  'Listening…': '正在听…',
+  'Say the point now.': '现在念出落点。',
+  'Microphone permission was refused.': '麦克风权限被拒绝。',
+  'No microphone was found.': '没有找到麦克风设备。',
+  'The speech service could not be reached.': '无法连接语音识别服务。',
+  'Nothing was heard. Try again, a little closer to the microphone.': '没有听到声音，靠近麦克风再试一次。',
+  'Read as {point} ({coordinate})': '识别为 {point}（棋盘 {coordinate}）',
+  'That reads as a pass.': '识别为停一手。',
+  'Could not read a point from that. Say it like “{example}”.': '没能从这句话里读出落点，请照“{example}”的格式说。',
 } as Record<string, string>;
