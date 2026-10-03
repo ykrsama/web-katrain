@@ -6791,3 +6791,11 @@
     display: none;
   }
 }
+
+/* Blindfold (盲棋) mode: the board keeps its texture, grid and coordinate labels
+   — they are what the player reads a point off — while every layer that could
+   show a stone (or where one is about to go) is hidden. The canvases keep their
+   size so nothing reflows when the mode ends. */
+.blindfold-board canvas:not(.blindfold-board__grid) {
+  visibility: hidden;
+}

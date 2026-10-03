@@ -45,6 +45,15 @@ import {
 import { ensurePinGameId, getNodePath, getPinGameId, resolveNodePath, restorePinnedVariations, writeStoredPinnedVariations, type PinnedVariation } from '../utils/pinnedVariations';
 import { describeHumanBotPick, pickHumanBotMove } from '../utils/humanBotMove';
 import { komiWithHandicapBonus } from '../utils/handicap';
+import {
+  BLINDFOLD_SPEECH,
+  blindfoldExample,
+  interpretBlindfoldTranscript,
+  type BlindfoldAnnounceMode,
+  type BlindfoldSession,
+} from '../utils/blindfold';
+import { formatBlindfoldCoordinate } from '../utils/blindfoldCoordinates';
+import { cancelListening, cancelSpeech, listenOnce, speak } from '../utils/speech';
 import { humanBotPresets } from '../engine/katago/chosenMove';
 import {
   countMoveTreeDescendants,
@@ -134,6 +143,12 @@ interface GameStore extends GameState {
    * Null when no drill is running.
    */
   mistakeDrill: MistakeDrillSession | null;
+  /**
+   * The blindfold (盲棋) training session: the board is hidden, the engine plays
+   * `aiColor`, its moves are announced out loud and the player answers by voice.
+   * Null when the mode is off.
+   */
+  blindfold: BlindfoldSession | null;
   analysisCacheSize: number;
   settings: GameSettings;
   engineStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -205,6 +220,14 @@ interface GameStore extends GameState {
   /** Put the board back on the position the drill is asking about. */
   resumeMistakeDrill: () => void;
   stopMistakeDrill: () => void;
+  /** Start the blindfold mode; see `blindfold`. */
+  startBlindfold: (opts: { aiColor: Player; announce: BlindfoldAnnounceMode }) => void;
+  /** Leave the mode and put the AI settings back the way they were. */
+  stopBlindfold: () => void;
+  /** Runtime status of the blindfold loop, written by `useBlindfoldMode`. */
+  updateBlindfold: (patch: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'message'>>) => void;
+  /** Wake a loop that paused after repeated misses. */
+  resumeBlindfold: () => void;
   resetGame: () => void;
   loadGame: (sgf: ParsedSgf) => void;
   passTurn: () => void;
@@ -1475,6 +1498,184 @@ const playStepSound = (args: { enabled: boolean; from: GameNode; to: GameNode })
   }
 };
 
+let blindfoldToken = 0;
+/** What the AI settings were before the blindfold mode took them over. */
+let blindfoldRestoreAi: { isAiPlaying: boolean; aiColor: Player | null } | null = null;
+/** Misses in a row before the mode stops re-listening and waits for the player. */
+const BLINDFOLD_MAX_MISSES = 3;
+/** How long one listen may last before it counts as "heard nothing". */
+const BLINDFOLD_LISTEN_TIMEOUT_MS = 9000;
+/** How long to wait for the engine's move before saying it stalled. */
+const BLINDFOLD_AI_MOVE_TIMEOUT_MS = 60_000;
+
+const blindfoldSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const waitForBlindfold = async (predicate: () => boolean, timeoutMs: number, intervalMs = 100): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await blindfoldSleep(intervalMs);
+  }
+  return predicate();
+};
+
+/** Leave the mode: drop the session and put the AI settings back. */
+const blindfoldResetPatch = (): Partial<GameStore> => {
+  const restore = blindfoldRestoreAi;
+  blindfoldRestoreAi = null;
+  return restore
+    ? { blindfold: null, isAiPlaying: restore.isAiPlaying, aiColor: restore.aiColor }
+    : { blindfold: null };
+};
+
+/**
+ * The blindfold conversation, one turn at a time: announce the engine's move,
+ * listen for the player's answer, play it, repeat. Every write goes through a
+ * store action, so the board and the status banner just render `blindfold`.
+ *
+ * The loop stops when `stopBlindfold` bumps the token, and pauses -- waiting for
+ * `resumeBlindfold` -- rather than talking over a player who has gone quiet.
+ */
+const runBlindfoldSession = async (get: () => GameStore, token: number): Promise<void> => {
+  let announcedNodeId: string | null = null;
+  let misses = 0;
+
+  const alive = () => token === blindfoldToken && !!get().blindfold;
+  const patch = (partial: Partial<Pick<BlindfoldSession, 'phase' | 'transcript' | 'message'>>) => {
+    if (alive()) get().updateBlindfold(partial);
+  };
+  const waitForResume = async (): Promise<void> => {
+    const resumeToken = get().blindfold?.resumeToken ?? -1;
+    await waitForBlindfold(
+      () => !alive() || (get().blindfold?.resumeToken ?? -1) !== resumeToken,
+      6 * 60 * 60 * 1000,
+      300
+    );
+  };
+
+  while (alive()) {
+    const state = get();
+    const session = state.blindfold!;
+    const boardSize = getBoardSizeFromBoard(state.board);
+    const node = state.currentNode;
+    const nodeMove = node.move;
+    const aiToMove = state.currentPlayer === session.aiColor;
+
+    // Announce the engine's move once, as soon as it is the newest thing on the
+    // board: the player answers right after hearing it.
+    if (!aiToMove && nodeMove && nodeMove.player === session.aiColor && announcedNodeId !== node.id) {
+      announcedNodeId = node.id;
+      patch({ phase: 'confirming', transcript: null, message: null });
+      await speak(
+        nodeMove.x < 0 || nodeMove.y < 0
+          ? BLINDFOLD_SPEECH.aiPass
+          : formatBlindfoldCoordinate(nodeMove.x, nodeMove.y, boardSize, session.announce)
+      );
+      if (!alive()) return;
+    }
+
+    // The engine may still be thinking; wait for the turn to come back, or say
+    // that it never did.
+    if (aiToMove) {
+      patch({ phase: 'ai-thinking', transcript: null, message: BLINDFOLD_SPEECH.aiThinking });
+      const moved = await waitForBlindfold(
+        () => !alive() || get().currentPlayer !== session.aiColor,
+        BLINDFOLD_AI_MOVE_TIMEOUT_MS
+      );
+      if (!moved && alive()) {
+        patch({ phase: 'error', transcript: null, message: BLINDFOLD_SPEECH.noAiMove });
+        await waitForResume();
+        misses = 0;
+      }
+      continue;
+    }
+
+    // Two passes in a row end the game: there is no move left to listen for.
+    const lastMoves = state.moveHistory.slice(-2);
+    if (lastMoves.length === 2 && lastMoves.every((move) => move.x < 0 || move.y < 0)) {
+      patch({ phase: 'paused', transcript: null, message: BLINDFOLD_SPEECH.finished });
+      await waitForResume();
+      continue;
+    }
+
+    const example = blindfoldExample(boardSize, session.announce);
+    patch({
+      phase: 'listening',
+      transcript: null,
+      message: `${BLINDFOLD_SPEECH.listening}（例如 ${example}）`,
+    });
+    const heard = await listenOnce({ timeoutMs: BLINDFOLD_LISTEN_TIMEOUT_MS });
+    if (!alive()) return;
+
+    if (!heard.ok) {
+      // A microphone that will not open is not a miss: say so and wait for the
+      // player instead of asking again and again.
+      if (heard.reason === 'unsupported' || heard.reason === 'not-allowed' || heard.reason === 'audio-capture') {
+        patch({ phase: 'error', transcript: null, message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）` });
+        await waitForResume();
+        misses = 0;
+        continue;
+      }
+      // Silence is not a misunderstanding, so it does not get the "听不清楚"
+      // prompt; it just listens again, and after a few of those it pauses.
+      misses += 1;
+      if (misses >= BLINDFOLD_MAX_MISSES) {
+        patch({ phase: 'paused', transcript: null, message: BLINDFOLD_SPEECH.paused });
+        await waitForResume();
+        misses = 0;
+      }
+      continue;
+    }
+
+    const interpreted = interpretBlindfoldTranscript(heard.transcript, boardSize, session.announce);
+    if (interpreted.kind === 'unparsed') {
+      misses += 1;
+      patch({ phase: 'listening', transcript: heard.transcript, message: null });
+      if (misses >= BLINDFOLD_MAX_MISSES) {
+        patch({ phase: 'paused', transcript: heard.transcript, message: BLINDFOLD_SPEECH.paused });
+        await waitForResume();
+        misses = 0;
+      } else {
+        await speak(BLINDFOLD_SPEECH.unparsed);
+      }
+      continue;
+    }
+
+    const current = get();
+    // The player may have clicked a point or navigated while the microphone was
+    // open, which hands the turn back to the engine: what we heard is stale.
+    if (current.currentPlayer === session.aiColor) continue;
+    if (interpreted.kind === 'pass') {
+      misses = 0;
+      patch({ phase: 'confirming', transcript: heard.transcript, message: null });
+      current.passTurn();
+      continue;
+    }
+
+    const legal = isValidMove(
+      current.board,
+      interpreted.x,
+      interpreted.y,
+      current.currentPlayer,
+      current.currentNode.parent?.gameState.board,
+      { multiStoneSuicideLegal: isSuicideLegal(current.settings.gameRules) }
+    );
+    if (!legal) {
+      misses += 1;
+      patch({ phase: 'listening', transcript: heard.transcript, message: null });
+      await speak(BLINDFOLD_SPEECH.illegal);
+      continue;
+    }
+
+    misses = 0;
+    patch({ phase: 'confirming', transcript: heard.transcript, message: null });
+    current.playMove(interpreted.x, interpreted.y);
+    // The store schedules the engine's reply. Repeating the point is the only
+    // confirmation a hidden board can give.
+    await speak(formatBlindfoldCoordinate(interpreted.x, interpreted.y, boardSize, session.announce));
+  }
+};
+
 const gameAnalysisTypeLabel = (type: NonNullable<GameStore['gameAnalysisType']>): string => {
   if (type === 'quick') return 'Quick game analysis';
   if (type === 'fast') return 'Fast game review';
@@ -1556,6 +1757,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   analysisData: null,
   tenukiAnalysis: null,
   mistakeDrill: null,
+  blindfold: null,
   analysisCacheSize: getAnalysisCacheSize(initialRoot),
   settings: initialSettings,
   engineStatus: 'idle',
@@ -5585,8 +5787,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().findMistake('undo');
   },
 
+  startBlindfold: ({ aiColor, announce }) => {
+    const state = get();
+    // The mode drives the AI: it plays `aiColor` while the player answers out
+    // loud. Remember what the AI settings were so leaving puts them back.
+    blindfoldRestoreAi = { isAiPlaying: state.isAiPlaying, aiColor: state.aiColor };
+    const token = ++blindfoldToken;
+    set({
+      blindfold: {
+        aiColor,
+        announce,
+        phase: 'ai-thinking',
+        transcript: null,
+        message: BLINDFOLD_SPEECH.aiThinking,
+        resumeToken: 0,
+      },
+      isAiPlaying: true,
+      aiColor,
+    });
+    if (get().currentPlayer === aiColor) setTimeout(() => get().makeAiMove(), 0);
+    void runBlindfoldSession(get, token);
+  },
+
+  stopBlindfold: () => {
+    // Bumping the token stops the loop at its next check, and the speech calls
+    // have to be cancelled explicitly because they are awaited inside it.
+    blindfoldToken++;
+    cancelListening();
+    cancelSpeech();
+    set(blindfoldResetPatch());
+  },
+
+  updateBlindfold: (patch) => set((state) => (
+    state.blindfold ? { blindfold: { ...state.blindfold, ...patch } } : {}
+  )),
+
+  resumeBlindfold: () => set((state) => (
+    state.blindfold
+      ? {
+          blindfold: {
+            ...state.blindfold,
+            phase: 'listening',
+            transcript: null,
+            message: null,
+            resumeToken: state.blindfold.resumeToken + 1,
+          },
+        }
+      : {}
+  )),
+
   startNewGame: ({ komi, rules, boardSize, handicap }) => {
     const state = get();
+    // A blindfold session belongs to the game it was started in, and its loop
+    // holds the microphone open until it is stopped.
+    if (state.blindfold) get().stopBlindfold();
     get().stopSelfplayToEnd();
     get().stopGameAnalysis();
     analysisQueue.cancelWhere(() => true, 'Started new game');
@@ -5667,6 +5921,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   resetGame: () => {
     const state = get();
+    // A blindfold session belongs to the game it was started in, and its loop
+    // holds the microphone open until it is stopped.
+    if (state.blindfold) get().stopBlindfold();
     get().stopSelfplayToEnd();
     get().stopGameAnalysis();
     analysisQueue.cancelWhere(() => true, 'Reset game');

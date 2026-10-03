@@ -73,6 +73,7 @@ import { NotificationToast } from './layout/NotificationToast';
 import { MobileHome } from './MobileHome';
 import { AutoSaveRecoveryModal } from './AutoSaveRecoveryModal';
 import { AboutDialog } from './AboutDialog';
+import { BlindfoldBanner } from './BlindfoldBanner';
 import type { CommandPaletteCommand } from './CommandPaletteModal';
 import { getDirectGameImportText, type PasteSgfSubmitResult } from '../utils/pasteSgfInput';
 import {
@@ -134,6 +135,7 @@ const LessonsModal = lazy(() => import('./LessonsModal').then((module) => ({ def
 const GuessMoveModal = lazy(() => import('./GuessMoveModal').then((module) => ({ default: module.GuessMoveModal })));
 const ProblemModal = lazy(() => import('./ProblemModal').then((module) => ({ default: module.ProblemModal })));
 const KifuPrintModal = lazy(() => import('./KifuPrintModal').then((module) => ({ default: module.KifuPrintModal })));
+const BlindfoldModal = lazy(() => import('./BlindfoldModal').then((module) => ({ default: module.BlindfoldModal })));
 const LibraryPanel = lazy(() => import('./LibraryPanel').then((module) => ({ default: module.LibraryPanel })));
 const DesktopDashboard = lazy(() => import('./dashboard/DesktopDashboard').then((module) => ({ default: module.DesktopDashboard })));
 
@@ -403,6 +405,8 @@ export const Layout: React.FC = () => {
   const [isGuessMoveOpen, setIsGuessMoveOpen] = useState(false);
   const [isProblemOpen, setIsProblemOpen] = useState(false);
   const [isKifuPrintOpen, setIsKifuPrintOpen] = useState(false);
+  const [isBlindfoldOpen, setIsBlindfoldOpen] = useState(false);
+  const blindfoldSession = useGameStore((state) => state.blindfold);
   const [noteFocusRequest, setNoteFocusRequest] = useState(0);
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [isPhotoBoardOpen, setIsPhotoBoardOpen] = useState(false);
@@ -2818,6 +2822,13 @@ export const Layout: React.FC = () => {
         keywords: ['predict', 'next move', 'quiz', 'pro', 'practice', 'replay'],
       },
       {
+        id: 'blindfold',
+        label: t('Blindfold training'),
+        category: t('Study'),
+        run: () => openSimpleModal(() => setIsBlindfoldOpen(true)),
+        keywords: ['blindfold', 'speech', 'voice', 'microphone', 'coordinates', 'practice'],
+      },
+      {
         id: 'problem-practice',
         label: t('Problem practice (tsumego)'),
         category: t('Study'),
@@ -3200,6 +3211,8 @@ export const Layout: React.FC = () => {
         }}
       >
       <Suspense fallback={null}>
+        {isBlindfoldOpen && <BlindfoldModal onClose={() => setIsBlindfoldOpen(false)} />}
+        {blindfoldSession ? <BlindfoldBanner /> : null}
         {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
         {isAboutOpen && (
           <AboutDialog
@@ -3824,6 +3837,7 @@ export const Layout: React.FC = () => {
               onCopySgf={handleCopySgf}
               onPasteSgf={handlePasteSgf}
               onScanBoard={() => openPhotoBoard()}
+              onBlindfold={() => setIsBlindfoldOpen(true)}
               onSettings={() => setIsSettingsOpen(true)}
               onCommandPalette={() => setIsCommandPaletteOpen(true)}
               onKeyboardHelp={openKeyboardHelp}

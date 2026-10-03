@@ -482,4 +482,15 @@ export default {
   'Game Library': '棋谱库',
   'Game Report': '对局报告',
   'Report': '报告',
+
+  // 盲棋训练：工具栏按钮与状态横幅
+  'Blindfold training': '盲棋训练',
+  'Blindfold mode': '盲棋模式',
+  'Engine is thinking…': 'AI 正在思考…',
+  'Listening for your move…': '正在听你报点…',
+  'Speaking the point back…': '正在复述落点…',
+  'Waiting': '等待中',
+  'Heard: {text}': '听到：{text}',
+  'Keep listening': '继续听',
+  'Leave blindfold mode': '退出盲棋模式',
 } as Record<string, string>;

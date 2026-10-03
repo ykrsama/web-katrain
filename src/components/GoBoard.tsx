@@ -250,9 +250,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     advanceMistakeDrill,
     resumeMistakeDrill,
     stopMistakeDrill,
+    blindfoldActive,
   } = useGameStore(
     (state) => ({
       board: state.board,
+      blindfoldActive: state.blindfold !== null,
       playMove: state.playMove,
       isEditMode: state.isEditMode,
       editTool: state.editTool,
@@ -2949,6 +2951,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       <div
         className={[
           'relative shadow-lg rounded-sm select-none',
+          // Blindfold mode keeps the grid and the coordinate labels (they are
+          // what the player reads out) and hides every canvas that could show a
+          // stone or where one is going; see `.blindfold-board` in index.css.
+          blindfoldActive ? 'blindfold-board' : '',
           isEditMode || scoringMode ? 'cursor-crosshair' : 'cursor-pointer',
         ].join(' ')}
         data-board-snapshot="true"
@@ -3265,7 +3271,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         {/* Grid + Hoshi */}
         <canvas
           ref={gridCanvasRef}
-          className="absolute pointer-events-none"
+          className="blindfold-board__grid absolute pointer-events-none"
           style={{
             left: 0,
             top: 0,

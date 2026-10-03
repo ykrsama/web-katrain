@@ -37,6 +37,7 @@ import {
   FaRandom,
   FaRedoAlt,
   FaSearchPlus,
+  FaAssistiveListeningSystems,
 } from 'react-icons/fa';
 import type { GameSettings, RegionOfInterest } from '../../types';
 import type { AnalysisControlsState } from './types';
@@ -143,6 +144,7 @@ interface TopControlBarProps {
   onCopySgf: () => void;
   onPasteSgf: () => void;
   onScanBoard: () => void;
+  onBlindfold: () => void;
   onSettings: () => void;
   onCommandPalette: () => void;
   onKeyboardHelp: () => void;
@@ -205,6 +207,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   onCopySgf,
   onPasteSgf,
   onScanBoard,
+  onBlindfold,
   onSettings,
   onCommandPalette,
   onKeyboardHelp,
@@ -458,6 +461,12 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           onClick={() => { onScanBoard(); closeViewMenu(); }}
         >
           <span className="flex items-center gap-2"><FaCamera /> {t('Photo Board')}</span>
+        </button>
+        <button type="button"
+          className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
+          onClick={() => { onBlindfold(); closeViewMenu(); }}
+        >
+          <span className="flex items-center gap-2"><FaAssistiveListeningSystems /> {t('Blindfold training')}</span>
         </button>
         <div className="mobile-tools-redundant h-px bg-[var(--ui-border)] w-full" />
         {viewToggleRow({
@@ -786,6 +795,9 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         </IconButton>
         <IconButton title={t('Photo Board')} onClick={onScanBoard} className={topIconClass}>
           <FaCamera />
+        </IconButton>
+        <IconButton title={t('Blindfold training')} onClick={onBlindfold} className={topIconClass}>
+          <FaAssistiveListeningSystems />
         </IconButton>
       </div>
 

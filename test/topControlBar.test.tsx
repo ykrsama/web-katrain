@@ -56,6 +56,7 @@ const baseProps = {
   onCopySgf: noop,
   onPasteSgf: noop,
   onScanBoard: noop,
+  onBlindfold: noop,
   onSettings: noop,
   onCommandPalette: noop,
   onKeyboardHelp: noop,
