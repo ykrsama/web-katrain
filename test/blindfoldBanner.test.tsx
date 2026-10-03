@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { BlindfoldBannerView } from '../src/components/BlindfoldBanner';
 import type { BlindfoldSession } from '../src/utils/blindfold';
 
-const ASK = '请说坐标（例如 四之十七）';
+const ASK = '请说坐标（例如 十七之十六）';
 
 const session = (partial: Partial<BlindfoldSession>): BlindfoldSession => ({
   aiColor: 'white',
@@ -59,11 +59,11 @@ describe('the blindfold banner', () => {
     const read = render({
       phase: 'confirming',
       mic: { status: 'ready', failure: null },
-      lastPoint: { text: '四之十七', shape: '小目', from: 'player' },
+      lastPoint: { text: '十七之十六', shape: '小目', from: 'player' },
     });
     // The board area shows the point and the mode moves on to the engine, so the
     // banner says nothing about it at all.
-    expect(read).not.toContain('四之十七');
+    expect(read).not.toContain('十七之十六');
 
     const unread = render({ phase: 'listening', mic: { status: 'ready', failure: null }, transcript: '随便说点什么' });
     // A transcript is only interesting when it was not understood.

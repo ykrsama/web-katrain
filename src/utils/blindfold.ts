@@ -102,6 +102,19 @@ export const interpretBlindfoldTranscript = (
   return point ? { kind: 'move', x: point.x, y: point.y } : { kind: 'unparsed' };
 };
 
-/** A short example of what the player should say, for the banner. */
-export const blindfoldExample = (boardSize: number, mode: BlindfoldAnnounceMode): string =>
-  formatBlindfoldCoordinate(Math.min(3, boardSize - 1), Math.min(2, boardSize - 1), boardSize, mode);
+/**
+ * A short example of what the player should say, for the setup dialog and the
+ * banner.
+ *
+ * The point is the upper-right 3-4 point (小目): 围棋礼仪 puts the first stone in
+ * the player's own upper-right corner, the one nearest the opponent, so the
+ * sample names the stone a real game opens with. It is one stone, which is why
+ * the two modes spell it differently — "十七之十六" when the column comes first,
+ * "四之十七" when the row does.
+ */
+export const blindfoldExample = (boardSize: number, mode: BlindfoldAnnounceMode): string => {
+  // Third column from the right, fourth row from the top; clamped on boards too
+  // small to have a 3-4 point.
+  const point = { x: Math.max(0, boardSize - 3), y: Math.min(3, Math.max(0, boardSize - 1)) };
+  return formatBlindfoldCoordinate(point.x, point.y, boardSize, mode);
+};

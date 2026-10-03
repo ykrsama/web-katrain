@@ -97,9 +97,10 @@ describe('blindfold mode', () => {
   });
 
   it('announces the engine move, plays what it hears, and shows the point it read', async () => {
-    // In x-y mode (3, 2) on 19x19 is the 4th column from the left and the 17th
-    // row from the bottom, i.e. "四之十七".
-    listenMock.mockResolvedValue({ ok: true, transcript: '四之十七' });
+    // In x-y mode (16, 3) on 19x19 is the 17th column from the left and the 16th
+    // row from the bottom, i.e. "十七之十六" — the point the mode uses as its
+    // example.
+    listenMock.mockResolvedValue({ ok: true, transcript: '十七之十六' });
     const { useGameStore } = await import('../src/store/gameStore');
 
     useGameStore.getState().startBlindfold({ aiColor: 'black', announce: 'xy' });
@@ -113,11 +114,11 @@ describe('blindfold mode', () => {
     await waitFor(() => useGameStore.getState().currentNode.move?.player === 'white');
 
     const playerNode = useGameStore.getState().currentNode;
-    expect(playerNode.move).toMatchObject({ x: 3, y: 2, player: 'white' });
+    expect(playerNode.move).toMatchObject({ x: 16, y: 3, player: 'white' });
     // The board area shows the newest point of the round: first what the engine
     // announced, then what the answer was read as.
     expect(useGameStore.getState().blindfold?.lastPoint).toEqual({
-      text: '四之十七',
+      text: '十七之十六',
       shape: '小目',
       from: 'player',
     });
@@ -127,7 +128,7 @@ describe('blindfold mode', () => {
     // The coordinate comes with the name of the shape the move made, from the
     // shape coach: (15, 15) on an empty board is the 4-4 point, i.e. 星位.
     expect(spoken).toContain('十六之四，星位');
-    expect(spoken).not.toContain('四之十七');
+    expect(spoken).not.toContain('十七之十六');
 
     useGameStore.getState().stopBlindfold();
     expect(useGameStore.getState().blindfold).toBeNull();
@@ -170,7 +171,7 @@ describe('blindfold mode', () => {
       attempts += 1;
       return attempts <= 5
         ? { ok: true, transcript: '随便说点什么' }
-        : { ok: true, transcript: '四之十七' };
+        : { ok: true, transcript: '十七之十六' };
     });
     const { useGameStore } = await import('../src/store/gameStore');
 
@@ -178,7 +179,7 @@ describe('blindfold mode', () => {
     // The sixth answer is finally a point, so the mode plays it: the retries
     // never stopped and never paused.
     await waitFor(() => useGameStore.getState().currentNode.move?.player === 'white');
-    expect(useGameStore.getState().currentNode.move).toMatchObject({ x: 3, y: 2 });
+    expect(useGameStore.getState().currentNode.move).toMatchObject({ x: 16, y: 3 });
 
     const spoken = speakMock.mock.calls.map((call) => call[0]);
     expect(spoken.filter((text) => text === '听不清楚').length).toBeGreaterThanOrEqual(5);

@@ -173,9 +173,6 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
                 </span>
               </button>
             </div>
-            <p className="text-[var(--ui-text-muted)]">
-              {t('The engine says a point like “{example}”, and expects the same shape back.', { example })}
-            </p>
           </div>
 
           <div className="space-y-2 rounded-lg border border-[var(--ui-border)] p-3">
