@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 import { configDefaults, defineConfig } from 'vitest/config';
-import type { Plugin } from 'vite';
+import { loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { createVersionMetadata } from './src/utils/versionMetadata';
@@ -63,76 +63,97 @@ function versionMetadataPlugin(): Plugin {
   };
 }
 
-export default defineConfig({
-  base,
-  plugins: [react(), tailwindcss(), versionMetadataPlugin()],
-  define: {
-    __APP_VERSION__: JSON.stringify(appVersion),
-    __APP_COMMIT__: JSON.stringify(appCommit),
-    __APP_COMMIT_DATE__: JSON.stringify(appCommitDate),
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-        notFound: path.resolve(__dirname, '404.html'),
-      },
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-          if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('/scheduler/') ||
-            id.includes('/use-sync-external-store/') ||
-            id.includes('/zustand/')
-          ) {
-            return 'react-vendor';
-          }
-          if (id.includes('/react-icons/')) return 'icons';
-          if (id.includes('/@tensorflow/')) return 'tfjs';
-          if (id.includes('/jszip/')) return 'jszip';
-          return 'vendor';
+/**
+ * Where a deployment runs its KataGo engine. Production ships no `.env`, so
+ * this is what the `/katago-proxy` route points at there.
+ */
+const DEFAULT_KATAGO_WS_URL = 'ws://127.0.0.1:8000';
+
+export default defineConfig(({ mode }) => {
+  // `.env` files never reach `process.env` while this config is evaluated; they
+  // are exposed to the app as `import.meta.env` instead. Reading `process.env`
+  // here therefore ignored `.env` entirely and always proxied to the default
+  // engine. `loadEnv` reads `.env`, `.env.<mode>` and `.env.local` (plus any
+  // matching process.env entries), which is where VITE_KATAGO_WS_URL lives.
+  const env = loadEnv(mode, __dirname, 'VITE_');
+
+  return {
+    base,
+    plugins: [react(), tailwindcss(), versionMetadataPlugin()],
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+      __APP_COMMIT__: JSON.stringify(appCommit),
+      __APP_COMMIT_DATE__: JSON.stringify(appCommitDate),
+    },
+    build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          notFound: path.resolve(__dirname, '404.html'),
+        },
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('/scheduler/') ||
+              id.includes('/use-sync-external-store/') ||
+              id.includes('/zustand/')
+            ) {
+              return 'react-vendor';
+            }
+            if (id.includes('/react-icons/')) return 'icons';
+            if (id.includes('/@tensorflow/')) return 'tfjs';
+            if (id.includes('/jszip/')) return 'jszip';
+            return 'vendor';
+          },
         },
       },
     },
-  },
-  test: {
-    exclude: [...configDefaults.exclude, '**/.external/**'],
-  },
-  resolve: {
-    alias: {
-      'use-sync-external-store/shim/with-selector.js': path.resolve(
-        __dirname,
-        'src/shims/useSyncExternalStoreWithSelector.ts'
-      ),
+    test: {
+      exclude: [...configDefaults.exclude, '**/.external/**'],
     },
-  },
-  server: {
-    // Honor the PORT env var (e.g. when launched by preview tooling); fall back to Vite's default otherwise.
-    port: process.env.PORT ? Number(process.env.PORT) : undefined,
-    headers: {
-      // Required for SharedArrayBuffer (enables threaded WASM backend when available).
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
-    proxy: {
-      // Proxy WebSocket connections to the remote KataGo engine.
-      // This avoids COEP/CORS issues by making the WebSocket same-origin.
-      '/katago-proxy': {
-        target: process.env.VITE_KATAGO_WS_URL || 'ws://127.0.0.1:8000',
-        ws: true,
-        rewrite: () => '/katago',
+    resolve: {
+      alias: {
+        'use-sync-external-store/shim/with-selector.js': path.resolve(
+          __dirname,
+          'src/shims/useSyncExternalStoreWithSelector.ts'
+        ),
       },
     },
-    host: '0.0.0.0',
-    allowedHosts: true,
-    cors: true,
-  },
-  preview: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+    server: {
+      // Honor the PORT env var (e.g. when launched by preview tooling); fall back to Vite's default otherwise.
+      port: process.env.PORT ? Number(process.env.PORT) : undefined,
+      headers: {
+        // Required for SharedArrayBuffer (enables threaded WASM backend when available).
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      },
+      proxy: {
+        // Proxy WebSocket connections to the remote KataGo engine.
+        // This avoids COEP/CORS issues by making the WebSocket same-origin.
+        '/katago-proxy': {
+          // The rewrite below decides the path, so the base URL must not carry
+          // `/katago` itself.
+          target: env.VITE_KATAGO_WS_URL || DEFAULT_KATAGO_WS_URL,
+          ws: true,
+          // Send the engine's own host in the Host header. Without this the
+          // upgrade carries the dev server's host (127.0.0.1:5173), which a
+          // host-routed tunnel rejects.
+          changeOrigin: true,
+          rewrite: () => '/katago',
+        },
+      },
+      host: '0.0.0.0',
+      allowedHosts: true,
+      cors: true,
     },
-  },
+    preview: {
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      },
+    },
+  };
 });

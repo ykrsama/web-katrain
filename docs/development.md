@@ -99,15 +99,26 @@ Two suites need more than a plain checkout and skip themselves otherwise:
 - `ENGINE_TESTS=1 npm test` runs the tests that drive a real MCTS search through
   the bundled small model. Without it (or without the model file) they skip.
 - `test/remoteLiveSavedSgfDepth.test.ts` drives a real remote KataGo analysis
-  server. Point `VITE_REMOTE_ENGINE_URL` at one in a gitignored `.env`:
+  server. Point `VITE_KATAGO_WS_URL` at one in a gitignored `.env`:
 
   ```sh
-  VITE_REMOTE_ENGINE_URL=ws://host:port/katago
+  VITE_KATAGO_WS_URL=ws://host:port
   ```
 
   No URL configured means no remote engine, and the suite skips; the mocked
   regression for the same rule lives in `test/analysisDepth.test.ts` and always
   runs.
+
+## Remote Engine URL
+
+`VITE_KATAGO_WS_URL`, read from the gitignored `.env` (or the real process
+environment), is the engine the dev server proxies `/katago-proxy` to, with the
+path rewritten to `/katago` so the WebSocket stays same-origin. Unset, it falls
+back to `ws://127.0.0.1:8000`, which is where production runs its engine.
+
+`/katago-proxy` is the app's default remote engine URL in `src/store` for that
+reason: a relative URL avoids COEP/CORS problems. The base URL must not carry
+`/katago` itself — the proxy decides the path.
 
 ## Local Storage During Development
 

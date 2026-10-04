@@ -1,10 +1,15 @@
 /**
  * A live read over an SGF that already carries a whole-game review.
  *
- * This drives a *real* remote KataGo engine, so it is opt-in: put the server in
- * a gitignored `.env` and the suite runs, otherwise it is skipped.
+ * This drives a *real* remote KataGo engine, so it is opt-in: point
+ * `VITE_KATAGO_WS_URL` at one in a gitignored `.env` — the same variable
+ * `npm run dev` proxies `/katago-proxy` to — and the suite runs; otherwise it
+ * skips.
  *
- *   VITE_REMOTE_ENGINE_URL=ws://host:port/katago
+ *   VITE_KATAGO_WS_URL=ws://host:port
+ *
+ * The dev server's proxy rewrites the path to `/katago`; connecting straight to
+ * the engine means appending the same path here.
  *
  * Why a real engine: a remote analysis engine keeps no search tree between
  * queries, so every request starts from zero. That restart is what used to make
@@ -18,7 +23,8 @@ import { useGameStore } from '../src/store/gameStore';
 import { parseSgf } from '../src/utils/sgf';
 import { encodeKaTrainKtFromAnalysis } from '../src/utils/katrainSgfAnalysis';
 
-const remoteUrl = (import.meta.env.VITE_REMOTE_ENGINE_URL ?? '').trim();
+const engineBaseUrl = (import.meta.env.VITE_KATAGO_WS_URL ?? '').trim().replace(/\/+$/, '');
+const remoteUrl = engineBaseUrl ? `${engineBaseUrl}/katago` : '';
 
 /** An SGF whose single KT blob remembers a whole-game review at `visits`. */
 const sgfWithSavedReview = (visits: number): string => {
