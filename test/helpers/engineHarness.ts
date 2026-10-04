@@ -26,14 +26,15 @@ export function hasModel(): boolean {
  * others asserted visit counts the search never reached (480 against a required
  * 800). Those are throughput failures, not defects: the same tests pass locally.
  *
- * So they are skipped on CI by default and opted into with ENGINE_TESTS=1, the
- * same shape as BENCH for the search benchmark. Everything that does not need a
- * live search still runs there.
+ * They are therefore opt-in, the same shape as BENCH for the search benchmark:
+ * `npm test` skips them and stays seconds long, and `npm run test:engine` runs
+ * them. CI never ran them anyway (it sets CI=1, which used to be the skip
+ * condition), so nothing is lost there. Run the engine suite when touching the
+ * search, evaluation, or model code — two of its files alone cost ~2.5 minutes.
  */
 export function runsEngineSuites(): boolean {
   if (!hasModel()) return false;
-  if (process.env.ENGINE_TESTS) return true;
-  return !process.env.CI;
+  return !!process.env.ENGINE_TESTS;
 }
 
 let modelPromise: Promise<KataGoModelV8Tf> | null = null;
