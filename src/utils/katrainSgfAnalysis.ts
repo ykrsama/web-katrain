@@ -189,9 +189,18 @@ export function encodeKaTrainKtFromAnalysis(args: { analysis: AnalysisResult; bo
     };
   }
 
+  // How deep the search behind this node went. Older writers (and KaTrain
+  // itself, whose root entry carries whatever the engine reported) only left the
+  // per-move visits, and their sum is a lower bound on the root's count, so it
+  // is the fallback. Web-KaTrain knows the real number and records it, which is
+  // what a reader needs to decide whether a new search has actually gone deeper.
   const approxVisits = args.analysis.moves.reduce((acc, m) => acc + (m.visits || 0), 0);
+  const rootVisits =
+    typeof args.analysis.rootVisits === 'number' && Number.isFinite(args.analysis.rootVisits)
+      ? Math.max(0, Math.floor(args.analysis.rootVisits))
+      : approxVisits;
   const root = {
-    visits: approxVisits,
+    visits: rootVisits,
     winrate: args.analysis.rootWinRate,
     scoreLead: args.analysis.rootScoreLead,
     scoreSelfplay: args.analysis.rootScoreSelfplay,
@@ -256,8 +265,15 @@ export function kaTrainAnalysisToAnalysisResult(args: {
 }): AnalysisResult | null {
   const boardSize = args.boardSize ?? DEFAULT_BOARD_SIZE;
   const a = args.analysis;
-  const root = a.root as { winrate?: number; scoreLead?: number; scoreSelfplay?: number; scoreStdev?: number } | null;
+  const root = a.root as { visits?: number; winrate?: number; scoreLead?: number; scoreSelfplay?: number; scoreStdev?: number } | null;
   if (!root) return null;
+
+  // The depth the stored search reached. Without it a loaded position looks
+  // unanalysed to the live reader's "never replace a deeper result" rule, and
+  // the first shallow update of a restarted search overwrites the numbers the
+  // file was opened to show.
+  const rootVisits =
+    typeof root.visits === 'number' && Number.isFinite(root.visits) ? Math.max(0, Math.floor(root.visits)) : undefined;
 
   const rootWinRate = typeof root.winrate === 'number' ? root.winrate : 0.5;
   const rootScoreLead = typeof root.scoreLead === 'number' ? root.scoreLead : 0;
@@ -315,6 +331,7 @@ export function kaTrainAnalysisToAnalysisResult(args: {
     rootScoreLead,
     rootScoreSelfplay,
     rootScoreStdev,
+    rootVisits,
     moves,
     territory: ownershipToGrid(a.ownership, boardSize),
     policy: a.policy ?? undefined,

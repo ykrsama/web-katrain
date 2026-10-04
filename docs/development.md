@@ -92,6 +92,23 @@ CHROME_PATH=/path/to/chrome npm run test:viewport
 Screenshots go to `/tmp/web-katrain-viewport-check` unless
 `VIEWPORT_SCREENSHOT_DIR` is set.
 
+### Opt-in engine suites
+
+Two suites need more than a plain checkout and skip themselves otherwise:
+
+- `ENGINE_TESTS=1 npm test` runs the tests that drive a real MCTS search through
+  the bundled small model. Without it (or without the model file) they skip.
+- `test/remoteLiveSavedSgfDepth.test.ts` drives a real remote KataGo analysis
+  server. Point `VITE_REMOTE_ENGINE_URL` at one in a gitignored `.env`:
+
+  ```sh
+  VITE_REMOTE_ENGINE_URL=ws://host:port/katago
+  ```
+
+  No URL configured means no remote engine, and the suite skips; the mocked
+  regression for the same rule lives in `test/analysisDepth.test.ts` and always
+  runs.
+
 ## Local Storage During Development
 
 Browser state can affect manual testing. Useful storage locations:

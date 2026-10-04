@@ -6520,9 +6520,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
       if (!analysis) return;
       node.analysis = analysis;
-      const rootInfo = decoded.root as { visits?: unknown } | null;
-      const visitsRaw = rootInfo?.visits;
-      const visits = typeof visitsRaw === 'number' && Number.isFinite(visitsRaw) ? Math.max(0, Math.floor(visitsRaw)) : 0;
+      // The depth the file's review reached, so a live reader knows how far it
+      // has to get before its own result is an improvement rather than a reset.
+      const visits = typeof analysis.rootVisits === 'number' && Number.isFinite(analysis.rootVisits)
+        ? Math.max(0, Math.floor(analysis.rootVisits))
+        : 0;
       if (visits > 0) node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, Math.min(visits, ENGINE_MAX_VISITS));
     };
 

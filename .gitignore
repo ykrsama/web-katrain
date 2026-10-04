@@ -13,6 +13,10 @@ dist-ssr
 .external/
 *.local
 
+# Local environment (e.g. VITE_REMOTE_ENGINE_URL for the opt-in remote engine test)
+.env
+.env.*
+
 # KataGo models (fetched via script)
 public/models/*.bin.gz
 public/models/*.txt.gz
