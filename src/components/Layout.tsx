@@ -116,7 +116,7 @@ import { appendRestoredAnalysisSummary } from '../utils/importSummary';
 import { getResizeObserverConstructor } from '../utils/resizeObserver';
 import { resetSoundFailureReport, setSoundInitErrorHandler } from '../utils/sound';
 import { getSgfImportSizeError } from '../utils/sgfImportLimits';
-import { getPvAnimationProgress } from '../utils/pvAnimation';
+import { getPvAnimationProgress, hoveredMoveForNode, type ScopedCandidateHover } from '../utils/pvAnimation';
 
 const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ default: module.SettingsModal })));
 const GameAnalysisModal = lazy(() => import('./GameAnalysisModal').then((module) => ({ default: module.GameAnalysisModal })));
@@ -388,7 +388,13 @@ export const Layout: React.FC = () => {
   const boardShellRef = useRef<HTMLDivElement>(null);
   const analysisCommandBarRef = useRef<HTMLDivElement>(null);
   const modalReturnFocusRef = useRef<HTMLElement | null>(null);
-  const [hoveredMove, setHoveredMove] = useState<CandidateMove | null>(null);
+  // The node comes along with the hover: a candidate and its variation describe
+  // one position only, so playing a stone drops the stale hover rather than
+  // redrawing the old variation on the new board (see `hoveredMoveForNode`).
+  const [hoveredMove, setHoveredMove] = useState<ScopedCandidateHover | null>(null);
+  const handleHoverMove = useCallback((move: CandidateMove | null) => {
+    setHoveredMove(move ? { nodeId: useGameStore.getState().currentNode.id, move } : null);
+  }, []);
   const [reportHoverMove, setReportHoverMove] = useState<CandidateMove | null>(null);
   const [pvAnim, setPvAnim] = useState<{ key: string; startMs: number; upToMove: number } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -1246,7 +1252,10 @@ export const Layout: React.FC = () => {
   }, [currentNode.id, isAnalysisMode, runAnalysis]);
 
   // PV animation
-  const activeHoverMove = reportHoverMove ?? hoveredMove;
+  // A hover read off another position is not a hover any more: the current node
+  // is the one the board is drawing, and the PV overlay colours its first move
+  // with that node's side to move.
+  const activeHoverMove = reportHoverMove ?? hoveredMoveForNode(hoveredMove, currentNode.id);
   // Candidate tiles follow the same ownership rule as the board canvases: a
   // temporary board tool gets a quiet targeting surface without switching the
   // user's analysis preference off.
@@ -3561,7 +3570,7 @@ export const Layout: React.FC = () => {
               <div className="relative flex h-full min-h-0 w-full min-w-0">
                 <GoBoard
                   hoveredMove={activeHoverMove}
-                  onHoverMove={setHoveredMove}
+                  onHoverMove={handleHoverMove}
                   pvUpToMove={pvUpToMove}
                   uiMode={boardUiMode}
                   forcePvOverlay={!!reportHoverMove}
@@ -3986,7 +3995,7 @@ export const Layout: React.FC = () => {
             >
               <GoBoard
                 hoveredMove={activeHoverMove}
-                onHoverMove={setHoveredMove}
+                onHoverMove={handleHoverMove}
                 pvUpToMove={pvUpToMove}
                 uiMode={boardUiMode}
                 forcePvOverlay={!!reportHoverMove}

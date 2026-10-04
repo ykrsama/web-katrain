@@ -1,3 +1,5 @@
+import type { CandidateMove } from '../types';
+
 export type PvAnimationProgress = {
   /** Zero-based last PV move to reveal; the first move is visible immediately. */
   upToMove: number;
@@ -28,4 +30,24 @@ export function getPvAnimationProgress(
     upToMove: step,
     nextDelayMs: Math.max(1, (step + 1) * delay - elapsed),
   };
+}
+
+/** A hovered candidate together with the node it was read off. */
+export type ScopedCandidateHover = { nodeId: string; move: CandidateMove };
+
+/**
+ * A hovered candidate and its variation are a read of one position: the win
+ * rate, the sequence and the side to move that colours that sequence all come
+ * from the node they were read off. Playing a stone does not move the pointer,
+ * so the hover otherwise survives into the next position — where the same
+ * variation is redrawn on the new board, replays from its first move, and takes
+ * the colours of the side that is to move there instead.
+ *
+ * Scoping the hover to its node lets the reader drop it instead.
+ */
+export function hoveredMoveForNode(
+  hover: ScopedCandidateHover | null,
+  nodeId: string
+): CandidateMove | null {
+  return hover && hover.nodeId === nodeId ? hover.move : null;
 }
