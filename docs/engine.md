@@ -216,11 +216,20 @@ uses all three, the way KaTrain does:
   would cancel itself down to its last node.
 - Connection handling is single-flight: concurrent callers share one
   connect-and-retry chain, so a failed handshake is one error rather than one
-  socket per waiter, and the retry budget is the same one a reconnect gets
-  (6 attempts, 1s→10s). The socket being replaced is closed explicitly, since
-  the browser counts sockets it has not reclaimed yet. A reconnect re-sends the
-  queries the dropped socket was carrying, which is what keeps a blip from
-  failing a whole game review.
+  socket per waiter, and the connect budget is wall-clock (90s, backoff 1s→10s)
+  because what has to be waited out is the far end releasing the previous
+  connection. After one budget is spent, callers fail fast for 5s instead of
+  spending it again per window of a long review. The socket being replaced is
+  closed explicitly, since the browser counts sockets it has not reclaimed yet.
+  A reconnect re-sends the queries the dropped socket was carrying, which is
+  what keeps a blip from failing a whole game review.
+- One client per configured URL. A relative proxy path (`/katago-proxy`) is
+  resolved against the origin when the client is constructed, so the resolved
+  URL is not the string the caller passed; comparing the resolved form against
+  the configured one made every lookup look like a different server, and each
+  analysis disposed the client — closing the socket the previous analysis was
+  using — and reconnected. That is what filled Chrome's WebSocket budget
+  ("Connection failed: Insufficient resources") on a whole-game review.
 
 Sweep and equalize follow KaTrain's `refine_move`: on the remote engine they ask
 for one query per candidate, each searching the position *after* that move

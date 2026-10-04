@@ -75,6 +75,8 @@ type PendingEvalBatch = {
  *   const analysis = await client.analyze({ ... });
  */
 class RemoteEngineClient {
+  /** The URL exactly as configured; two of these identify the same client. */
+  readonly sourceUrl: string;
   private url: string;
   private ws: WebSocket | null = null;
   private nextId = 1;
@@ -94,16 +96,41 @@ class RemoteEngineClient {
   private _modelName: string | null = null;
   private _backendNote: string | null = null;
   private _crashed: Error | null = null;
+  /**
+   * After a patient connect attempt gives up, further callers fail immediately
+   * until this time. Without it a whole-game review would crawl: each window of
+   * jobs would start its own full-length attempt, so a long outage would take
+   * many minutes to report instead of one.
+   */
+  private _unavailableUntil = 0;
+  private _lastConnectError: Error | null = null;
 
   // Reconnect settings (mirrors KaTrain: RECONNECT_ATTEMPTS=6, backoff 1s→10s)
   private readonly RECONNECT_ATTEMPTS = 6;
   private readonly RECONNECT_BACKOFF_S = 1.0;
   private readonly RECONNECT_MAX_BACKOFF_S = 10.0;
+  /**
+   * How long a caller waits for a connection before giving up.
+   *
+   * Generous on purpose: the thing being waited out is the far end releasing
+   * the previous connection, and giving up here fails every analysis queued
+   * behind it at once. The backoff caps at 10s, so this is roughly a dozen
+   * attempts.
+   */
+  private readonly CONNECT_TOTAL_TIMEOUT_MS = 90_000;
+  /** How long callers fail fast after a connect attempt used its whole budget. */
+  private readonly CONNECT_COOLDOWN_MS = 5_000;
 
   constructor(url: string) {
     if (!url) {
       throw new Error('Remote KataGo URL is required');
     }
+    // The URL as configured, which is what identifies the client. `url` below is
+    // the resolved one, and the two differ for a relative proxy path — comparing
+    // the resolved form against the configured one made every lookup look like a
+    // different server, so each analysis disposed the client (closing its
+    // socket) and built a new one that had to reconnect.
+    this.sourceUrl = url;
     // Resolve relative URLs (e.g. "/katago-proxy") against the current origin.
     // This allows Vite proxy-based same-origin WebSocket connections that
     // bypass COEP/CORS restrictions.
@@ -172,14 +199,20 @@ class RemoteEngineClient {
       if (this._crashed) throw this._crashed;
     }
 
-    // Single flight, including the retries: every caller waits on the same
-    // attempt chain and sees the same outcome. Sharing only the first attempt
-    // was not enough — when it failed, each waiter fell through and opened its
-    // own socket, so a game review with hundreds of positions in flight
-    // generated a burst of handshakes, and the earlier attempts' error
-    // handlers were discarded by the connection-id check and never settled.
+    // A recent attempt already used the whole budget; do not spend it again for
+    // every window of a long review.
+    if (this._lastConnectError && Date.now() < this._unavailableUntil) {
+      throw this._lastConnectError;
+    }
+
+    // Single flight: every caller waits on the same attempt chain and sees the
+    // same outcome. Sharing only the first attempt was not enough — when it
+    // failed, each waiter fell through and opened its own socket, so a game
+    // review with hundreds of positions in flight generated a burst of
+    // handshakes, and the earlier attempts' error handlers were discarded by
+    // the connection-id check and never settled.
     if (!this._connecting) {
-      this._connecting = this._connectWithRetries().finally(() => {
+      this._connecting = this._connectUntil(Date.now() + this.CONNECT_TOTAL_TIMEOUT_MS).finally(() => {
         this._connecting = null;
       });
     }
@@ -192,34 +225,40 @@ class RemoteEngineClient {
   }
 
   /**
-   * Establish the connection, waiting out a refusal the same way the reconnect
-   * loop does.
+   * Establish the connection, retrying until `deadline`.
    *
-   * Three quick attempts were not enough in practice: a relay or reverse proxy
-   * that is still holding the previous connection refuses the next one for a
-   * few seconds, which turned one blip into "skipped 206 of 208 positions".
-   * The retry budget and backoff are therefore the same as after a drop.
+   * The budget is wall-clock rather than "N attempts" because what has to be
+   * waited out is the other end: a relay or reverse proxy that is still holding
+   * the previous connection refuses the next one until it times that one out,
+   * which took longer than the ~21s a six-attempt chain allowed. Failing here
+   * rejects every analysis waiting on the connection at once, which is how one
+   * hiccup became "skipped 207 of 208 positions".
    */
-  private async _connectWithRetries(): Promise<void> {
-    for (let attempt = 1; attempt <= this.RECONNECT_ATTEMPTS; attempt++) {
+  private async _connectUntil(deadline: number): Promise<void> {
+    let attempt = 0;
+    for (;;) {
       if (this._closing) throw new Error('Remote engine is shutting down');
+      attempt++;
       try {
         await this._connect();
         return;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (attempt === this.RECONNECT_ATTEMPTS || this._closing) {
+        if (this._closing) throw err;
+        const delay = Math.min(this.RECONNECT_BACKOFF_S * attempt, this.RECONNECT_MAX_BACKOFF_S);
+        if (Date.now() + delay * 1000 > deadline) {
           console.info(
             `[remote-engine] Could not connect after ${attempt} attempts (${message}); failing ${this._connectingWaiters} waiting analyses`,
           );
           // Do not keep a dead socket as "the" connection: the next caller must
           // start a clean attempt rather than reading a stale readyState.
           this.ws = null;
+          this._lastConnectError = err instanceof Error ? err : new Error(message);
+          this._unavailableUntil = Date.now() + this.CONNECT_COOLDOWN_MS;
           throw err;
         }
-        const delay = Math.min(this.RECONNECT_BACKOFF_S * attempt, this.RECONNECT_MAX_BACKOFF_S);
         console.info(
-          `[remote-engine] Connect attempt ${attempt}/${this.RECONNECT_ATTEMPTS} failed: ${message}; retrying in ${delay.toFixed(0)}s`,
+          `[remote-engine] Connect attempt ${attempt} failed: ${message}; retrying in ${delay.toFixed(0)}s`,
         );
         await new Promise((r) => setTimeout(r, delay * 1000));
       }
@@ -583,6 +622,8 @@ class RemoteEngineClient {
     this._backend = `remote (${this.url})`;
     this._modelName = 'remote KataGo';
     this._backendNote = null;
+    this._unavailableUntil = 0;
+    this._lastConnectError = null;
   }
 
   // ─── Sending ──────────────────────────────────────────────────────────
@@ -841,7 +882,7 @@ class RemoteEngineClient {
 let singleton: RemoteEngineClient | null = null;
 
 export function getRemoteEngineClient(url: string): RemoteEngineClient {
-  if (singleton && singleton['url'] !== url) {
+  if (singleton && singleton.sourceUrl !== url) {
     singleton.dispose();
     singleton = null;
   }

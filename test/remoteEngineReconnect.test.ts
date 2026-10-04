@@ -113,12 +113,14 @@ afterEach(() => {
 });
 
 /**
- * The backoff is what makes a real reconnect patient; a test does not need to
- * wait it out, and the retry *count* is what is under test here.
+ * The backoff and connect budget are what make a real reconnect patient; a test
+ * does not need to wait them out, and the retry *behaviour* is what is under
+ * test here.
  */
-const withoutBackoff = <T extends object>(client: T): T => {
+const withoutBackoff = <T extends object>(client: T, connectBudgetMs = 800): T => {
   (client as unknown as { RECONNECT_BACKOFF_S: number }).RECONNECT_BACKOFF_S = 0;
   (client as unknown as { RECONNECT_MAX_BACKOFF_S: number }).RECONNECT_MAX_BACKOFF_S = 0;
+  (client as unknown as { CONNECT_TOTAL_TIMEOUT_MS: number }).CONNECT_TOTAL_TIMEOUT_MS = connectBudgetMs;
   return client;
 };
 
@@ -133,12 +135,31 @@ describe('remote engine connection sharing', () => {
         Array.from({ length: 20 }, () => client.analyze(baseArgs())),
       );
 
-      // One socket per attempt (the same budget a reconnect gets), not one per
-      // waiting caller; and every caller learns the outcome instead of being
-      // left pending by a superseded connection's handlers.
-      expect(RefusingSocket.constructed).toBeLessThanOrEqual(6);
+      // Twenty callers share one retry chain: a handful of sockets, not twenty
+      // (and not twenty per attempt). Every caller learns the outcome instead
+      // of being left pending by a superseded connection's handlers.
       expect(RefusingSocket.constructed).toBeGreaterThan(1);
+      expect(RefusingSocket.constructed).toBeLessThan(20);
       expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    },
+    30_000,
+  );
+
+  it(
+    'fails fast for callers that arrive during the post-failure cooldown',
+    async () => {
+      globalThis.WebSocket = RefusingSocket as unknown as typeof WebSocket;
+      const client = withoutBackoff(getRemoteEngineClient('ws://unreachable.invalid/katago'));
+
+      await expect(client.analyze(baseArgs())).rejects.toBeTruthy();
+      const attemptsUsed = RefusingSocket.constructed;
+
+      // A long review must not spend the whole connect budget once per window of
+      // positions: after one patient attempt, the rest fail immediately.
+      const startedAt = Date.now();
+      await expect(client.analyze(baseArgs())).rejects.toBeTruthy();
+      expect(RefusingSocket.constructed).toBe(attemptsUsed);
+      expect(Date.now() - startedAt).toBeLessThan(200);
     },
     30_000,
   );
