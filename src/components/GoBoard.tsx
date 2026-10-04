@@ -71,6 +71,26 @@ const OWNERSHIP_GAMMA = 1.33;
 const EVAL_DOT_MIN_SIZE = 0.25;
 const EVAL_DOT_MAX_SIZE = 0.5;
 const STONE_SIZE = 0.505; // KaTrain Theme.STONE_SIZE
+
+/**
+ * Move numbers drawn on the stones.
+ *
+ * KaTrain draws them at 0.9x the stone size in an ordinary font, which three
+ * digits overflow — "100" ends up wider than the disc. These are drawn narrow
+ * and tall instead: the glyphs are squeezed horizontally to the stone's width,
+ * which tightens the tracking along with them, so a whole number fits.
+ */
+const MOVE_NUMBER_FONT =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+/** Glyph height, as a fraction of the stone diameter (KaTrain uses 0.9). */
+const MOVE_NUMBER_HEIGHT = 0.78;
+/** Stroke weight; a lower number draws thinner digits. */
+const MOVE_NUMBER_WEIGHT = 600;
+/** How wide a number may get, as a fraction of the stone diameter. */
+const MOVE_NUMBER_MAX_WIDTH = 0.75;
+/** How far short numbers are squeezed anyway, so they read as the same slim face. */
+const MOVE_NUMBER_MIN_SQUEEZE = 0.7;
+
 /**
  * The "if you play elsewhere" marker. Violet is not used by any move-quality
  * tier on the board -- green, red, cyan and amber all already mean something
@@ -944,7 +964,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const whiteImages = stoneImagesRef.current.white;
     const stoneRadius = cellSize * STONE_SIZE;
     const stoneDiameter = 2 * stoneRadius;
-    const fontSize = stoneDiameter * 0.9;
+    const fontSize = stoneDiameter * MOVE_NUMBER_HEIGHT;
 
     // Everything a stone's geometry depends on is a property of its colour and
     // the cell size, not of where the stone sits. Reading it per stone meant
@@ -986,11 +1006,22 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     if (settings.showMoveNumbers) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      setCanvasFont(
-        ctx,
-        `bold ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`
-      );
+      setCanvasFont(ctx, `${MOVE_NUMBER_WEIGHT} ${fontSize}px ${MOVE_NUMBER_FONT}`);
     }
+
+    /**
+     * The horizontal squeeze that makes a `digits`-digit number fit the stone.
+     *
+     * Short numbers are squeezed by the same minimum so the whole board reads as
+     * one face; long ones are squeezed as far as they need, and no further.
+     * Measured per digit count, because the font is fixed for the whole draw.
+     */
+    const moveNumberSqueeze = (digits: number): number => {
+      if (digits <= 0) return 1;
+      const natural = ctx.measureText('0'.repeat(digits)).width;
+      if (!(natural > 0)) return 1;
+      return Math.min(MOVE_NUMBER_MIN_SQUEEZE, (stoneDiameter * MOVE_NUMBER_MAX_WIDTH) / natural);
+    };
 
     for (let y = 0; y < boardSize; y++) {
       for (let x = 0; x < boardSize; x++) {
@@ -1092,8 +1123,14 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         }
 
         if (settings.showMoveNumbers && moveNumber != null) {
+          const numberText = String(moveNumber);
+          const squeeze = moveNumberSqueeze(numberText.length);
           ctx.fillStyle = 'rgba(217,173,102,0.8)';
-          ctx.fillText(String(moveNumber), stoneCx, stoneCy);
+          ctx.save();
+          ctx.translate(stoneCx, stoneCy);
+          ctx.scale(squeeze, 1);
+          ctx.fillText(numberText, 0, 0);
+          ctx.restore();
         }
       }
     }
