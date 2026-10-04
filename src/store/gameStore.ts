@@ -265,6 +265,15 @@ interface GameStore extends GameState {
     reportEveryMs?: number;
     /** Moves the search may not play at the root (KataGo avoidMoves). */
     avoidMoves?: Array<{ x: number; y: number }>;
+    /**
+     * Let this request replace a deeper analysis of the same position.
+     *
+     * Off by default: a live read must not erase a deeper result that is already
+     * there. The extra-analysis actions (sweep, equalize, without-top, ...) turn
+     * it on, because they answer a deliberately different or shallower question
+     * and the user asked for exactly that.
+     */
+    allowShallower?: boolean;
   }) => Promise<void>;
   analyzeExtra: (mode: 'extra' | 'equalize' | 'sweep' | 'alternative' | 'without-top' | 'stop') => void;
   resetCurrentAnalysis: () => void;
@@ -605,6 +614,20 @@ const nodeAnalysisVisitCount = (node: GameNode): number => {
   if (typeof rootVisits === 'number' && Number.isFinite(rootVisits)) return Math.max(0, Math.floor(rootVisits));
   const requested = node.analysisVisitsRequested ?? 0;
   return Number.isFinite(requested) ? Math.max(0, Math.floor(requested)) : 0;
+};
+
+/**
+ * The visits a position's analysis actually reached.
+ *
+ * Used to keep the deeper of two results: a live read runs at whatever depth the
+ * ladder is on, so without this a quick pass landing after a deep review — or
+ * simply out of order, with several requests in flight — replaced the deeper
+ * numbers with shallower ones. Whole-game and fast review write their nodes
+ * directly and are deliberately not subject to this.
+ */
+const analysisDepth = (analysis: AnalysisResult | null | undefined): number => {
+  const visits = analysis?.rootVisits;
+  return typeof visits === 'number' && Number.isFinite(visits) ? Math.max(0, Math.floor(visits)) : 0;
 };
 
 const findNodeById = (root: GameNode, id: string): GameNode | null => {
@@ -2532,7 +2555,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const prev = Math.max(0, Math.min(s.currentNode.analysisVisitsRequested ?? base, ENGINE_MAX_VISITS));
       const visits = Math.max(16, Math.min(prev + base, ENGINE_MAX_VISITS));
       toast(`Extra analysis: ${visits} visits`);
-      void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs });
+      void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs, allowShallower: true });
       return;
     }
 
@@ -2557,7 +2580,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return;
       }
       toast(`Equalize: ${visits} visits`);
-      void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs });
+      void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs, allowShallower: true });
       return;
     }
 
@@ -2570,7 +2593,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           // Refined entries live on the node's move list, so a first pass has to
           // have filled it (KaTrain assumes the same).
           if (!node.analysis?.moves.length) {
-            await get().runAnalysis({ force: true, visits, maxTimeMs: longTimeMs });
+            await get().runAnalysis({ force: true, visits, maxTimeMs: longTimeMs, allowShallower: true });
           }
           if (get().currentNode.id !== node.id) return;
           const moves = node.analysis?.moves ?? [];
@@ -2595,6 +2618,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         topK: Math.max(s.settings.katagoTopK, 20),
         reuseTree: false,
         maxTimeMs: longTimeMs,
+        allowShallower: true,
       });
       return;
     }
@@ -2615,6 +2639,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         reuseTree: false,
         maxTimeMs: longTimeMs,
         avoidMoves: [{ x: top.x, y: top.y }],
+        allowShallower: true,
       });
       return;
     }
@@ -2629,6 +2654,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         wideRootNoise,
         reuseTree: false,
         maxTimeMs: longTimeMs,
+        allowShallower: true,
       });
     }
   },
@@ -3865,6 +3891,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 		      const node = state.currentNode;
 		      const parentBoard = node.parent?.gameState.board;
 		      const grandparentBoard = node.parent?.parent?.gameState.board;
+          // A live read keeps a deeper result rather than replacing it; see the
+          // option's doc comment.
+          const keepDeeper = opts?.allowShallower !== true;
 		      const modelUrl = resolveModelUrlForFetch(state.settings.katagoModelUrl);
           const rules = state.settings.gameRules;
           const analysisPvLen = opts?.analysisPvLen ?? state.settings.katagoAnalysisPvLen;
@@ -3961,6 +3990,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
           const applyAnalysis = (analysis: KataGoAnalysisPayload, isFinal: boolean, now = getAnimationNow()) => {
             if (nodeAnalysisPositionKey(node, rules) !== requestPositionKey) return;
+
+            // A shallower search does not replace a deeper one. The live ladder
+            // asks for whatever depth it is on, so a quick read — or one that
+            // simply finished later, with several requests in flight — used to
+            // overwrite a deeper review already on this node.
+            const incomingVisits = typeof analysis.rootVisits === 'number' ? Math.max(0, Math.floor(analysis.rootVisits)) : 0;
+            if (keepDeeper && incomingVisits <= analysisDepth(node.analysis)) {
+              if (isFinal) {
+                const engineInfo = getEngineClient(get().settings).getEngineInfo();
+                set({
+                  engineStatus: 'ready',
+                  engineError: null,
+                  engineBackend: engineInfo.backend,
+                  engineModelName: engineInfo.modelName,
+                  engineBackendNote: engineInfo.backendNote,
+                });
+              }
+              return;
+            }
+
             const showOwnership = get().settings.analysisShowOwnership;
             const shouldUpdateTerritory =
               isFinal || (showOwnership && progressApplyMinMs > 0 && now - lastTerritoryUpdateAt >= progressApplyMinMs);
