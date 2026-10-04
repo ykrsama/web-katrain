@@ -6675,8 +6675,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const storedAnalysisNodes = countAnalyzedNodes(newRoot);
 
-    set((state) => ({
-      // A drill describes positions in the tree being replaced, so it cannot
+    set((state) => ({      // A drill describes positions in the tree being replaced, so it cannot
       // survive the replacement.
       mistakeDrill: null,
       rootNode: newRoot,
@@ -6692,12 +6691,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       boardRotation: 0,
       isEditMode: false,
       editTool: state.editTool,
-      // A file that already carries analysis shows it straight away. Every
-      // overlay — the board's move points, the candidate list, the evaluation
-      // graph — is gated on analysis mode, so leaving it off meant a stored
-      // review stayed invisible until the user pressed Analyze, which then only
-      // added a fresh search on top of what was already there.
-      isAnalysisMode: storedAnalysisNodes > 0 ? true : state.isAnalysisMode,
       analysisData: current.analysis || null,
       analysisCacheSize: getAnalysisCacheSize(newRoot),
 	      treeVersion: state.treeVersion + 1,
