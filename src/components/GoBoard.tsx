@@ -82,12 +82,25 @@ const STONE_SIZE = 0.505; // KaTrain Theme.STONE_SIZE
  */
 const MOVE_NUMBER_FONT =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-/** Glyph height, as a fraction of the stone diameter (KaTrain uses 0.9). */
-const MOVE_NUMBER_HEIGHT = 0.78;
+/**
+ * Glyph height, as a fraction of the stone diameter.
+ *
+ * Sized so the number sits inside the last-move marker, which is a ring: its
+ * image is drawn into 0.8 of the stone diameter, and within that image the ring
+ * spans 0.734 outer with a 0.534 hole (measured from `katrain/inner.png`). That
+ * makes the ring 0.587 of the stone across with a 0.427 hole, so a number has to
+ * fit a circle of about 0.43 stone to be circled by it rather than overlapping
+ * it — the ring and the number are the same colour, so overlap reads as a blob.
+ *
+ * A 0.29-tall, 0.36-wide number (digits are thin strokes, so only the tips of
+ * the outermost ones reach the ring) sits in that hole. KaTrain uses 0.9 and
+ * overflows both this and the stone.
+ */
+const MOVE_NUMBER_HEIGHT = 0.44;
 /** Stroke weight; a lower number draws thinner digits. */
 const MOVE_NUMBER_WEIGHT = 600;
-/** How wide a number may get, as a fraction of the stone diameter. */
-const MOVE_NUMBER_MAX_WIDTH = 0.75;
+/** How wide a number may get, as a fraction of the stone diameter. See above. */
+const MOVE_NUMBER_MAX_WIDTH = 0.36;
 /** How far short numbers are squeezed anyway, so they read as the same slim face. */
 const MOVE_NUMBER_MIN_SQUEEZE = 0.7;
 
@@ -98,6 +111,25 @@ const MOVE_NUMBER_MIN_SQUEEZE = 0.7;
  */
 const TENUKI_MARKER_COLOR = 'rgba(168, 85, 247, 0.95)';
 const STONE_MIN_ALPHA = 0.85; // KaTrain Theme.STONE_MIN_ALPHA
+
+/**
+ * How opaque a stone is drawn.
+ *
+ * Half for a stone marked dead in scoring, and faded towards `STONE_MIN_ALPHA`
+ * when the ownership overlay says the point belongs to the other player. The
+ * move-number layer reads the same value, so a number fades with its stone.
+ */
+const stoneAlphaFor = (args: {
+  dead: boolean;
+  ownership: number | null;
+  owner: 'black' | 'white' | null;
+  cell: 'black' | 'white';
+}): number => {
+  if (args.dead) return 0.45;
+  if (args.ownership === null || !args.owner) return 1;
+  const abs = Math.min(1, Math.abs(args.ownership));
+  return args.cell === args.owner ? STONE_MIN_ALPHA + (1 - STONE_MIN_ALPHA) * abs : STONE_MIN_ALPHA;
+};
 const MARK_SIZE = 0.42; // KaTrain Theme.MARK_SIZE
 const APPROX_BOARD_COLOR = [0.95, 0.75, 0.47, 1] as const;
 const REGION_BORDER_COLOR = [64 / 255, 85 / 255, 110 / 255, 1] as const; // KaTrain Theme.REGION_BORDER_COLOR
@@ -450,6 +482,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const policyCanvasRef = useRef<HTMLCanvasElement>(null);
   const hintsCanvasRef = useRef<HTMLCanvasElement>(null);
   const evalCanvasRef = useRef<HTMLCanvasElement>(null);
+  const moveNumbersCanvasRef = useRef<HTMLCanvasElement>(null);
   const tenukiCanvasRef = useRef<HTMLCanvasElement>(null);
   const dotImageRef = useRef<HTMLImageElement | null>(null);
   const topMoveImageRef = useRef<HTMLImageElement | null>(null);
@@ -964,7 +997,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const whiteImages = stoneImagesRef.current.white;
     const stoneRadius = cellSize * STONE_SIZE;
     const stoneDiameter = 2 * stoneRadius;
-    const fontSize = stoneDiameter * MOVE_NUMBER_HEIGHT;
 
     // Everything a stone's geometry depends on is a property of its colour and
     // the cell size, not of where the stone sits. Reading it per stone meant
@@ -1003,26 +1035,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     ]);
     const readsOwnership = scoringMode || showOwnership;
 
-    if (settings.showMoveNumbers) {
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      setCanvasFont(ctx, `${MOVE_NUMBER_WEIGHT} ${fontSize}px ${MOVE_NUMBER_FONT}`);
-    }
-
-    /**
-     * The horizontal squeeze that makes a `digits`-digit number fit the stone.
-     *
-     * Short numbers are squeezed by the same minimum so the whole board reads as
-     * one face; long ones are squeezed as far as they need, and no further.
-     * Measured per digit count, because the font is fixed for the whole draw.
-     */
-    const moveNumberSqueeze = (digits: number): number => {
-      if (digits <= 0) return 1;
-      const natural = ctx.measureText('0'.repeat(digits)).width;
-      if (!(natural > 0)) return 1;
-      return Math.min(MOVE_NUMBER_MIN_SQUEEZE, (stoneDiameter * MOVE_NUMBER_MAX_WIDTH) / natural);
-    };
-
     for (let y = 0; y < boardSize; y++) {
       for (let x = 0; x < boardSize; x++) {
         const cell = board[y]?.[x] ?? null;
@@ -1047,14 +1059,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
               ? 'black'
               : 'white'
             : null;
-        const stoneAlpha =
-          isDeadScoringStone
-            ? 0.45
-            : ownershipVal !== null && owner
-            ? cell === owner
-              ? STONE_MIN_ALPHA + (1 - STONE_MIN_ALPHA) * ownershipAbs
-              : STONE_MIN_ALPHA
-            : 1;
+        const stoneAlpha = stoneAlphaFor({
+          dead: isDeadScoringStone,
+          ownership: ownershipVal,
+          owner,
+          cell,
+        });
         const showMark = ownershipVal !== null && owner && cell !== owner && ownershipAbs > 0;
 
         ctx.globalAlpha = stoneAlpha;
@@ -1122,16 +1132,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           ctx.restore();
         }
 
-        if (settings.showMoveNumbers && moveNumber != null) {
-          const numberText = String(moveNumber);
-          const squeeze = moveNumberSqueeze(numberText.length);
-          ctx.fillStyle = 'rgba(217,173,102,0.8)';
-          ctx.save();
-          ctx.translate(stoneCx, stoneCy);
-          ctx.scale(squeeze, 1);
-          ctx.fillText(numberText, 0, 0);
-          ctx.restore();
-        }
       }
     }
   }, [
@@ -1147,7 +1147,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     showOwnership,
     settings.analysisShowOwnership,
     settings.fuzzyStonePlacement,
-    settings.showMoveNumbers,
     setupOverlayCanvas,
     stoneTextureVersion,
     territory,
@@ -2458,6 +2457,93 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     treeVersion,
   ]);
 
+  /**
+   * Move numbers, on their own layer just above the evaluation dots.
+   *
+   * The dot is a filled disc at the stone's centre -- exactly where the number
+   * goes -- so drawn on the stone canvas (below every overlay) a three-digit
+   * number was half hidden by it. Each number takes the stone's opposite colour;
+   * with the dots behind them, the dots now read as a halo around the digits.
+   */
+  useEffect(() => {
+    const canvas = moveNumbersCanvasRef.current;
+    if (!canvas) return;
+    if (!settings.showMoveNumbers) {
+      releaseOverlayCanvas(canvas);
+      return;
+    }
+    const ctx = setupOverlayCanvas(canvas);
+    if (!ctx) return;
+
+    const stoneDiameter = 2 * (cellSize * STONE_SIZE);
+    const fontSize = stoneDiameter * MOVE_NUMBER_HEIGHT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    setCanvasFont(ctx, `${MOVE_NUMBER_WEIGHT} ${fontSize}px ${MOVE_NUMBER_FONT}`);
+
+    const showOwnershipHere = hasAnalysisOverlay && settings.analysisShowOwnership;
+    const readsOwnershipHere = scoringMode || showOwnershipHere;
+    const maxWidth = stoneDiameter * MOVE_NUMBER_MAX_WIDTH;
+    // One measurement per digit count: the font is fixed for the whole draw.
+    const squeezes = new Map<number, number>();
+    const squeezeFor = (digits: number): number => {
+      const cached = squeezes.get(digits);
+      if (cached !== undefined) return cached;
+      const natural = digits > 0 ? ctx.measureText('0'.repeat(digits)).width : 0;
+      const squeeze = natural > 0 ? Math.min(MOVE_NUMBER_MIN_SQUEEZE, maxWidth / natural) : 1;
+      squeezes.set(digits, squeeze);
+      return squeeze;
+    };
+
+    for (let y = 0; y < boardSize; y++) {
+      for (let x = 0; x < boardSize; x++) {
+        const cell = board[y]?.[x] ?? null;
+        if (!cell) continue;
+        const number = moveNumbers?.[y]?.[x];
+        if (number == null) continue;
+        const text = String(number);
+        const d = toDisplay(x, y);
+        // Same place and same opacity as the stone this number sits on: fuzzy
+        // placement moves stones off the intersection, and ownership/scoring
+        // fade them, so drawing at the bare intersection would drift.
+        const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
+        const ownershipVal = readsOwnershipHere && territory ? (territory[y]?.[x] ?? 0) : null;
+        ctx.fillStyle = cell === 'black' ? rgba(STONE_COLORS.white) : rgba(STONE_COLORS.black);
+        ctx.save();
+        ctx.globalAlpha = stoneAlphaFor({
+          dead: scoringMode && !!deadStones?.has(`${x},${y}`),
+          ownership: ownershipVal,
+          owner: ownershipVal !== null ? (ownershipVal > 0 ? 'black' : 'white') : null,
+          cell,
+        });
+        ctx.translate(
+          originX + d.x * cellSize + fuzzy.dxFactor * stoneDiameter,
+          originY + d.y * cellSize + fuzzy.dyFactor * stoneDiameter
+        );
+        ctx.scale(squeezeFor(text.length), 1);
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      }
+    }
+  }, [
+    board,
+    boardSize,
+    cellSize,
+    deadStones,
+    hasAnalysisOverlay,
+    moveNumbers,
+    originX,
+    originY,
+    releaseOverlayCanvas,
+    scoringMode,
+    settings.analysisShowOwnership,
+    settings.fuzzyStonePlacement,
+    settings.showMoveNumbers,
+    setupOverlayCanvas,
+    territory,
+    toDisplay,
+  ]);
+
   useEffect(() => {
     const canvas = policyCanvasRef.current;
     if (!canvas) return;
@@ -3455,6 +3541,19 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         {/* Evaluation Dots (KaTrain-style) */}
         <canvas
           ref={evalCanvasRef}
+          className="absolute pointer-events-none"
+          style={{
+            left: 0,
+            top: 0,
+            width: boardWidth,
+            height: boardHeight,
+            zIndex: 11,
+          }}
+        />
+
+        {/* Move Numbers -- above the evaluation dots, which sit on the same point */}
+        <canvas
+          ref={moveNumbersCanvasRef}
           className="absolute pointer-events-none"
           style={{
             left: 0,
