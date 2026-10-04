@@ -1258,9 +1258,11 @@ export const Layout: React.FC = () => {
   const activeHoverMove = reportHoverMove ?? hoveredMoveForNode(hoveredMove, currentNode.id);
   // Candidate tiles follow the same ownership rule as the board canvases: a
   // temporary board tool gets a quiet targeting surface without switching the
-  // user's analysis preference off.
+  // user's analysis preference off. As on the board, an analysis that is
+  // already there is drawn whether or not the search switch is on.
+  const hasCurrentAnalysis = analysisData !== null || currentNode.analysis !== null;
   const boardAnalysisOverlaysActive =
-    isAnalysisMode && !isEditMode && !scoringMode && !isSelectingRegionOfInterest;
+    (isAnalysisMode || hasCurrentAnalysis) && !isEditMode && !scoringMode && !isSelectingRegionOfInterest;
   const pvOverlayEnabled = boardAnalysisOverlaysActive || !!reportHoverMove;
   const pvKey = useMemo(() => {
     const pv = activeHoverMove?.pv;
@@ -3632,7 +3634,7 @@ export const Layout: React.FC = () => {
             hoveredCandidateKey={reportHoverMove ? `${reportHoverMove.x},${reportHoverMove.y}` : null}
             onHoverCandidate={setReportHoverMove}
             branchInfo={branchInfo}
-            showAnalysis={isAnalysisMode || mode === 'analyze'}
+            showAnalysis={isAnalysisMode || mode === 'analyze' || hasCurrentAnalysis}
             winRate={winRate ?? null}
             scoreLead={scoreLead ?? null}
             pointsLost={pointsLost}

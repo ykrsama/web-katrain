@@ -400,14 +400,17 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   );
 
   const visibleAnalysis = analysisData ?? currentNode.analysis ?? null;
-  // Analysis mode owns the review overlays until the board temporarily changes
-  // verbs. Setup/markup, manual scoring and region selection all need an
-  // uncluttered targeting surface: candidate circles, policy heatmaps and eval
-  // dots otherwise look like editable/scoring marks. Keep analysis mode itself
-  // on so the overlays return as soon as the temporary tool closes. Scoring's
-  // territory layer is derived separately below and remains visible.
+  // The review overlays need an uncluttered surface. Setup/markup, manual
+  // scoring and region selection all need to hide them: candidate circles,
+  // policy heatmaps and eval dots otherwise look like editable/scoring marks.
+  // Scoring's territory layer is derived separately below and remains visible.
+  //
+  // The analysis switch starts and stops *searching*; it is not a display
+  // switch. Whatever a position already has — most visibly a review loaded from
+  // a saved SGF — is drawn either way, so opening an analysed game shows it
+  // without turning the switch on (which would also start a search).
   const hasAnalysisOverlay =
-    isAnalysisMode && !isEditMode && !scoringMode && !isSelectingRegionOfInterest;
+    (isAnalysisMode || !!visibleAnalysis) && !isEditMode && !scoringMode && !isSelectingRegionOfInterest;
   const pvOverlayEnabled = hasAnalysisOverlay || forcePvOverlay;
   const boardSize = normalizeBoardSize(board.length, DEFAULT_BOARD_SIZE);
   const hoshiPoints = useMemo(() => getHoshiPoints(boardSize), [boardSize]);

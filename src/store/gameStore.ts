@@ -6673,8 +6673,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       while (current.children.length > 0) current = current.children[0]!;
     }
 
-    const storedAnalysisNodes = countAnalyzedNodes(newRoot);
-
     set((state) => ({      // A drill describes positions in the tree being replaced, so it cannot
       // survive the replacement.
       mistakeDrill: null,
