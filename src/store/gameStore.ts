@@ -3337,6 +3337,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startQuickGameAnalysis: () => {
     const token = ++gameAnalysisToken;
     analysisQueue.cancelGroup('game-analysis');
+    // A review is the refresh, and nothing tells the client the model
+    // changed (a remote engine's weights are the server's, and a local URL
+    // can keep serving new bytes). Drop the cached results so the reads that
+    // follow do not keep answering with the previous model's numbers.
+    analysisQueue.clearCache();
     const state = get();
 
     const nodes = getCurrentLineNodes(state.rootNode, state.activeBranchChildIds);
@@ -3367,7 +3372,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (get().gameAnalysisType !== 'quick') return;
 
         const chunk = nodes.slice(start, start + evalBatchSize);
-        const toEval = chunk.filter((n) => !n.analysis);
+        // Every position, not only the ones with no analysis: after a model
+        // update an existing value is exactly what needs replacing.
+        const toEval = chunk;
         if (toEval.length > 0) {
           try {
             const s = get();
@@ -3387,6 +3394,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 conservativePass,
                 toEval.map((n) => nodeAnalysisPositionKey(n, rules))
               ),
+              bypassCache: true,
               run: (ctx) => getEngineClient(get().settings).evaluateBatch({
               modelUrl,
               backend: s.settings.katagoBackend,
@@ -3484,6 +3492,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startFastGameAnalysis: (opts) => {
     const token = ++gameAnalysisToken;
     analysisQueue.cancelGroup('game-analysis');
+    // A review is the refresh, and nothing tells the client the model
+    // changed (a remote engine's weights are the server's, and a local URL
+    // can keep serving new bytes). Drop the cached results so the reads that
+    // follow do not keep answering with the previous model's numbers.
+    analysisQueue.clearCache();
     const state = get();
     const moveRangeRaw = opts?.moveRange ?? null;
     const moveRange: [number, number] | null = moveRangeRaw
@@ -3541,97 +3554,107 @@ export const useGameStore = create<GameStore>((set, get) => ({
       };
 
       const runOne = async (node: GameNode) => {
-        const already = node.analysis && nodeAnalysisVisitCount(node) >= fastVisits;
-        if (!already) {
-          const s = get();
-          const parentBoard = node.parent?.gameState.board;
-          const grandparentBoard = node.parent?.parent?.gameState.board;
-          const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
-          const rules = s.settings.gameRules;
-          const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
-            id: `fast-game:${token}:${node.id}`,
-            label: 'Fast game analysis',
-            group: 'game-analysis',
-            priority: ANALYSIS_QUEUE_PRIORITY.fastGame,
-            cacheKey: analysisCacheKey(
-              'fast-game',
-              node.id,
-              nodeAnalysisPositionKey(node, rules),
-              modelUrl,
-              s.settings.katagoBackend,
-              rules,
-              fastVisits,
-              maxTimeMs,
-              batchSize,
-              maxChildren,
-              topK,
-              analysisPvLen,
-              s.settings.katagoWideRootNoise,
-              s.settings.katagoRootPolicyTemperature,
-              s.settings.katagoNnRandomize,
-              s.settings.katagoConservativePass
-            ),
-            run: (ctx) => getEngineClient(get().settings).analyze({
-            positionId: node.id,
-            parentPositionId: node.parent?.id,
-            positionKey: nodeAnalysisPositionKey(node, rules),
-            parentPositionKey: parentAnalysisPositionKey(node, rules),
+        // No "already deep enough" skip: a review re-runs every position
+        // it covers and overwrites whatever analysis is on the node, the way
+        // KaTrain's game re-analysis does. Skipping meant a second review of
+        // the same game did nothing at all.
+        const s = get();
+        const parentBoard = node.parent?.gameState.board;
+        const grandparentBoard = node.parent?.parent?.gameState.board;
+        const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
+        const rules = s.settings.gameRules;
+        const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
+          id: `fast-game:${token}:${node.id}`,
+          label: 'Fast game analysis',
+          group: 'game-analysis',
+          priority: ANALYSIS_QUEUE_PRIORITY.fastGame,
+          cacheKey: analysisCacheKey(
+            'fast-game',
+            node.id,
+            nodeAnalysisPositionKey(node, rules),
             modelUrl,
-            backend: s.settings.katagoBackend,
-            board: node.gameState.board,
-            previousBoard: parentBoard,
-            previousPreviousBoard: grandparentBoard,
-            currentPlayer: node.gameState.currentPlayer,
-            moveHistory: node.gameState.moveHistory,
-            komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
+            s.settings.katagoBackend,
             rules,
-            topK,
-            analysisPvLen,
-            includeMovesOwnership: false,
-            wideRootNoise: s.settings.katagoWideRootNoise,
-            rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
-            fillDameBeforePass: s.settings.katagoFillDameBeforePass,
-            nnRandomize: s.settings.katagoNnRandomize,
-            conservativePass: s.settings.katagoConservativePass,
-            visits: fastVisits,
+            fastVisits,
             maxTimeMs,
             batchSize,
             maxChildren,
-            reuseTree: false,
-            ownershipMode: 'none',
-            analysisGroup: 'background',
-            priority: ctx.priority,
-            signal: ctx.signal,
-            }),
-          });
-          if (!stillOwnsRun()) return;
-          if (!metaSynced) {
-            const engineInfo = getEngineClient(get().settings).getEngineInfo();
-            set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
-            metaSynced = true;
-          }
-
-          node.analysis = {
-            rootWinRate: analysis.rootWinRate,
-            rootScoreLead: analysis.rootScoreLead,
-            rootScoreSelfplay: analysis.rootScoreSelfplay,
-            rootScoreStdev: analysis.rootScoreStdev,
-            rawWinRate: analysis.rawWinRate,
-            rawScoreLead: analysis.rawScoreLead,
-            rawScoreSelfplay: analysis.rawScoreSelfplay,
-            rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
-            rawNoResultProb: analysis.rawNoResultProb,
-            rawStWrError: analysis.rawStWrError,
-            rawStScoreError: analysis.rawStScoreError,
-            rawVarTimeLeft: analysis.rawVarTimeLeft,
-            moves: analysis.moves,
-            territory: createEmptyTerritory(getBoardSizeFromBoard(node.gameState.board)),
-            policy: undefined,
-            ownershipStdev: undefined,
-            ownershipMode: 'none',
-          };
-          node.analysisVisitsRequested = fastVisits;
+            topK,
+            analysisPvLen,
+            s.settings.katagoWideRootNoise,
+            s.settings.katagoRootPolicyTemperature,
+            s.settings.katagoNnRandomize,
+            s.settings.katagoConservativePass
+          ),
+          // A review is a refresh, and the model can change with no signal the
+          // client can see: a remote engine's weights are the server's, and even
+          // a local URL can keep serving the same path with new bytes. So the
+          // model URL is not a freshness key, and a review never trusts the
+          // cached result of an earlier one.
+          bypassCache: true,
+          run: (ctx) => getEngineClient(get().settings).analyze({
+          positionId: node.id,
+          parentPositionId: node.parent?.id,
+          positionKey: nodeAnalysisPositionKey(node, rules),
+          parentPositionKey: parentAnalysisPositionKey(node, rules),
+          modelUrl,
+          backend: s.settings.katagoBackend,
+          board: node.gameState.board,
+          previousBoard: parentBoard,
+          previousPreviousBoard: grandparentBoard,
+          currentPlayer: node.gameState.currentPlayer,
+          moveHistory: node.gameState.moveHistory,
+          komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
+          rules,
+          topK,
+          analysisPvLen,
+          includeMovesOwnership: false,
+          wideRootNoise: s.settings.katagoWideRootNoise,
+          rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
+          fillDameBeforePass: s.settings.katagoFillDameBeforePass,
+          nnRandomize: s.settings.katagoNnRandomize,
+          conservativePass: s.settings.katagoConservativePass,
+          visits: fastVisits,
+          maxTimeMs,
+          batchSize,
+          maxChildren,
+          reuseTree: false,
+          ownershipMode: 'none',
+          analysisGroup: 'background',
+          priority: ctx.priority,
+          signal: ctx.signal,
+          }),
+        });
+        if (!stillOwnsRun()) return;
+        if (!metaSynced) {
+          const engineInfo = getEngineClient(get().settings).getEngineInfo();
+          set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
+          metaSynced = true;
         }
+
+        node.analysis = {
+          rootWinRate: analysis.rootWinRate,
+          rootScoreLead: analysis.rootScoreLead,
+          rootScoreSelfplay: analysis.rootScoreSelfplay,
+          rootScoreStdev: analysis.rootScoreStdev,
+          // The other three writers record this; without it the node's depth
+          // looks like zero and a shallow live read would overwrite the result.
+          rootVisits: analysis.rootVisits,
+          rawWinRate: analysis.rawWinRate,
+          rawScoreLead: analysis.rawScoreLead,
+          rawScoreSelfplay: analysis.rawScoreSelfplay,
+          rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
+          rawNoResultProb: analysis.rawNoResultProb,
+          rawStWrError: analysis.rawStWrError,
+          rawStScoreError: analysis.rawStScoreError,
+          rawVarTimeLeft: analysis.rawVarTimeLeft,
+          moves: analysis.moves,
+          territory: createEmptyTerritory(getBoardSizeFromBoard(node.gameState.board)),
+          policy: undefined,
+          ownershipStdev: undefined,
+          ownershipMode: 'none',
+        };
+        node.analysisVisitsRequested = fastVisits;
         markDone();
       };
 
@@ -3663,6 +3686,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   startFullGameAnalysis: (opts) => {
     const token = ++gameAnalysisToken;
     analysisQueue.cancelGroup('game-analysis');
+    // A review is the refresh, and nothing tells the client the model
+    // changed (a remote engine's weights are the server's, and a local URL
+    // can keep serving new bytes). Drop the cached results so the reads that
+    // follow do not keep answering with the previous model's numbers.
+    analysisQueue.clearCache();
     const state = get();
 
     const visits = Math.max(16, Math.min(Math.floor(opts.visits || 0), ENGINE_MAX_VISITS));
@@ -3715,110 +3743,117 @@ export const useGameStore = create<GameStore>((set, get) => ({
       };
 
       const runOne = async (node: GameNode) => {
-        const already = node.analysis && node.analysis.moves.length > 0 && nodeAnalysisVisitCount(node) >= visits;
-        if (!already) {
-          const s = get();
-          const parentBoard = node.parent?.gameState.board;
-          const grandparentBoard = node.parent?.parent?.gameState.board;
-          const maxTimeMs = ENGINE_MAX_TIME_MS;
-          const batchSize = Math.max(1, Math.min(s.settings.katagoBatchSize, 64));
-          const boardSize = getBoardSizeFromBoard(node.gameState.board);
-          const maxChildren = Math.max(4, Math.min(s.settings.katagoMaxChildren, boardSize * boardSize));
-          const topK = Math.max(5, Math.min(s.settings.katagoTopK, 50));
-          const analysisPvLen = Math.max(0, Math.min(s.settings.katagoAnalysisPvLen, 60));
-          const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
-          const rules = s.settings.gameRules;
+        // No "already deep enough" skip: a review re-runs every position
+        // it covers and overwrites whatever analysis is on the node, the way
+        // KaTrain's game re-analysis does. Skipping meant a second review of
+        // the same game did nothing at all.
+        const s = get();
+        const parentBoard = node.parent?.gameState.board;
+        const grandparentBoard = node.parent?.parent?.gameState.board;
+        const maxTimeMs = ENGINE_MAX_TIME_MS;
+        const batchSize = Math.max(1, Math.min(s.settings.katagoBatchSize, 64));
+        const boardSize = getBoardSizeFromBoard(node.gameState.board);
+        const maxChildren = Math.max(4, Math.min(s.settings.katagoMaxChildren, boardSize * boardSize));
+        const topK = Math.max(5, Math.min(s.settings.katagoTopK, 50));
+        const analysisPvLen = Math.max(0, Math.min(s.settings.katagoAnalysisPvLen, 60));
+        const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
+        const rules = s.settings.gameRules;
 
-          const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
-            id: `full-game:${token}:${node.id}`,
-            label: 'Full game analysis',
-            group: 'game-analysis',
-            priority: ANALYSIS_QUEUE_PRIORITY.fullGame,
-            cacheKey: analysisCacheKey(
-              'full-game',
-              node.id,
-              nodeAnalysisPositionKey(node, rules),
-              modelUrl,
-              s.settings.katagoBackend,
-              rules,
-              visits,
-              maxTimeMs,
-              batchSize,
-              maxChildren,
-              topK,
-              analysisPvLen,
-              s.settings.katagoOwnershipMode,
-              s.settings.katagoWideRootNoise,
-              s.settings.katagoNnRandomize,
-              s.settings.katagoConservativePass,
-              s.settings.humanSlEnabled ? s.settings.humanSlProfile : '',
-              s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : ''
-            ),
-            run: (ctx) => getEngineClient(get().settings).analyze({
-            positionId: node.id,
-            parentPositionId: node.parent?.id,
-            positionKey: nodeAnalysisPositionKey(node, rules),
-            parentPositionKey: parentAnalysisPositionKey(node, rules),
+        const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
+          id: `full-game:${token}:${node.id}`,
+          label: 'Full game analysis',
+          group: 'game-analysis',
+          priority: ANALYSIS_QUEUE_PRIORITY.fullGame,
+          cacheKey: analysisCacheKey(
+            'full-game',
+            node.id,
+            nodeAnalysisPositionKey(node, rules),
             modelUrl,
-            backend: s.settings.katagoBackend,
-            board: node.gameState.board,
-            previousBoard: parentBoard,
-            previousPreviousBoard: grandparentBoard,
-            currentPlayer: node.gameState.currentPlayer,
-            moveHistory: node.gameState.moveHistory,
-            komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
+            s.settings.katagoBackend,
             rules,
-            topK,
-            analysisPvLen,
-            includeMovesOwnership: s.settings.katagoOwnershipMode === 'tree',
-            wideRootNoise: s.settings.katagoWideRootNoise,
-            rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
-            fillDameBeforePass: s.settings.katagoFillDameBeforePass,
-            nnRandomize: s.settings.katagoNnRandomize,
-            conservativePass: s.settings.katagoConservativePass,
-            humanModelUrl: s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : undefined,
-            humanSlProfile: s.settings.humanSlEnabled ? s.settings.humanSlProfile : undefined,
             visits,
             maxTimeMs,
             batchSize,
             maxChildren,
-            reuseTree: false,
-            ownershipMode: s.settings.katagoOwnershipMode,
-            analysisGroup: 'background',
-            priority: ctx.priority,
-            signal: ctx.signal,
-            }),
-          });
-          if (!stillOwnsRun()) return;
+            topK,
+            analysisPvLen,
+            s.settings.katagoOwnershipMode,
+            s.settings.katagoWideRootNoise,
+            s.settings.katagoNnRandomize,
+            s.settings.katagoConservativePass,
+            s.settings.humanSlEnabled ? s.settings.humanSlProfile : '',
+            s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : ''
+          ),
+          // A review is a refresh, and the model can change with no signal the
+          // client can see: a remote engine's weights are the server's, and even
+          // a local URL can keep serving the same path with new bytes. So the
+          // model URL is not a freshness key, and a review never trusts the
+          // cached result of an earlier one.
+          bypassCache: true,
+          run: (ctx) => getEngineClient(get().settings).analyze({
+          positionId: node.id,
+          parentPositionId: node.parent?.id,
+          positionKey: nodeAnalysisPositionKey(node, rules),
+          parentPositionKey: parentAnalysisPositionKey(node, rules),
+          modelUrl,
+          backend: s.settings.katagoBackend,
+          board: node.gameState.board,
+          previousBoard: parentBoard,
+          previousPreviousBoard: grandparentBoard,
+          currentPlayer: node.gameState.currentPlayer,
+          moveHistory: node.gameState.moveHistory,
+          komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
+          rules,
+          topK,
+          analysisPvLen,
+          includeMovesOwnership: s.settings.katagoOwnershipMode === 'tree',
+          wideRootNoise: s.settings.katagoWideRootNoise,
+          rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
+          fillDameBeforePass: s.settings.katagoFillDameBeforePass,
+          nnRandomize: s.settings.katagoNnRandomize,
+          conservativePass: s.settings.katagoConservativePass,
+          humanModelUrl: s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : undefined,
+          humanSlProfile: s.settings.humanSlEnabled ? s.settings.humanSlProfile : undefined,
+          visits,
+          maxTimeMs,
+          batchSize,
+          maxChildren,
+          reuseTree: false,
+          ownershipMode: s.settings.katagoOwnershipMode,
+          analysisGroup: 'background',
+          priority: ctx.priority,
+          signal: ctx.signal,
+          }),
+        });
+        if (!stillOwnsRun()) return;
 
-          if (!metaSynced) {
-            const engineInfo = getEngineClient(get().settings).getEngineInfo();
-            set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
-            metaSynced = true;
-          }
-
-          node.analysis = {
-            rootWinRate: analysis.rootWinRate,
-            rootScoreLead: analysis.rootScoreLead,
-            rootScoreSelfplay: analysis.rootScoreSelfplay,
-            rootScoreStdev: analysis.rootScoreStdev,
-            rootVisits: analysis.rootVisits,
-            rawWinRate: analysis.rawWinRate,
-            rawScoreLead: analysis.rawScoreLead,
-            rawScoreSelfplay: analysis.rawScoreSelfplay,
-            rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
-            rawNoResultProb: analysis.rawNoResultProb,
-            rawStWrError: analysis.rawStWrError,
-            rawStScoreError: analysis.rawStScoreError,
-            rawVarTimeLeft: analysis.rawVarTimeLeft,
-            moves: analysis.moves,
-            territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
-            policy: analysis.policy,
-            ownershipStdev: analysis.ownershipStdev,
-            ownershipMode: s.settings.katagoOwnershipMode,
-          };
-          node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, visits);
+        if (!metaSynced) {
+          const engineInfo = getEngineClient(get().settings).getEngineInfo();
+          set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
+          metaSynced = true;
         }
+
+        node.analysis = {
+          rootWinRate: analysis.rootWinRate,
+          rootScoreLead: analysis.rootScoreLead,
+          rootScoreSelfplay: analysis.rootScoreSelfplay,
+          rootScoreStdev: analysis.rootScoreStdev,
+          rootVisits: analysis.rootVisits,
+          rawWinRate: analysis.rawWinRate,
+          rawScoreLead: analysis.rawScoreLead,
+          rawScoreSelfplay: analysis.rawScoreSelfplay,
+          rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
+          rawNoResultProb: analysis.rawNoResultProb,
+          rawStWrError: analysis.rawStWrError,
+          rawStScoreError: analysis.rawStScoreError,
+          rawVarTimeLeft: analysis.rawVarTimeLeft,
+          moves: analysis.moves,
+          territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
+          policy: analysis.policy,
+          ownershipStdev: analysis.ownershipStdev,
+          ownershipMode: s.settings.katagoOwnershipMode,
+        };
+        node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, visits);
         markDone();
       };
 

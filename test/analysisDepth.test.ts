@@ -88,4 +88,86 @@ describe('a live read against a position that already has analysis', () => {
     await useGameStore.getState().runAnalysis({ force: true, visits: 50, allowShallower: true });
     expect(depth()).toBe(50);
   });
+
+  it('re-runs a fast review over a position that is already deeper', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    const depth = () => useGameStore.getState().currentNode.analysis?.rootVisits;
+    const runReview = async () => {
+      useGameStore.getState().startFastGameAnalysis();
+      for (let i = 0; i < 200 && useGameStore.getState().isGameAnalysisRunning; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+
+    useGameStore.setState({ isAnalysisMode: false });
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.setState({ isAnalysisMode: true });
+
+    searchTo(9000);
+    await useGameStore.getState().runAnalysis({ force: true, visits: 9000 });
+    expect(depth()).toBe(9000);
+
+    useGameStore.setState((s) => ({ settings: { ...s.settings, katagoFastVisits: 25 } }));
+    searchTo(25);
+    await runReview();
+
+    // The review overwrites the deeper analysis instead of skipping it for
+    // already being "deep enough".
+    expect(depth()).toBe(25);
+
+    // And a second review searches again rather than replaying the cached
+    // result: the model can change with no URL change to notice, so a review is
+    // the refresh, not a cache hit. Two nodes on the line, two fresh searches.
+    const searched = analyzeMock.mock.calls.length;
+    await runReview();
+    expect(analyzeMock.mock.calls.length).toBe(searched + 2);
+  });
+
+  it('replaces positions one at a time and leaves the rest of the review alone', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    const nodeAt = (index: number) => {
+      let node = useGameStore.getState().rootNode;
+      for (let i = 0; i < index; i++) node = node.children[0]!;
+      return node;
+    };
+
+    useGameStore.setState({ isAnalysisMode: false });
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.getState().playMove(15, 15);
+    useGameStore.getState().playMove(3, 15);
+    useGameStore.setState({ isAnalysisMode: true });
+
+    // Every position already carries an earlier model's analysis.
+    searchTo(9000);
+    for (const index of [0, 1, 2, 3]) {
+      useGameStore.setState({ currentNode: nodeAt(index) });
+      await useGameStore.getState().runAnalysis({ force: true, visits: 9000 });
+      expect(nodeAt(index).analysis?.rootVisits).toBe(9000);
+    }
+
+    // Start a review and hold every answer, so nothing has been replaced yet.
+    const held: Array<() => void> = [];
+    analyzeMock.mockImplementation(
+      () => new Promise((resolve) => held.push(() => resolve(resultAt(25)))),
+    );
+    useGameStore.setState((s) => ({ settings: { ...s.settings, katagoFastVisits: 25 } }));
+    useGameStore.getState().startFastGameAnalysis();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Clicking review does not wipe anything: the old numbers stay on every
+    // position until that position's own new result arrives.
+    expect([0, 1, 2, 3].map((i) => nodeAt(i).analysis?.rootVisits)).toEqual([9000, 9000, 9000, 9000]);
+
+    // Release one answer: exactly that position is replaced.
+    expect(held.length).toBeGreaterThan(0);
+    held.shift()!();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(nodeAt(0).analysis?.rootVisits).toBe(25);
+
+    while (useGameStore.getState().isGameAnalysisRunning) {
+      for (const release of held.splice(0)) release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(nodeAt(3).analysis?.rootVisits).toBe(25);
+  });
 });
