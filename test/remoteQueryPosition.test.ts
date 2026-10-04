@@ -298,6 +298,16 @@ describe('remote analysis query', () => {
     expect(query.overrideSettings).not.toHaveProperty('topK');
   });
 
+  it('sends the scheduling priority only when one is given', () => {
+    const ranked = buildAnalysisQuery({ ...base, options: { priority: 1000 } });
+    expect(ranked.priority).toBe(1000);
+
+    // Unset must stay unset: KataGo reads a missing priority as 0, and sending
+    // an explicit 0 would be indistinguishable from a real low priority.
+    const unranked = buildAnalysisQuery({ ...base, options: {} });
+    expect(unranked).not.toHaveProperty('priority');
+  });
+
   it('omits analysisPVLen when the caller asks for no PV, which KataGo rejects as 0', () => {
     // "analysisPVLen: 0" comes back as "Must be an integer from 1 to 1000", so
     // the raw-eval path (evaluate/evaluateBatch ask for no PV) used to fail.

@@ -5,7 +5,7 @@ import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLibertie
 import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } from '../utils/sound';
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
 import { isKataGoCanceledError } from '../engine/katago/client';
-import { engineCanExtendSearch, getEngineClient } from '../engine/client';
+import { engineCanExtendSearch, getEngineClient, isRemoteEngine } from '../engine/client';
 import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
@@ -1236,6 +1236,12 @@ const initialSettings: GameSettings = {
   ...(loadStoredSettings() ?? {}),
 };
 
+// A remote analysis engine parallelizes across positions and schedules them by
+// priority itself, so the client hands it everything at once (KaTrain does the
+// same with a subprocess engine). The local worker keeps one search tree and
+// cancels a background group down to its newest request, so it stays serialized.
+analysisQueue.setConcurrency(isRemoteEngine(initialSettings) ? Number.POSITIVE_INFINITY : 1);
+
 let continuousToken = 0;
 /**
  * Append `move` to `parent` as a new child, applying captures, suicide and
@@ -1353,7 +1359,7 @@ const analyzeForPlayout = (
       s.settings.katagoConservativePass,
       wideRootNoise
     ),
-    run: () => getEngineClient(s.settings).analyze({
+    run: (ctx) => getEngineClient(s.settings).analyze({
       positionId: node.id,
       parentPositionId: node.parent?.id,
       positionKey: nodeAnalysisPositionKey(node, rules),
@@ -1382,6 +1388,8 @@ const analyzeForPlayout = (
       reuseTree: false,
       ownershipMode: 'none',
       analysisGroup: 'background',
+      priority: ctx.priority,
+      signal: ctx.signal,
     }),
   });
 };
@@ -1462,6 +1470,8 @@ const collapseFinishedSelfplay = (
   };
 };
 let gameAnalysisToken = 0;
+/** Bumped per sweep/equalize run; a new one supersedes the previous refine batch. */
+let refineToken = 0;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 /** Bumped per play-elsewhere request; see `analyzeTenuki`. */
 let tenukiToken = 0;
@@ -1473,8 +1483,12 @@ const ANALYSIS_QUEUE_PRIORITY = {
   // of stalling a move the AI owes the user in a live game.
   tenuki: 60,
   selfplay: 55,
+  equalize: 40,
   fullGame: 20,
   fastGame: 15,
+  // A sweep is a broad, slow scan: it outranks the background game review but
+  // must never push live analysis aside (KaTrain deprioritizes it the same way).
+  sweep: 12,
   quickGame: 10,
 } as const;
 // KaTrain-style report cadence (seconds -> ms).
@@ -1485,6 +1499,105 @@ const PROGRESS_APPLY_MIN_MS = 500;
 
 const isAnalysisCanceled = (err: unknown): boolean =>
   isKataGoCanceledError(err) || isAnalysisQueueCanceledError(err) || isAnalysisQueueStaleError(err);
+
+/**
+ * Runs one analysis per node, all at once on an engine that parallelizes across
+ * positions and one at a time on the engine that does not.
+ *
+ * The local worker keeps a single search tree and treats the newest background
+ * request in a group as the only one that matters, so handing it a whole batch
+ * would cancel every node but the last — exactly the hole the sequential loop
+ * exists to avoid. A remote analysis engine is the opposite: its
+ * `numAnalysisThreads` only help if several positions are in flight, so there the
+ * batch goes out together.
+ *
+ * `ownsRun` returning false means the run was superseded; the batch then stops
+ * touching state. `runOne` must resolve when its node is finished and may throw a
+ * cancellation, which is retried because a background node superseded by the
+ * user's own live analysis should not be left unanalyzed. Failures are reported
+ * through `onFailure`.
+ */
+async function runNodeAnalysisBatch(opts: {
+  nodes: GameNode[];
+  concurrent: boolean;
+  ownsRun: () => boolean;
+  runOne: (node: GameNode) => Promise<void>;
+  onFailure: (err: unknown) => void;
+  maxRetries?: number;
+}): Promise<void> {
+  const { nodes, concurrent, ownsRun, runOne, onFailure } = opts;
+  const maxRetries = opts.maxRetries ?? 3;
+
+  const runWithRetries = async (node: GameNode) => {
+    for (let tries = 0; ; tries++) {
+      if (!ownsRun()) return;
+      try {
+        await runOne(node);
+        return;
+      } catch (err) {
+        if (!isAnalysisCanceled(err)) {
+          onFailure(err);
+          return;
+        }
+        if (tries >= maxRetries) return;
+        await sleep(25);
+      }
+    }
+  };
+
+  if (concurrent) {
+    await Promise.all(nodes.map((node) => runWithRetries(node)));
+    return;
+  }
+
+  for (const node of nodes) {
+    if (!ownsRun()) return;
+    await runWithRetries(node);
+    await sleep(0);
+  }
+}
+
+/** GTP point label, matching the engine's own coordinates. */
+const gtpOf = (x: number, y: number, boardSize: number): string =>
+  x < 0 || y < 0 ? 'pass' : `${String.fromCharCode(65 + (x >= 8 ? x + 1 : x))}${boardSize - y}`;
+
+/**
+ * Fold the analysis of the position after `candidate` back onto the parent
+ * node's entry for it (KaTrain's `refine_move`).
+ *
+ * `analysis` evaluates the *child* position, so its root values are that move's
+ * value — the same quantity the parent's own move list reports for it — and
+ * replace the entry's numbers instead of being combined with them. The PV is
+ * prefixed with the move itself, as the parent's PVs are.
+ */
+function mergedWithRefinedCandidate(
+  result: AnalysisResult | null | undefined,
+  candidate: { x: number; y: number },
+  analysis: KataGoAnalysisPayload,
+  boardSize: number,
+): AnalysisResult | null {
+  if (!result) return null;
+  const index = result.moves.findIndex((m) => m.x === candidate.x && m.y === candidate.y);
+  if (index < 0) return null;
+  const existing = result.moves[index]!;
+  const best = result.moves[0];
+  const pointsLost = best ? Math.max(0, best.scoreLead - analysis.rootScoreLead) : 0;
+  const winRateLost = best ? Math.max(0, best.winRate - analysis.rootWinRate) : 0;
+  const moves = result.moves.slice();
+  moves[index] = {
+    ...existing,
+    winRate: analysis.rootWinRate,
+    scoreLead: analysis.rootScoreLead,
+    scoreSelfplay: analysis.rootScoreSelfplay,
+    scoreStdev: analysis.rootScoreStdev,
+    visits: Math.max(existing.visits, analysis.rootVisits ?? 0),
+    pv: [gtpOf(candidate.x, candidate.y, boardSize), ...(analysis.moves[0]?.pv ?? [])],
+    pointsLost,
+    relativePointsLost: pointsLost,
+    winRateLost,
+  };
+  return { ...result, moves };
+}
 
 /**
  * The sound of stepping onto a recorded move: the stone it places, the captures
@@ -2024,6 +2137,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       continuousToken++;
       analysisQueue.cancelGroup('interactive');
       analysisQueue.cancelGroup('tenuki');
+      // A sweep/equalize batch is a background scan the user may want to call
+      // off on its own; its results are already folded in one at a time.
+      analysisQueue.cancelGroup('refine');
       // Cancelling an *active* queue job only aborts its signal; the rejection
       // arrives when the engine call finally settles. Waiting for that would
       // leave the play-elsewhere readout saying "Checking..." after the user
@@ -2102,7 +2218,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         priority: ANALYSIS_QUEUE_PRIORITY.tenuki,
         staleKey: 'tenuki-analysis',
         cacheKey: analysisCacheKey('tenuki', positionKey, modelUrl, state.settings.katagoBackend, visits),
-        run: () =>
+        run: (ctx) =>
           getEngineClient(get().settings).analyze({
             // A distinct position id, and `reuseTree` off: the worker keeps a
             // search tree per position, and letting it re-root the live tree
@@ -2133,6 +2249,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
             conservativePass: state.settings.katagoConservativePass,
             rootPolicyTemperature: state.settings.katagoRootPolicyTemperature,
             fillDameBeforePass: state.settings.katagoFillDameBeforePass,
+            priority: ctx.priority,
+            signal: ctx.signal,
           }),
       })
       .then((payload) => {
@@ -2287,6 +2405,114 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ notification });
     };
 
+    /**
+     * Deepen each candidate move in a query of its own — KaTrain's `refine_move`.
+     *
+     * The engine answers with the value of the position *after* the move, which
+     * becomes that candidate's entry on this node. One query per candidate is
+     * what lets a remote engine spread them across its analysis threads; the
+     * local worker instead widens the root of a single search, so it keeps the
+     * single-query paths below.
+     */
+    const refineCandidates = (
+      node: GameNode,
+      candidates: Array<{ x: number; y: number }>,
+      visits: number,
+      label: string,
+      priority: number,
+    ) => {
+      const rules = s.settings.gameRules;
+      const boardSize = getBoardSizeFromBoard(s.board);
+      const opponent: Player = s.currentPlayer === 'black' ? 'white' : 'black';
+      const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
+      const komi = komiWithHandicapBonus(s.rootNode.gameState.board, rules, s.komi);
+      const positionKey = nodeAnalysisPositionKey(node, rules);
+      const nodeId = node.id;
+      const token = ++refineToken;
+
+      void Promise.allSettled(
+        candidates.map((candidate) =>
+          analysisQueue
+            .enqueue<KataGoAnalysisPayload>({
+              id: `refine:${nodeId}:${candidate.x},${candidate.y}`,
+              label: `${label} ${gtpOf(candidate.x, candidate.y, boardSize)}`,
+              group: 'refine',
+              priority,
+              cacheKey: analysisCacheKey(
+                'refine',
+                nodeId,
+                positionKey,
+                candidate.x,
+                candidate.y,
+                visits,
+                modelUrl,
+                s.settings.katagoBackend,
+                rules,
+              ),
+              run: (ctx) =>
+                getEngineClient(get().settings).analyze({
+                  // A distinct position id per candidate: the local worker keys
+                  // its kept search tree on it (unused on the remote path).
+                  positionId: `${nodeId}:refine:${candidate.x},${candidate.y}`,
+                  positionKey,
+                  modelUrl,
+                  backend: s.settings.katagoBackend,
+                  // The board *before* the move; `nextMove` appends it.
+                  board: s.board,
+                  previousBoard: s.board,
+                  previousPreviousBoard: node.parent?.gameState.board,
+                  currentPlayer: opponent,
+                  moveHistory: s.moveHistory,
+                  nextMove: { x: candidate.x, y: candidate.y, player: s.currentPlayer },
+                  komi,
+                  rules,
+                  topK: 10,
+                  analysisPvLen: Math.max(0, Math.min(s.settings.katagoAnalysisPvLen, 30)),
+                  includeMovesOwnership: false,
+                  ownershipMode: 'none',
+                  reuseTree: false,
+                  visits,
+                  maxTimeMs: longTimeMs,
+                  analysisGroup: 'background',
+                  priority: ctx.priority,
+                  signal: ctx.signal,
+                }),
+            })
+            .then((analysis) => {
+              if (token !== refineToken) return;
+              const current = get();
+              const target = current.currentNode.id === nodeId ? current.currentNode : node;
+              const merged = mergedWithRefinedCandidate(target.analysis, candidate, analysis, boardSize);
+              if (!merged) return;
+              target.analysis = merged;
+              set((state) => ({
+                analysisData: state.currentNode.id === nodeId ? merged : state.analysisData,
+                analysisCacheSize: getAnalysisCacheSize(state.rootNode),
+                treeVersion: state.treeVersion + 1,
+              }));
+            }),
+        ),
+      ).then((results) => {
+        if (token !== refineToken) return;
+        const failures = results.filter(
+          (entry): entry is PromiseRejectedResult => entry.status === 'rejected' && !isAnalysisCanceled(entry.reason),
+        );
+        if (failures.length === 0) {
+          toast(`${label}: ${candidates.length} candidates done.`);
+          return;
+        }
+        const message = errorMessage(failures[0]!.reason);
+        set({
+          engineStatus: 'error',
+          engineError: message,
+          notification: {
+            message: `${label}: ${failures.length} of ${candidates.length} candidates failed: ${message}`,
+            type: 'error' as const,
+          },
+        });
+      });
+    };
+
     if (mode === 'extra') {
       const base = Math.max(16, Math.min(s.settings.katagoVisits, ENGINE_MAX_VISITS));
       const prev = Math.max(0, Math.min(s.currentNode.analysisVisitsRequested ?? base, ENGINE_MAX_VISITS));
@@ -2305,6 +2531,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const maxMoveVisits = analysis.moves.reduce((acc, cur) => Math.max(acc, cur.visits), 1);
       const target = Math.max(maxMoveVisits * analysis.moves.length, s.currentNode.analysisVisitsRequested ?? s.settings.katagoVisits);
       const visits = Math.max(16, Math.min(target, ENGINE_MAX_VISITS));
+      if (isRemoteEngine(s.settings)) {
+        toast(`Equalize: ${analysis.moves.length} candidates at ${visits} visits`);
+        refineCandidates(
+          s.currentNode,
+          analysis.moves.map((m) => ({ x: m.x, y: m.y })),
+          visits,
+          'Equalize',
+          ANALYSIS_QUEUE_PRIORITY.equalize,
+        );
+        return;
+      }
       toast(`Equalize: ${visits} visits`);
       void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs });
       return;
@@ -2312,6 +2549,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (mode === 'sweep') {
       const visits = Math.max(16, Math.min(s.settings.katagoFastVisits, ENGINE_MAX_VISITS));
+      if (isRemoteEngine(s.settings)) {
+        const node = s.currentNode;
+        toast(`Sweep: ${visits} visits per candidate`);
+        void (async () => {
+          // Refined entries live on the node's move list, so a first pass has to
+          // have filled it (KaTrain assumes the same).
+          if (!node.analysis?.moves.length) {
+            await get().runAnalysis({ force: true, visits, maxTimeMs: longTimeMs });
+          }
+          if (get().currentNode.id !== node.id) return;
+          const moves = node.analysis?.moves ?? [];
+          if (moves.length === 0) return;
+          refineCandidates(
+            node,
+            moves.map((m) => ({ x: m.x, y: m.y })),
+            visits,
+            'Sweep',
+            ANALYSIS_QUEUE_PRIORITY.sweep,
+          );
+        })();
+        return;
+      }
       const boardSize = getBoardSizeFromBoard(s.board);
       const maxChildren = boardSize * boardSize;
       toast(`Sweep: ${visits} visits, maxChildren ${maxChildren}`);
@@ -3088,7 +3347,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                 conservativePass,
                 toEval.map((n) => nodeAnalysisPositionKey(n, rules))
               ),
-              run: () => getEngineClient(get().settings).evaluateBatch({
+              run: (ctx) => getEngineClient(get().settings).evaluateBatch({
               modelUrl,
               backend: s.settings.katagoBackend,
               positions: toEval.map((n) => ({
@@ -3101,6 +3360,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
               })),
               rules,
               conservativePass,
+              priority: ctx.priority,
+              signal: ctx.signal,
               }),
             });
             if (token !== gameAnalysisToken) return;
@@ -3216,133 +3477,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       let lastFailure: string | null = null;
       let lastUiUpdate = getAnimationNow();
       let metaSynced = false;
+      const concurrent = isRemoteEngine(get().settings);
       const stillOwnsRun = () =>
         token === gameAnalysisToken && get().isGameAnalysisRunning && get().gameAnalysisType === 'fast';
-      // A node whose job was preempted by the user's own live analysis is
-      // retried, not skipped: skipping left holes in the graph at exactly the
-      // moves they looked at, and a count that ended short of the total.
-      const preemptedRetries = new Map<string, number>();
 
-      for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
-        const node = nodes[nodeIndex]!;
-        if (token !== gameAnalysisToken) return;
-        if (!get().isGameAnalysisRunning) return;
-        if (get().gameAnalysisType !== 'fast') return;
-
-        const already = node.analysis && nodeAnalysisVisitCount(node) >= fastVisits;
-        if (!already) {
-          try {
-            const s = get();
-            const parentBoard = node.parent?.gameState.board;
-            const grandparentBoard = node.parent?.parent?.gameState.board;
-            const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
-            const rules = s.settings.gameRules;
-            const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
-              id: `fast-game:${token}:${node.id}`,
-              label: 'Fast game analysis',
-              group: 'game-analysis',
-              priority: ANALYSIS_QUEUE_PRIORITY.fastGame,
-              cacheKey: analysisCacheKey(
-                'fast-game',
-                node.id,
-                nodeAnalysisPositionKey(node, rules),
-                modelUrl,
-                s.settings.katagoBackend,
-                rules,
-                fastVisits,
-                maxTimeMs,
-                batchSize,
-                maxChildren,
-                topK,
-                analysisPvLen,
-                s.settings.katagoWideRootNoise,
-                s.settings.katagoRootPolicyTemperature,
-                s.settings.katagoNnRandomize,
-                s.settings.katagoConservativePass
-              ),
-              run: () => getEngineClient(get().settings).analyze({
-              positionId: node.id,
-              parentPositionId: node.parent?.id,
-              positionKey: nodeAnalysisPositionKey(node, rules),
-              parentPositionKey: parentAnalysisPositionKey(node, rules),
-              modelUrl,
-              backend: s.settings.katagoBackend,
-              board: node.gameState.board,
-              previousBoard: parentBoard,
-              previousPreviousBoard: grandparentBoard,
-              currentPlayer: node.gameState.currentPlayer,
-              moveHistory: node.gameState.moveHistory,
-              komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
-              rules,
-              topK,
-              analysisPvLen,
-              includeMovesOwnership: false,
-              wideRootNoise: s.settings.katagoWideRootNoise,
-              rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
-              fillDameBeforePass: s.settings.katagoFillDameBeforePass,
-              nnRandomize: s.settings.katagoNnRandomize,
-              conservativePass: s.settings.katagoConservativePass,
-              visits: fastVisits,
-              maxTimeMs,
-              batchSize,
-              maxChildren,
-              reuseTree: false,
-              ownershipMode: 'none',
-              analysisGroup: 'background',
-              }),
-            });
-            if (token !== gameAnalysisToken) return;
-            if (!get().isGameAnalysisRunning) return;
-            if (get().gameAnalysisType !== 'fast') return;
-            if (!metaSynced) {
-              const engineInfo = getEngineClient(get().settings).getEngineInfo();
-              set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
-              metaSynced = true;
-            }
-
-            node.analysis = {
-              rootWinRate: analysis.rootWinRate,
-              rootScoreLead: analysis.rootScoreLead,
-              rootScoreSelfplay: analysis.rootScoreSelfplay,
-              rootScoreStdev: analysis.rootScoreStdev,
-              rawWinRate: analysis.rawWinRate,
-              rawScoreLead: analysis.rawScoreLead,
-              rawScoreSelfplay: analysis.rawScoreSelfplay,
-              rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
-              rawNoResultProb: analysis.rawNoResultProb,
-              rawStWrError: analysis.rawStWrError,
-              rawStScoreError: analysis.rawStScoreError,
-              rawVarTimeLeft: analysis.rawVarTimeLeft,
-              moves: analysis.moves,
-              territory: createEmptyTerritory(getBoardSizeFromBoard(node.gameState.board)),
-              policy: undefined,
-              ownershipStdev: undefined,
-              ownershipMode: 'none',
-            };
-            node.analysisVisitsRequested = fastVisits;
-          } catch (err) {
-            if (isAnalysisCanceled(err)) {
-              // Queue-level preemption (e.g. live analysis while the user
-              // navigates) aborts the active job without bumping the token.
-              if (!stillOwnsRun()) return;
-              const tries = preemptedRetries.get(node.id) ?? 0;
-              if (tries < 3) {
-                preemptedRetries.set(node.id, tries + 1);
-                await sleep(25);
-                nodeIndex -= 1;
-              }
-              continue;
-            }
-            failed++;
-            lastFailure = errorMessage(err);
-          }
-        }
-        if (token !== gameAnalysisToken) return;
-        if (!get().isGameAnalysisRunning) return;
-        if (get().gameAnalysisType !== 'fast') return;
-
+      const markDone = () => {
+        if (!stillOwnsRun()) return;
         done++;
-
         const now = getAnimationNow();
         if (now - lastUiUpdate > 120 || done === total) {
           set((s) => ({
@@ -3353,11 +3494,116 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }));
           lastUiUpdate = now;
         }
+      };
 
-        await sleep(0);
-      }
+      const runOne = async (node: GameNode) => {
+        const already = node.analysis && nodeAnalysisVisitCount(node) >= fastVisits;
+        if (!already) {
+          const s = get();
+          const parentBoard = node.parent?.gameState.board;
+          const grandparentBoard = node.parent?.parent?.gameState.board;
+          const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
+          const rules = s.settings.gameRules;
+          const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
+            id: `fast-game:${token}:${node.id}`,
+            label: 'Fast game analysis',
+            group: 'game-analysis',
+            priority: ANALYSIS_QUEUE_PRIORITY.fastGame,
+            cacheKey: analysisCacheKey(
+              'fast-game',
+              node.id,
+              nodeAnalysisPositionKey(node, rules),
+              modelUrl,
+              s.settings.katagoBackend,
+              rules,
+              fastVisits,
+              maxTimeMs,
+              batchSize,
+              maxChildren,
+              topK,
+              analysisPvLen,
+              s.settings.katagoWideRootNoise,
+              s.settings.katagoRootPolicyTemperature,
+              s.settings.katagoNnRandomize,
+              s.settings.katagoConservativePass
+            ),
+            run: (ctx) => getEngineClient(get().settings).analyze({
+            positionId: node.id,
+            parentPositionId: node.parent?.id,
+            positionKey: nodeAnalysisPositionKey(node, rules),
+            parentPositionKey: parentAnalysisPositionKey(node, rules),
+            modelUrl,
+            backend: s.settings.katagoBackend,
+            board: node.gameState.board,
+            previousBoard: parentBoard,
+            previousPreviousBoard: grandparentBoard,
+            currentPlayer: node.gameState.currentPlayer,
+            moveHistory: node.gameState.moveHistory,
+            komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
+            rules,
+            topK,
+            analysisPvLen,
+            includeMovesOwnership: false,
+            wideRootNoise: s.settings.katagoWideRootNoise,
+            rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
+            fillDameBeforePass: s.settings.katagoFillDameBeforePass,
+            nnRandomize: s.settings.katagoNnRandomize,
+            conservativePass: s.settings.katagoConservativePass,
+            visits: fastVisits,
+            maxTimeMs,
+            batchSize,
+            maxChildren,
+            reuseTree: false,
+            ownershipMode: 'none',
+            analysisGroup: 'background',
+            priority: ctx.priority,
+            signal: ctx.signal,
+            }),
+          });
+          if (!stillOwnsRun()) return;
+          if (!metaSynced) {
+            const engineInfo = getEngineClient(get().settings).getEngineInfo();
+            set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
+            metaSynced = true;
+          }
 
-      if (token !== gameAnalysisToken) return;
+          node.analysis = {
+            rootWinRate: analysis.rootWinRate,
+            rootScoreLead: analysis.rootScoreLead,
+            rootScoreSelfplay: analysis.rootScoreSelfplay,
+            rootScoreStdev: analysis.rootScoreStdev,
+            rawWinRate: analysis.rawWinRate,
+            rawScoreLead: analysis.rawScoreLead,
+            rawScoreSelfplay: analysis.rawScoreSelfplay,
+            rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
+            rawNoResultProb: analysis.rawNoResultProb,
+            rawStWrError: analysis.rawStWrError,
+            rawStScoreError: analysis.rawStScoreError,
+            rawVarTimeLeft: analysis.rawVarTimeLeft,
+            moves: analysis.moves,
+            territory: createEmptyTerritory(getBoardSizeFromBoard(node.gameState.board)),
+            policy: undefined,
+            ownershipStdev: undefined,
+            ownershipMode: 'none',
+          };
+          node.analysisVisitsRequested = fastVisits;
+        }
+        markDone();
+      };
+
+      await runNodeAnalysisBatch({
+        nodes,
+        concurrent,
+        ownsRun: stillOwnsRun,
+        runOne,
+        onFailure: (err) => {
+          failed++;
+          lastFailure = errorMessage(err);
+          markDone();
+        },
+      });
+
+      if (!stillOwnsRun()) return;
       set((s) => ({
         isGameAnalysisRunning: false,
         gameAnalysisType: null,
@@ -3405,146 +3651,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       let lastFailure: string | null = null;
       let lastUiUpdate = getAnimationNow();
       let metaSynced = false;
+      const concurrent = isRemoteEngine(get().settings);
       const stillOwnsRun = () =>
         token === gameAnalysisToken && get().isGameAnalysisRunning && get().gameAnalysisType === 'full';
-      // A node whose job was preempted by the user's own live analysis is
-      // retried, not skipped: skipping left holes in the graph at exactly the
-      // moves they looked at, and a count that ended short of the total.
-      const preemptedRetries = new Map<string, number>();
 
-      for (let nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
-        const node = nodes[nodeIndex]!;
-        if (token !== gameAnalysisToken) return;
-        if (!get().isGameAnalysisRunning) return;
-        if (get().gameAnalysisType !== 'full') return;
-
-        const already = node.analysis && node.analysis.moves.length > 0 && nodeAnalysisVisitCount(node) >= visits;
-        if (!already) {
-          try {
-            const s = get();
-            const parentBoard = node.parent?.gameState.board;
-            const grandparentBoard = node.parent?.parent?.gameState.board;
-            const maxTimeMs = ENGINE_MAX_TIME_MS;
-            const batchSize = Math.max(1, Math.min(s.settings.katagoBatchSize, 64));
-            const boardSize = getBoardSizeFromBoard(node.gameState.board);
-            const maxChildren = Math.max(4, Math.min(s.settings.katagoMaxChildren, boardSize * boardSize));
-            const topK = Math.max(5, Math.min(s.settings.katagoTopK, 50));
-            const analysisPvLen = Math.max(0, Math.min(s.settings.katagoAnalysisPvLen, 60));
-            const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
-            const rules = s.settings.gameRules;
-
-            const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
-              id: `full-game:${token}:${node.id}`,
-              label: 'Full game analysis',
-              group: 'game-analysis',
-              priority: ANALYSIS_QUEUE_PRIORITY.fullGame,
-              cacheKey: analysisCacheKey(
-                'full-game',
-                node.id,
-                nodeAnalysisPositionKey(node, rules),
-                modelUrl,
-                s.settings.katagoBackend,
-                rules,
-                visits,
-                maxTimeMs,
-                batchSize,
-                maxChildren,
-                topK,
-                analysisPvLen,
-                s.settings.katagoOwnershipMode,
-                s.settings.katagoWideRootNoise,
-                s.settings.katagoNnRandomize,
-                s.settings.katagoConservativePass,
-                s.settings.humanSlEnabled ? s.settings.humanSlProfile : '',
-                s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : ''
-              ),
-              run: () => getEngineClient(get().settings).analyze({
-              positionId: node.id,
-              parentPositionId: node.parent?.id,
-              positionKey: nodeAnalysisPositionKey(node, rules),
-              parentPositionKey: parentAnalysisPositionKey(node, rules),
-              modelUrl,
-              backend: s.settings.katagoBackend,
-              board: node.gameState.board,
-              previousBoard: parentBoard,
-              previousPreviousBoard: grandparentBoard,
-              currentPlayer: node.gameState.currentPlayer,
-              moveHistory: node.gameState.moveHistory,
-              komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
-              rules,
-              topK,
-              analysisPvLen,
-              includeMovesOwnership: s.settings.katagoOwnershipMode === 'tree',
-              wideRootNoise: s.settings.katagoWideRootNoise,
-              rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
-              fillDameBeforePass: s.settings.katagoFillDameBeforePass,
-              nnRandomize: s.settings.katagoNnRandomize,
-              conservativePass: s.settings.katagoConservativePass,
-              humanModelUrl: s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : undefined,
-              humanSlProfile: s.settings.humanSlEnabled ? s.settings.humanSlProfile : undefined,
-              visits,
-              maxTimeMs,
-              batchSize,
-              maxChildren,
-              reuseTree: false,
-              ownershipMode: s.settings.katagoOwnershipMode,
-              analysisGroup: 'background',
-              }),
-            });
-            if (token !== gameAnalysisToken) return;
-            if (!get().isGameAnalysisRunning) return;
-            if (get().gameAnalysisType !== 'full') return;
-
-            if (!metaSynced) {
-              const engineInfo = getEngineClient(get().settings).getEngineInfo();
-              set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
-              metaSynced = true;
-            }
-
-            node.analysis = {
-              rootWinRate: analysis.rootWinRate,
-              rootScoreLead: analysis.rootScoreLead,
-              rootScoreSelfplay: analysis.rootScoreSelfplay,
-              rootScoreStdev: analysis.rootScoreStdev,
-              rootVisits: analysis.rootVisits,
-              rawWinRate: analysis.rawWinRate,
-              rawScoreLead: analysis.rawScoreLead,
-              rawScoreSelfplay: analysis.rawScoreSelfplay,
-              rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
-              rawNoResultProb: analysis.rawNoResultProb,
-              rawStWrError: analysis.rawStWrError,
-              rawStScoreError: analysis.rawStScoreError,
-              rawVarTimeLeft: analysis.rawVarTimeLeft,
-              moves: analysis.moves,
-              territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
-              policy: analysis.policy,
-              ownershipStdev: analysis.ownershipStdev,
-              ownershipMode: s.settings.katagoOwnershipMode,
-            };
-            node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, visits);
-          } catch (err) {
-            if (isAnalysisCanceled(err)) {
-              // Queue-level preemption (e.g. live analysis while the user
-              // navigates) aborts the active job without bumping the token.
-              if (!stillOwnsRun()) return;
-              const tries = preemptedRetries.get(node.id) ?? 0;
-              if (tries < 3) {
-                preemptedRetries.set(node.id, tries + 1);
-                await sleep(25);
-                nodeIndex -= 1;
-              }
-              continue;
-            }
-            failed++;
-            lastFailure = errorMessage(err);
-          }
-        }
-        if (token !== gameAnalysisToken) return;
-        if (!get().isGameAnalysisRunning) return;
-        if (get().gameAnalysisType !== 'full') return;
-
+      const markDone = () => {
+        if (!stillOwnsRun()) return;
         done++;
-
         const now = getAnimationNow();
         if (now - lastUiUpdate > 120 || done === total) {
           set((s) => ({
@@ -3555,11 +3668,129 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }));
           lastUiUpdate = now;
         }
+      };
 
-        await sleep(0);
-      }
+      const runOne = async (node: GameNode) => {
+        const already = node.analysis && node.analysis.moves.length > 0 && nodeAnalysisVisitCount(node) >= visits;
+        if (!already) {
+          const s = get();
+          const parentBoard = node.parent?.gameState.board;
+          const grandparentBoard = node.parent?.parent?.gameState.board;
+          const maxTimeMs = ENGINE_MAX_TIME_MS;
+          const batchSize = Math.max(1, Math.min(s.settings.katagoBatchSize, 64));
+          const boardSize = getBoardSizeFromBoard(node.gameState.board);
+          const maxChildren = Math.max(4, Math.min(s.settings.katagoMaxChildren, boardSize * boardSize));
+          const topK = Math.max(5, Math.min(s.settings.katagoTopK, 50));
+          const analysisPvLen = Math.max(0, Math.min(s.settings.katagoAnalysisPvLen, 60));
+          const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
+          const rules = s.settings.gameRules;
 
-      if (token !== gameAnalysisToken) return;
+          const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
+            id: `full-game:${token}:${node.id}`,
+            label: 'Full game analysis',
+            group: 'game-analysis',
+            priority: ANALYSIS_QUEUE_PRIORITY.fullGame,
+            cacheKey: analysisCacheKey(
+              'full-game',
+              node.id,
+              nodeAnalysisPositionKey(node, rules),
+              modelUrl,
+              s.settings.katagoBackend,
+              rules,
+              visits,
+              maxTimeMs,
+              batchSize,
+              maxChildren,
+              topK,
+              analysisPvLen,
+              s.settings.katagoOwnershipMode,
+              s.settings.katagoWideRootNoise,
+              s.settings.katagoNnRandomize,
+              s.settings.katagoConservativePass,
+              s.settings.humanSlEnabled ? s.settings.humanSlProfile : '',
+              s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : ''
+            ),
+            run: (ctx) => getEngineClient(get().settings).analyze({
+            positionId: node.id,
+            parentPositionId: node.parent?.id,
+            positionKey: nodeAnalysisPositionKey(node, rules),
+            parentPositionKey: parentAnalysisPositionKey(node, rules),
+            modelUrl,
+            backend: s.settings.katagoBackend,
+            board: node.gameState.board,
+            previousBoard: parentBoard,
+            previousPreviousBoard: grandparentBoard,
+            currentPlayer: node.gameState.currentPlayer,
+            moveHistory: node.gameState.moveHistory,
+            komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
+            rules,
+            topK,
+            analysisPvLen,
+            includeMovesOwnership: s.settings.katagoOwnershipMode === 'tree',
+            wideRootNoise: s.settings.katagoWideRootNoise,
+            rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
+            fillDameBeforePass: s.settings.katagoFillDameBeforePass,
+            nnRandomize: s.settings.katagoNnRandomize,
+            conservativePass: s.settings.katagoConservativePass,
+            humanModelUrl: s.settings.humanSlEnabled ? s.settings.humanSlModelUrl : undefined,
+            humanSlProfile: s.settings.humanSlEnabled ? s.settings.humanSlProfile : undefined,
+            visits,
+            maxTimeMs,
+            batchSize,
+            maxChildren,
+            reuseTree: false,
+            ownershipMode: s.settings.katagoOwnershipMode,
+            analysisGroup: 'background',
+            priority: ctx.priority,
+            signal: ctx.signal,
+            }),
+          });
+          if (!stillOwnsRun()) return;
+
+          if (!metaSynced) {
+            const engineInfo = getEngineClient(get().settings).getEngineInfo();
+            set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
+            metaSynced = true;
+          }
+
+          node.analysis = {
+            rootWinRate: analysis.rootWinRate,
+            rootScoreLead: analysis.rootScoreLead,
+            rootScoreSelfplay: analysis.rootScoreSelfplay,
+            rootScoreStdev: analysis.rootScoreStdev,
+            rootVisits: analysis.rootVisits,
+            rawWinRate: analysis.rawWinRate,
+            rawScoreLead: analysis.rawScoreLead,
+            rawScoreSelfplay: analysis.rawScoreSelfplay,
+            rawScoreSelfplayStdev: analysis.rawScoreSelfplayStdev,
+            rawNoResultProb: analysis.rawNoResultProb,
+            rawStWrError: analysis.rawStWrError,
+            rawStScoreError: analysis.rawStScoreError,
+            rawVarTimeLeft: analysis.rawVarTimeLeft,
+            moves: analysis.moves,
+            territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
+            policy: analysis.policy,
+            ownershipStdev: analysis.ownershipStdev,
+            ownershipMode: s.settings.katagoOwnershipMode,
+          };
+          node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, visits);
+        }
+        markDone();
+      };
+
+      await runNodeAnalysisBatch({
+        nodes,
+        concurrent,
+        ownsRun: stillOwnsRun,
+        runOne,
+        onFailure: (err) => {
+          failed++;
+          lastFailure = errorMessage(err);
+          markDone();
+        },
+      });
+
+      if (!stillOwnsRun()) return;
       set((s) => ({
         isGameAnalysisRunning: false,
         gameAnalysisType: null,
@@ -3811,7 +4042,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           staleKey: 'interactive-analysis',
           cacheKey: interactiveCacheKey,
           bypassCache: opts?.force === true,
-          preempt: true,
+          // A remote engine schedules by priority itself, and its other queries
+          // are worth keeping: canceling the background batch would only make
+          // the interactive search wait for a termination round trip. The local
+          // worker has no such scheduler, so preemption stays for it.
+          preempt: !isRemoteEngine(state.settings),
           run: (ctx) => getEngineClient(get().settings).analyze({
 	          positionId: node.id,
 	          parentPositionId: node.parent?.id,
@@ -3847,6 +4082,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           reuseTree,
           ownershipMode: state.settings.katagoOwnershipMode,
           analysisGroup: 'interactive',
+          priority: ctx.priority,
+          signal: ctx.signal,
           onProgress: onProgress
             ? (analysis) => {
                 if (ctx.signal.aborted || ctx.isStale()) return;
@@ -3964,6 +4201,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const engineChanged = engineKeys.some((k) => newSettings[k] !== undefined && newSettings[k] !== state.settings[k]);
       if (!engineChanged) return { settings: nextSettings };
+
+      // Switching between the local worker and a remote server changes how many
+      // analyses may be in flight; see the queue's setConcurrency.
+      analysisQueue.setConcurrency(isRemoteEngine(nextSettings) ? Number.POSITIVE_INFINITY : 1);
 
       continuousToken++;
       selfplayToken++;
@@ -4437,8 +4678,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
             aiWantsHumanPolicy ? state.settings.humanSlBotStyle : '',
             handicapPda
           ),
-          preempt: true,
-          run: () => getEngineClient(get().settings).analyze({
+          // See runAnalysis: a remote engine ranks queries itself and its other
+          // work should survive; the local worker needs the client-side cancel.
+          preempt: !isRemoteEngine(state.settings),
+          run: (ctx) => getEngineClient(get().settings).analyze({
 	          positionId: nodeId,
 	          parentPositionId: node.parent?.id,
             positionKey,
@@ -4475,6 +4718,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           reuseTree: state.settings.katagoReuseTree,
           ownershipMode: aiOwnershipMode,
           analysisGroup: 'background',
+          priority: ctx.priority,
+          signal: ctx.signal,
           }),
         })
         .then((analysis) => {

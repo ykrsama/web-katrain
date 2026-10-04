@@ -40,6 +40,12 @@ export interface RemoteQuery {
   reportDuringSearchEvery?: number;
   overrideSettings?: Record<string, unknown>;
   topK?: number;
+  /**
+   * Scheduling priority. KataGo's analysis engine hands its analysis threads to
+   * the highest priority first, so live analysis keeps outranking a background
+   * game scan that was queued earlier. Larger is more urgent; unset is 0.
+   */
+  priority?: number;
   // KataGo 1.14+ "avoidMoves": array of moves the search may not play at the root.
   avoidMoves?: Array<{ move: string; player?: string; untilDepth?: number }>;
   // KataGo 1.14+ "allowMoves": the complement of avoidMoves.
@@ -290,6 +296,26 @@ export function buildQueryPosition(
 }
 
 /**
+ * Describe the position after one more move (KaTrain's `next_move`).
+ *
+ * Used by the per-candidate analysis modes: instead of widening the root of the
+ * current position, each candidate move is searched in its own query, which is
+ * what lets a remote engine put them on different analysis threads. Appending to
+ * `moves` — rather than sending the resulting board as setup stones — keeps the
+ * capture and ko history the search needs.
+ */
+export function appendPositionMove(
+  position: RemoteQueryPosition,
+  move: { x: number; y: number; player: Player },
+  boardSize: number,
+): RemoteQueryPosition {
+  return {
+    ...position,
+    moves: [...position.moves, [colorToKataGo(move.player), coordToGtp(move.x, move.y, boardSize)]],
+  };
+}
+
+/**
  * Convert a rules enum to the string KataGo expects.
  */
 export function rulesToKataGoString(rules: GameRules): string {
@@ -308,6 +334,8 @@ export function rulesToKataGoString(rules: GameRules): string {
 
 /** The analysis arguments that end up in a remote query. */
 export type RemoteAnalysisOptions = {
+  /** Higher is more urgent; see `RemoteQuery.priority`. */
+  priority?: number;
   visits?: number;
   maxTimeMs?: number;
   ownershipMode?: 'none' | 'root' | 'tree';
@@ -382,6 +410,13 @@ export function buildAnalysisQuery(args: {
       : 0.5,
     overrideSettings,
   };
+
+  // Let the engine's scheduler rank this query against the others we have open.
+  // Only send it when the caller has an opinion; leaving it out keeps KataGo's
+  // own default of 0.
+  if (options.priority !== undefined) {
+    query.priority = options.priority;
+  }
 
   // KataGo rejects `analysisPVLen: 0` ("Must be an integer from 1 to 1000"),
   // which is what the raw-eval path asked for. Omitting the field is how you

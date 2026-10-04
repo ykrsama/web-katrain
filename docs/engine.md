@@ -191,6 +191,35 @@ The store uses the engine in several ways:
 The main-thread `analysisQueue` handles cancellation, staleness, priority, and
 cache reuse before requests reach the worker.
 
+### Remote analysis and the engine's parallelism
+
+A remote KataGo analysis engine spreads its work over `numAnalysisThreads`
+positions, and ranks the queries it has open by their `priority` field (higher
+first). It also stops a query when it is sent `{"action":"terminate"}`. The app
+uses all three, the way KaTrain does:
+
+- Every engine call is given the queue job's priority, so live analysis
+  outranks a background game review on the server's own scheduler.
+- Aborting a job (navigating away, a newer interactive request, a settings
+  change) sends the engine a `terminate`, which is what actually frees the
+  analysis thread. The engine may never answer a terminated query, so the client
+  settles the promise itself rather than waiting for the reply.
+- With a remote engine the queue runs every job at once
+  (`setConcurrency(Infinity)`) instead of one at a time, and whole-game analysis
+  hands it the entire line together. The local worker is the opposite: it keeps
+  a single search tree and cancels a background group down to its newest
+  request, so it stays serialized and takes nodes one at a time.
+
+Sweep and equalize follow KaTrain's `refine_move`: on the remote engine they ask
+for one query per candidate, each searching the position *after* that move
+(`appendPositionMove`), and fold each answer back onto the parent node's entry
+for the move. The local worker widens the root of a single search instead, since
+that is what its `maxChildren` setting is for.
+
+`topK`/`maxChildren` are the local worker's controls; KataGo's analysis query
+has no such fields (it answers `topK` with "Unexpected or unused field"), so the
+remote path does not send them.
+
 ## AI Strategies
 
 The strategy list mirrors KaTrain concepts: `default`, `rank`, `scoreloss`,

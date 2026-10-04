@@ -31,9 +31,21 @@ export const isAnalysisQueueStaleError = (err: unknown): err is AnalysisQueueSta
 type AbortListener = () => void;
 
 export class AnalysisQueueSignal {
+  private readonly controller = new AbortController();
   private listeners = new Set<AbortListener>();
   aborted = false;
   reason = '';
+
+  /**
+   * The native signal handed to engine clients.
+   *
+   * The queue's own signal is what the queue reasons about; engine clients take
+   * an `AbortSignal` so that aborting a job can also tell the engine to stop
+   * (a remote engine is sent a `terminate` for the query it is still searching).
+   */
+  toAbortSignal(): AbortSignal {
+    return this.controller.signal;
+  }
 
   addAbortListener(listener: AbortListener): () => void {
     if (this.aborted) {
@@ -52,6 +64,7 @@ export class AnalysisQueueSignal {
     if (this.aborted) return;
     this.aborted = true;
     this.reason = reason;
+    this.controller.abort(new AnalysisQueueCanceledError(reason || undefined));
     for (const listener of this.listeners) listener();
     this.listeners.clear();
   }
@@ -59,7 +72,10 @@ export class AnalysisQueueSignal {
 
 export type AnalysisQueueContext = {
   jobId: string;
-  signal: AnalysisQueueSignal;
+  /** Aborted when the job is canceled; forwarded to the engine so it can stop. */
+  signal: AbortSignal;
+  /** The job's queue priority. Higher is more urgent, the same direction KataGo uses. */
+  priority: number;
   isStale: () => boolean;
 };
 
@@ -112,14 +128,36 @@ export class AnalysisQueue {
   private readonly cache = new Map<string, unknown>();
   private readonly cacheSizeListeners = new Set<AnalysisQueueCacheSizeListener>();
   private readonly maxCacheEntries: number;
+  /**
+   * How many jobs may run at once.
+   *
+   * 1 is the local worker: it keeps a single search tree, and its background
+   * cancellation treats the newest request in a group as the only one that
+   * matters, so a concurrent batch would cancel itself down to its last node.
+   * `Number.POSITIVE_INFINITY` matches KaTrain, which pushes every query to the
+   * engine and lets the engine's own scheduler order them; a remote analysis
+   * engine parallelizes across positions itself.
+   */
+  private concurrency = 1;
 
   constructor(maxCacheEntries = 128) {
     this.maxCacheEntries = maxCacheEntries;
   }
 
+  setConcurrency(value: number): void {
+    const next = Math.max(1, value);
+    if (next === this.concurrency) return;
+    this.concurrency = next;
+    this.pump();
+  }
+
+  getConcurrency(): number {
+    return this.concurrency;
+  }
+
   enqueue<T>(opts: AnalysisQueueEnqueueOptions<T>): Promise<T> {
     const staleVersion = opts.staleKey ? this.bumpStaleVersion(opts.staleKey) : undefined;
-    if (opts.staleKey) this.cancelPendingStaleJobs(opts.staleKey, staleVersion);
+    if (opts.staleKey) this.cancelStaleJobs(opts.staleKey, staleVersion);
 
     const cached = opts.cacheKey && !opts.bypassCache ? this.cache.get(opts.cacheKey) : undefined;
     if (cached !== undefined) return Promise.resolve(cached as T);
@@ -141,15 +179,12 @@ export class AnalysisQueue {
         reject,
       };
 
-      const hasHigherPriorityActive = Array.from(this.active).some(
-        (activeJob) => !activeJob.signal.aborted && activeJob.priority > job.priority
-      );
-      if (job.preempt && !hasHigherPriorityActive) {
-        this.cancelActiveAtOrBelow(job.priority, `Preempted by ${job.label}`);
-        this.start(job as AnalysisQueueJob<unknown>);
-        return;
-      }
-
+      // A preempting job cancels whatever is at or below its priority, so a
+      // live analysis does not have to wait behind a background batch. It is
+      // then queued normally: `pump` treats an aborted job as no longer holding
+      // a slot, so it starts at once when a slot was freed, and waits when the
+      // slots are taken by jobs that outrank it.
+      if (job.preempt) this.cancelActiveAtOrBelow(job.priority, `Preempted by ${job.label}`);
       this.pending.push(job as AnalysisQueueJob<unknown>);
       this.pump();
     });
@@ -175,6 +210,8 @@ export class AnalysisQueue {
       job.signal.abort(reason);
       count++;
     }
+    // Aborting frees a slot, so whatever was waiting behind it may start now.
+    this.pump();
     return count;
   }
 
@@ -203,8 +240,8 @@ export class AnalysisQueue {
 
   private start(job: AnalysisQueueJob<unknown>): void {
     if (job.signal.aborted) {
+      // Superseded between being queued and being started: it never held a slot.
       job.reject(new AnalysisQueueCanceledError(job.signal.reason || undefined));
-      this.pump();
       return;
     }
 
@@ -212,7 +249,7 @@ export class AnalysisQueue {
     const isStale = () => this.isStale(job);
 
     void job
-      .run({ jobId: job.id, signal: job.signal, isStale })
+      .run({ jobId: job.id, signal: job.signal.toAbortSignal(), priority: job.priority, isStale })
       .then((result) => {
         if (job.signal.aborted) throw new AnalysisQueueCanceledError(job.signal.reason || undefined);
         if (isStale()) throw new AnalysisQueueStaleError(`${job.label} result was superseded`);
@@ -237,10 +274,25 @@ export class AnalysisQueue {
   }
 
   private pump(): void {
-    if (this.active.size > 0 || this.pending.length === 0) return;
-    this.pending.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
-    const next = this.pending.shift();
-    if (next) this.start(next);
+    while (this.activeSlots() < this.concurrency) {
+      if (this.pending.length === 0) return;
+      this.pending.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
+      const next = this.pending.shift();
+      if (!next) return;
+      this.start(next);
+    }
+  }
+
+  /**
+   * Active jobs that still hold a slot. An aborted job's engine work is being
+   * torn down and must not keep the job behind it waiting.
+   */
+  private activeSlots(): number {
+    let slots = 0;
+    for (const job of this.active) {
+      if (!job.signal.aborted) slots++;
+    }
+    return slots;
   }
 
   private cancelActiveAtOrBelow(priority: number, reason: string): void {
@@ -249,15 +301,35 @@ export class AnalysisQueue {
     }
   }
 
-  private cancelPendingStaleJobs(staleKey: string, currentVersion?: number): void {
+  /**
+   * Supersede everything still referencing an older version of `staleKey`.
+   *
+   * This covers jobs that have not started, and jobs that have: an answer
+   * nobody will read must not keep an engine slot busy. For a remote engine the
+   * abort is also what sends the `terminate`, which is the only way to give the
+   * slot back before the search finishes on its own.
+   */
+  private cancelStaleJobs(staleKey: string, currentVersion?: number): void {
+    const superseded = (job: AnalysisQueueJob<unknown>) =>
+      job.staleKey === staleKey && job.staleVersion !== currentVersion;
+
     for (let i = this.pending.length - 1; i >= 0; i--) {
       const job = this.pending[i]!;
-      if (job.staleKey !== staleKey || job.staleVersion === currentVersion) continue;
+      if (!superseded(job)) continue;
       this.pending.splice(i, 1);
       const reason = `${job.label} was superseded`;
       job.signal.abort(reason);
       job.reject(new AnalysisQueueStaleError(reason));
     }
+
+    for (const job of this.active) {
+      if (!superseded(job)) continue;
+      const reason = `${job.label} was superseded`;
+      job.signal.abort(reason);
+      job.reject(new AnalysisQueueStaleError(reason));
+    }
+    // The superseded job no longer holds a slot; start whatever was behind it.
+    this.pump();
   }
 
   private bumpStaleVersion(staleKey: string): number {

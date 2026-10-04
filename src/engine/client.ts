@@ -50,6 +50,17 @@ export function getEngineClient(settings: EngineSettings) {
 }
 
 /**
+ * Whether these settings resolve to a remote analysis engine.
+ *
+ * A remote engine accepts many queries at once and parallelizes across them
+ * itself, so the client must not serialize on its behalf; the local worker is
+ * the opposite (see `AnalysisQueue.setConcurrency`).
+ */
+export function isRemoteEngine(settings: EngineSettings): boolean {
+  return remoteEngineUrlFor(settings) !== null;
+}
+
+/**
  * Whether the engine behind these settings can deepen a search it has already
  * run.
  *

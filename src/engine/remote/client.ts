@@ -8,7 +8,7 @@
 
 import type { KataGoAnalysisPayload } from '../katago/types';
 import type { BoardState, GameRules, KataGoBackendPreference, Move, Player, RegionOfInterest } from '../../types';
-import { buildAnalysisQuery, buildQueryPosition, type RemoteMoveInfo, type RemoteQuery, type RemoteResponse } from './types';
+import { buildAnalysisQuery, buildQueryPosition, appendPositionMove, type RemoteMoveInfo, type RemoteQuery, type RemoteResponse } from './types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -232,6 +232,18 @@ class RemoteEngineClient {
     fillDameBeforePass?: boolean;
     avoidMoves?: Array<{ x: number; y: number; player?: Player; untilDepth?: number }>;
     allowMoves?: Array<{ moves: Array<{ x: number; y: number }>; player?: Player; untilDepth?: number }>;
+    /**
+     * Scheduling priority for the engine. Higher is more urgent; live analysis
+     * keeps outranking a background game scan when the server has to choose.
+     */
+    priority?: number;
+    /** Aborting this sends the engine a `terminate` for the query. */
+    signal?: AbortSignal;
+    /**
+     * Analyze the position after this move instead of the board as given
+     * (KaTrain's `next_move`). The caller passes the board *before* the move.
+     */
+    nextMove?: Move;
     onProgress?: (analysis: KataGoAnalysisPayload) => void;
   }): Promise<KataGoAnalysisPayload> {
     this._rejectIfCrashed();
@@ -242,22 +254,40 @@ class RemoteEngineClient {
 
     const rules = args.rules ?? 'japanese';
     const komi = args.komi ?? 6.5;
-    const position = buildQueryPosition(args.moveHistory, args.board, boardSize, args.currentPlayer, args.previousBoard);
+    const basePosition = buildQueryPosition(
+      args.moveHistory,
+      args.board,
+      boardSize,
+      args.currentPlayer,
+      args.previousBoard,
+    );
+    const position = args.nextMove ? appendPositionMove(basePosition, args.nextMove, boardSize) : basePosition;
     const query = buildAnalysisQuery({ id, position, boardSize, komi, rules, options: args });
+
+    if (args.signal?.aborted) throw new KataGoCanceledError();
 
     const promise = new Promise<KataGoAnalysisPayload>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress: args.onProgress });
       this._queryBoardSizes.set(id, boardSize);
     });
 
+    const signal = args.signal;
+    const onAbort = signal ? () => this._cancelQuery(id, signal.reason) : undefined;
+    if (signal && onAbort) signal.addEventListener('abort', onAbort, { once: true });
+    const cleanup = () => {
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+    };
+
     try {
       this._send(query);
     } catch (err) {
+      cleanup();
       this.pending.delete(id);
+      this._queryBoardSizes.delete(id);
       throw err;
     }
 
-    return promise;
+    return promise.finally(cleanup);
   }
 
   async evaluate(args: {
@@ -271,6 +301,8 @@ class RemoteEngineClient {
     komi: number;
     rules?: GameRules;
     conservativePass?: boolean;
+    priority?: number;
+    signal?: AbortSignal;
   }): Promise<KataGoAnalysisPayload> {
     await this._ensureConnected();
     // Use a lightweight analyze with 1 visit for a pure network eval.
@@ -298,12 +330,15 @@ class RemoteEngineClient {
     }>;
     rules?: GameRules;
     conservativePass?: boolean;
+    priority?: number;
+    signal?: AbortSignal;
   }): Promise<KataGoAnalysisPayload[]> {
-    // Run evals sequentially — the remote server may not support batching.
-    const results: KataGoAnalysisPayload[] = [];
-    for (const pos of args.positions) {
-      results.push(
-        await this.analyze({
+    // The analysis protocol has no multi-position request, but the engine does
+    // run queries in parallel, so the positions go out together instead of one
+    // after the other. Each is a single-visit evaluation.
+    return Promise.all(
+      args.positions.map((pos) =>
+        this.analyze({
           modelUrl: args.modelUrl,
           backend: args.backend,
           board: pos.board,
@@ -319,10 +354,11 @@ class RemoteEngineClient {
           includeMovesOwnership: false,
           analysisPvLen: 0,
           topK: 1,
+          priority: args.priority,
+          signal: args.signal,
         }),
-      );
-    }
-    return results;
+      ),
+    );
   }
 
   // ─── WebSocket lifecycle ──────────────────────────────────────────────
@@ -536,6 +572,9 @@ class RemoteEngineClient {
     // there is nothing to convert; treating them as results crashed on the
     // missing `moveInfos`.
     if (!resp.rootInfo || !resp.moveInfos) {
+      // A query terminated before it searched anything answers with `noResults`
+      // and no payload. Without settling it here the promise would hang forever.
+      if (resp.noResults) this._settleCanceled(queryId, 'Query returned no results');
       return;
     }
 
@@ -642,6 +681,58 @@ class RemoteEngineClient {
     // _crashed and retries. This prevents permanent deadlock after a
     // reconnect exhaustion.
     if (this._closing) throw new Error('Remote engine is shutting down');
+  }
+
+  /**
+   * Drop a query locally and tell the engine to stop searching it.
+   *
+   * KataGo searches a query to completion unless it is told otherwise, so an
+   * abandoned request would hold one of the server's analysis threads that live
+   * analysis needs. The terminate is best effort: if the socket is gone the
+   * query died with it.
+   */
+  private _cancelQuery(queryId: string, reason?: unknown): void {
+    const rejects = this._takePending(queryId);
+    if (rejects.length === 0) return;
+    this._terminate(queryId);
+    const message = reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : undefined;
+    const error = new KataGoCanceledError(message);
+    for (const reject of rejects) reject(error);
+  }
+
+  /** A query that came back with `noResults` will never produce a payload. */
+  private _settleCanceled(queryId: string, message: string): void {
+    const rejects = this._takePending(queryId);
+    if (rejects.length === 0) return;
+    const error = new KataGoCanceledError(message);
+    for (const reject of rejects) reject(error);
+  }
+
+  /** Remove every pending entry for a query and return its reject callbacks. */
+  private _takePending(queryId: string): Array<(e: Error) => void> {
+    const rejects: Array<(e: Error) => void> = [];
+    const query = this.pending.get(queryId);
+    if (query) rejects.push(query.reject);
+    const evalPending = this.pendingEval.get(queryId);
+    if (evalPending) rejects.push(evalPending.reject);
+    const batchPending = this.pendingEvalBatch.get(queryId);
+    if (batchPending) rejects.push(batchPending.reject);
+    this.pending.delete(queryId);
+    this.pendingEval.delete(queryId);
+    this.pendingEvalBatch.delete(queryId);
+    this._queryBoardSizes.delete(queryId);
+    return rejects;
+  }
+
+  private _terminate(queryId: string): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const id = `QUERY:${this.nextId++}`;
+    try {
+      ws.send(JSON.stringify({ id, action: 'terminate', terminateId: queryId }));
+    } catch {
+      // The socket is already unusable; the query went with it.
+    }
   }
 
   private _failAllPending(error: Error): void {
