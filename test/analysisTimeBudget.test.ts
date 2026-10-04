@@ -101,4 +101,20 @@ describe('the time budget a board read is given', () => {
     await useGameStore.getState().runAnalysis({ force: true });
     expect(lastBudget()).toBe(ENGINE_MAX_TIME_MS);
   });
+
+  it('gives a fast review Max Time rather than a hidden short clock', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.getState().playMove(15, 15);
+    analyzeMock.mockClear();
+
+    useGameStore.getState().startFastGameAnalysis();
+    for (let i = 0; i < 100 && analyzeMock.mock.calls.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    // It used to be `min(600, Max Time * 0.15)`, so a review set to 50000 visits
+    // got whatever fit in 600 ms and reported it as the depth reached.
+    expect(lastBudget()).toBe(MAX_TIME_SETTING_MS);
+  });
 });

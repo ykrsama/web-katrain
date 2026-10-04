@@ -3480,7 +3480,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     void (async () => {
       const boardSize = getBoardSizeFromBoard(state.board);
       const fastVisits = Math.max(16, Math.min(get().settings.katagoFastVisits, ENGINE_MAX_VISITS));
-      const maxTimeMs = Math.max(50, Math.min(600, Math.floor(get().settings.katagoMaxTimeMs * 0.15)));
+      // Same budget rule as the other fast reads (`analyzeForPlayout`): the depth
+      // setting decides when the search stops and Max Time is the user's own
+      // ceiling on it. The old `min(600, Max Time * 0.15)` was a hidden clock —
+      // a review set to 50000 visits stopped after the ~500 that fit in 600 ms.
+      const maxTimeMs = Math.max(250, Math.min(get().settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
       const batchSize = Math.max(1, Math.min(get().settings.katagoBatchSize, 64));
       const maxChildren = Math.max(4, Math.min(get().settings.katagoMaxChildren, boardSize * boardSize));
       const topK = Math.max(1, Math.min(get().settings.katagoTopK, 10));
