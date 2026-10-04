@@ -715,6 +715,34 @@ describe('GameStore loadGame', () => {
         expect(useGameStore.getState().analysisData).toBe(root.analysis);
     });
 
+    it('shows a loaded file\'s stored analysis without waiting for Analyze', () => {
+        useGameStore.getState().resetGame();
+        useGameStore.setState({ isAnalysisMode: false });
+
+        useGameStore.getState().loadGame(
+            parseSgf('(;GM[1]SZ[19]KA[{"w":0.55,"s":1.5,"v":1000,"m":[{"m":"D4","p":0.54,"w":0.57,"s":2,"v":80}\\]}])')
+        );
+
+        const state = useGameStore.getState();
+        // The board's move points, the candidate list and the evaluation graph
+        // all hang off analysis mode, so a file that carries a review has to
+        // switch it on itself — otherwise the review stayed invisible until the
+        // user pressed Analyze.
+        expect(state.isAnalysisMode).toBe(true);
+        expect(state.analysisData).not.toBeNull();
+        expect(state.analysisData?.moves).toHaveLength(1);
+    });
+
+    it('leaves analysis mode alone when the file carries no analysis', () => {
+        useGameStore.getState().resetGame();
+        useGameStore.setState({ isAnalysisMode: false });
+
+        useGameStore.getState().loadGame(parseSgf('(;GM[1]SZ[19];B[pd];W[dd])'));
+
+        expect(useGameStore.getState().isAnalysisMode).toBe(false);
+        expect(useGameStore.getState().analysisData).toBeNull();
+    });
+
     it('exports Kaya KA alongside Web-KaTrain KT when analysis saving is enabled', () => {
         const store = useGameStore.getState();
         store.resetGame();
