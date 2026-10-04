@@ -85,24 +85,30 @@ const MOVE_NUMBER_FONT =
 /**
  * Glyph height, as a fraction of the stone diameter.
  *
- * Sized so the number sits inside the last-move marker, which is a ring: its
- * image is drawn into 0.8 of the stone diameter, and within that image the ring
- * spans 0.734 outer with a 0.534 hole (measured from `katrain/inner.png`). That
- * makes the ring 0.587 of the stone across with a 0.427 hole, so a number has to
- * fit a circle of about 0.43 stone to be circled by it rather than overlapping
- * it — the ring and the number are the same colour, so overlap reads as a blob.
+ * The number only has to fit the stone, because the last-move ring is left off
+ * while move numbers are on (the ring's hole is 0.427 stone wide -- a number
+ * inside it would be unreadably small, and one over it blobs into it, the two
+ * being the same colour). Filling a 0.66 box of the 1.0 stone keeps three digits
+ * legible at phone cell sizes, where a 0.44 face was not: the outermost corners
+ * of "100" land at 0.41 from the centre, inside the stone's 0.5.
  *
- * A 0.29-tall, 0.36-wide number (digits are thin strokes, so only the tips of
- * the outermost ones reach the ring) sits in that hole. KaTrain uses 0.9 and
- * overflows both this and the stone.
+ * KaTrain uses 0.9, which overflows even the stone.
  */
-const MOVE_NUMBER_HEIGHT = 0.44;
+const MOVE_NUMBER_HEIGHT = 0.66;
 /** Stroke weight; a lower number draws thinner digits. */
 const MOVE_NUMBER_WEIGHT = 600;
 /** How wide a number may get, as a fraction of the stone diameter. See above. */
-const MOVE_NUMBER_MAX_WIDTH = 0.36;
+const MOVE_NUMBER_MAX_WIDTH = 0.66;
 /** How far short numbers are squeezed anyway, so they read as the same slim face. */
 const MOVE_NUMBER_MIN_SQUEEZE = 0.7;
+/**
+ * The current move's number, so the point you are on pops out of the sequence.
+ *
+ * This is KaTrain's `Theme.NUMBER_COLOR`, the gold it draws every move number
+ * in. It stays readable on a black stone but is dim on a white one; keep the
+ * alpha at 1 rather than KaTrain's 0.8, which would fade it further.
+ */
+const MOVE_NUMBER_LAST_COLOR = [0.85, 0.68, 0.4, 1] as const;
 
 /**
  * The "if you play elsewhere" marker. Violet is not used by any move-quality
@@ -1583,26 +1589,33 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
     const d = toDisplay(lastMove.x, lastMove.y);
     const stoneDiameter = 2 * (cellSize * STONE_SIZE);
-    const innerDiameter = stoneDiameter * 0.8;
-    const left = originX + d.x * cellSize - innerDiameter / 2;
-    const top = originY + d.y * cellSize - innerDiameter / 2;
-    const color = cell === 'black' ? rgba(STONE_COLORS.white) : rgba(STONE_COLORS.black);
     const innerImg = stoneImagesRef.current.inner;
+    // While numbers are on, the ring gives way to the gold number on this
+    // stone: the ring and the numbers share a colour, so a number drawn inside
+    // the ring's 0.427-wide hole would blob into it, and nothing legible fits
+    // there anyway. A pass has no number, so its ring stays.
+    const numberShown = settings.showMoveNumbers && lastMove.x >= 0 && lastMove.y >= 0;
 
-    if (innerImg && innerImg.complete && innerImg.naturalWidth > 0) {
-      ctx.drawImage(innerImg, left, top, innerDiameter, innerDiameter);
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-in';
-      ctx.fillStyle = color;
-      ctx.fillRect(left, top, innerDiameter, innerDiameter);
-      ctx.restore();
-    } else {
-      const r = innerDiameter / 2;
-      ctx.beginPath();
-      ctx.arc(left + r, top + r, r, 0, Math.PI * 2);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(1, cellSize * 0.04);
-      ctx.stroke();
+    if (!numberShown) {
+      const innerDiameter = stoneDiameter * 0.8;
+      const left = originX + d.x * cellSize - innerDiameter / 2;
+      const top = originY + d.y * cellSize - innerDiameter / 2;
+      const color = cell === 'black' ? rgba(STONE_COLORS.white) : rgba(STONE_COLORS.black);
+      if (innerImg && innerImg.complete && innerImg.naturalWidth > 0) {
+        ctx.drawImage(innerImg, left, top, innerDiameter, innerDiameter);
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-in';
+        ctx.fillStyle = color;
+        ctx.fillRect(left, top, innerDiameter, innerDiameter);
+        ctx.restore();
+      } else {
+        const r = innerDiameter / 2;
+        ctx.beginPath();
+        ctx.arc(left + r, top + r, r, 0, Math.PI * 2);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, cellSize * 0.04);
+        ctx.stroke();
+      }
     }
 
     // Standout-move halo: the last move matched the engine's top choice.
@@ -1615,7 +1628,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ctx.lineWidth = Math.max(1.5, cellSize * 0.05);
       ctx.stroke();
     }
-  }, [board, cellSize, currentNode, lastMove, originX, originY, setupOverlayCanvas, stoneTextureVersion, toDisplay, releaseOverlayCanvas]);
+  }, [board, cellSize, currentNode, lastMove, originX, originY, setupOverlayCanvas, settings.showMoveNumbers, stoneTextureVersion, toDisplay, releaseOverlayCanvas]);
 
   useEffect(() => {
     const canvas = ringsCanvasRef.current;
@@ -2503,12 +2516,19 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         if (number == null) continue;
         const text = String(number);
         const d = toDisplay(x, y);
+        // The last move is marked by colour instead of the ring, which this
+        // layer displaces (see the last-move overlay).
+        const isLastMove = !!lastMove && lastMove.x === x && lastMove.y === y;
         // Same place and same opacity as the stone this number sits on: fuzzy
         // placement moves stones off the intersection, and ownership/scoring
         // fade them, so drawing at the bare intersection would drift.
         const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
         const ownershipVal = readsOwnershipHere && territory ? (territory[y]?.[x] ?? 0) : null;
-        ctx.fillStyle = cell === 'black' ? rgba(STONE_COLORS.white) : rgba(STONE_COLORS.black);
+        ctx.fillStyle = isLastMove
+          ? rgba(MOVE_NUMBER_LAST_COLOR)
+          : cell === 'black'
+            ? rgba(STONE_COLORS.white)
+            : rgba(STONE_COLORS.black);
         ctx.save();
         ctx.globalAlpha = stoneAlphaFor({
           dead: scoringMode && !!deadStones?.has(`${x},${y}`),
@@ -2531,6 +2551,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     cellSize,
     deadStones,
     hasAnalysisOverlay,
+    lastMove,
     moveNumbers,
     originX,
     originY,
