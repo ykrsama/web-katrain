@@ -209,6 +209,11 @@ uses all three, the way KaTrain does:
   hands it the entire line together. The local worker is the opposite: it keeps
   a single search tree and cancels a background group down to its newest
   request, so it stays serialized and takes nodes one at a time.
+- Because that can leave hundreds of queries in flight, connection handling is
+  single-flight: concurrent callers share one connect-and-retry chain, so a
+  failed handshake is one error rather than one socket per waiter. A reconnect
+  re-sends the queries the dropped socket was carrying, which is what keeps a
+  blip from failing a whole game review.
 
 Sweep and equalize follow KaTrain's `refine_move`: on the remote engine they ask
 for one query per candidate, each searching the position *after* that move

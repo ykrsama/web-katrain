@@ -82,6 +82,11 @@ class RemoteEngineClient {
   private pendingEval = new Map<string, PendingEval>();
   private pendingEvalBatch = new Map<string, PendingEvalBatch>();
   private _queryBoardSizes = new Map<string, number>();
+  /**
+   * The serialized query for each pending id, so a reconnect can re-send the
+   * work the dropped socket was carrying (KaTrain keeps the same map).
+   */
+  private _sentPayloads = new Map<string, string>();
   private _closing = false;
   private _reconnecting = false;
   private _connId = 0;
@@ -165,29 +170,31 @@ class RemoteEngineClient {
       if (this._crashed) throw this._crashed;
     }
 
-    // If a connection attempt is already in progress, wait for it.
-    if (this._connecting) {
-      try {
-        await this._connecting;
-      } catch {
-        // The shared attempt failed; fall through to our own retry.
-      }
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
-      if (this._crashed) throw this._crashed;
+    // Single flight, including the retries: every caller waits on the same
+    // attempt chain and sees the same outcome. Sharing only the first attempt
+    // was not enough — when it failed, each waiter fell through and opened its
+    // own socket, so a game review with hundreds of positions in flight
+    // generated a burst of handshakes, and the earlier attempts' error
+    // handlers were discarded by the connection-id check and never settled.
+    if (!this._connecting) {
+      this._connecting = this._connectWithRetries().finally(() => {
+        this._connecting = null;
+      });
     }
+    await this._connecting;
+  }
 
-    // Try to connect, with a short retry loop for transient failures.
+  private async _connectWithRetries(): Promise<void> {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (this._closing) throw new Error('Remote engine is shutting down');
       try {
-        this._connecting = this._connect();
-        await this._connecting;
-        this._connecting = null;
+        await this._connect();
         return;
       } catch (err) {
-        this._connecting = null;
         if (attempt === 2 || this._closing) throw err;
-        console.info(`[remote-engine] Connect attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : err}; retrying...`);
+        console.info(
+          `[remote-engine] Connect attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : err}; retrying...`,
+        );
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
       }
     }
@@ -279,11 +286,12 @@ class RemoteEngineClient {
     };
 
     try {
-      this._send(query);
+      this._send(query, id);
     } catch (err) {
       cleanup();
       this.pending.delete(id);
       this._queryBoardSizes.delete(id);
+      this._sentPayloads.delete(id);
       throw err;
     }
 
@@ -405,6 +413,11 @@ class RemoteEngineClient {
         this._reportConnected();
         this._crashed = null;
         settle(() => resolve());
+        // A reopened socket knows nothing of the queries the previous one had
+        // in flight, and the engine answers only what it was sent. Re-send them,
+        // as KaTrain does after a reconnect; otherwise every analysis that was
+        // outstanding when the connection dropped waits forever.
+        this._resendOutstanding();
       };
 
       ws.onmessage = (ev: MessageEvent<string>) => {
@@ -420,10 +433,18 @@ class RemoteEngineClient {
       };
 
       ws.onclose = (ev: CloseEvent) => {
-        if (this._closing) return;
-        if (connId !== this._connId) return;
         // Build a more descriptive error message.
         const reason = ev.reason || `WebSocket closed (code ${ev.code}${ev.wasClean ? ', clean' : ', abnormal'})`;
+        if (this._closing) {
+          settle(() => reject(new Error(reason)));
+          return;
+        }
+        if (connId !== this._connId) {
+          // A newer connection superseded this one. Settle this handshake even
+          // so, or its waiter is left pending forever.
+          settle(() => reject(new Error('Connection superseded')));
+          return;
+        }
         if (!settled) {
           // Initial connection failure.
           settle(() => reject(new Error(reason)));
@@ -442,13 +463,36 @@ class RemoteEngineClient {
         // fire within 200ms, reject here.
         if (!settled) {
           setTimeout(() => {
-            if (!settled && connId === this._connId) {
+            if (!settled) {
               settle(() => reject(new Error('WebSocket connection failed (network error)')));
             }
           }, 200);
         }
       };
     });
+  }
+
+  /**
+   * Re-send every query that is still waiting for a reply.
+   *
+   * The engine only answers queries it received on the connection that is open
+   * now, so a query sent over a socket that has since dropped would never be
+   * answered. KaTrain keeps the same map for the same reason.
+   */
+  private _resendOutstanding(): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const payloads = [...this._sentPayloads.values()];
+    if (payloads.length === 0) return;
+    console.info(`[remote-engine] Re-sending ${payloads.length} outstanding queries after reconnect`);
+    for (const payload of payloads) {
+      try {
+        ws.send(payload);
+      } catch {
+        // The socket went down again; its handlers take it from here.
+        return;
+      }
+    }
   }
 
   private _handleDisconnect(reason: string, connId: number): void {
@@ -504,13 +548,16 @@ class RemoteEngineClient {
 
   // ─── Sending ──────────────────────────────────────────────────────────
 
-  private _send(query: RemoteQuery | Record<string, unknown>): void {
+  private _send(query: RemoteQuery | Record<string, unknown>, queryId?: string): void {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error('Remote engine is not connected');
     }
     const payload = JSON.stringify(query);
     ws.send(payload);
+    // Remember it so a reconnect can put the query to the new socket; the
+    // engine's queue lives on the connection, not on the query.
+    if (queryId) this._sentPayloads.set(queryId, payload);
   }
 
   // ─── Dispatch ────────────────────────────────────────────────────────
@@ -551,6 +598,7 @@ class RemoteEngineClient {
       if (pending) {
         this.pending.delete(queryId);
         this._queryBoardSizes.delete(queryId);
+    this._sentPayloads.delete(queryId);
         pending.reject(err);
       }
       if (pendingEval) {
@@ -592,6 +640,7 @@ class RemoteEngineClient {
     if (pending) {
       this.pending.delete(queryId);
       this._queryBoardSizes.delete(queryId);
+    this._sentPayloads.delete(queryId);
       pending.resolve(analysis);
     }
     if (pendingEval) {
@@ -721,6 +770,7 @@ class RemoteEngineClient {
     this.pendingEval.delete(queryId);
     this.pendingEvalBatch.delete(queryId);
     this._queryBoardSizes.delete(queryId);
+    this._sentPayloads.delete(queryId);
     return rejects;
   }
 
@@ -739,6 +789,7 @@ class RemoteEngineClient {
     for (const [, pending] of this.pending) pending.reject(error);
     this.pending.clear();
     this._queryBoardSizes.clear();
+    this._sentPayloads.clear();
     for (const [, pending] of this.pendingEval) pending.reject(error);
     this.pendingEval.clear();
     for (const [, pending] of this.pendingEvalBatch) pending.reject(error);
