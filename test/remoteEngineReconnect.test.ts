@@ -112,20 +112,32 @@ afterEach(() => {
   globalThis.WebSocket = realWebSocket;
 });
 
+/**
+ * The backoff is what makes a real reconnect patient; a test does not need to
+ * wait it out, and the retry *count* is what is under test here.
+ */
+const withoutBackoff = <T extends object>(client: T): T => {
+  (client as unknown as { RECONNECT_BACKOFF_S: number }).RECONNECT_BACKOFF_S = 0;
+  (client as unknown as { RECONNECT_MAX_BACKOFF_S: number }).RECONNECT_MAX_BACKOFF_S = 0;
+  return client;
+};
+
 describe('remote engine connection sharing', () => {
   it(
     'opens one socket per attempt, not one per waiting caller, when the handshake fails',
     async () => {
       globalThis.WebSocket = RefusingSocket as unknown as typeof WebSocket;
-      const client = getRemoteEngineClient('ws://unreachable.invalid/katago');
+      const client = withoutBackoff(getRemoteEngineClient('ws://unreachable.invalid/katago'));
 
       const results = await Promise.allSettled(
         Array.from({ length: 20 }, () => client.analyze(baseArgs())),
       );
 
-      // Three attempts, not twenty; and every caller learns the outcome instead
-      // of being left pending by a superseded connection's handlers.
-      expect(RefusingSocket.constructed).toBeLessThanOrEqual(3);
+      // One socket per attempt (the same budget a reconnect gets), not one per
+      // waiting caller; and every caller learns the outcome instead of being
+      // left pending by a superseded connection's handlers.
+      expect(RefusingSocket.constructed).toBeLessThanOrEqual(6);
+      expect(RefusingSocket.constructed).toBeGreaterThan(1);
       expect(results.every((r) => r.status === 'rejected')).toBe(true);
     },
     30_000,
@@ -137,7 +149,7 @@ describe('remote engine reconnect', () => {
     're-sends a query that was in flight when the connection dropped',
     async () => {
       globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
-      const client = getRemoteEngineClient('ws://fake.invalid/katago');
+      const client = withoutBackoff(getRemoteEngineClient('ws://fake.invalid/katago'));
 
       const promise = client.analyze(baseArgs({ visits: 50 }));
       promise.catch(() => undefined);
@@ -170,7 +182,7 @@ describe('remote engine reconnect', () => {
     'does not re-send a query that was aborted while the connection was down',
     async () => {
       globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
-      const client = getRemoteEngineClient('ws://fake.invalid/katago');
+      const client = withoutBackoff(getRemoteEngineClient('ws://fake.invalid/katago'));
 
       const controller = new AbortController();
       const promise = client.analyze(baseArgs({ visits: 50, signal: controller.signal }));

@@ -1236,11 +1236,25 @@ const initialSettings: GameSettings = {
   ...(loadStoredSettings() ?? {}),
 };
 
-// A remote analysis engine parallelizes across positions and schedules them by
-// priority itself, so the client hands it everything at once (KaTrain does the
-// same with a subprocess engine). The local worker keeps one search tree and
-// cancels a background group down to its newest request, so it stays serialized.
-analysisQueue.setConcurrency(isRemoteEngine(initialSettings) ? Number.POSITIVE_INFINITY : 1);
+/**
+ * How many analyses may be in flight against the engine.
+ *
+ * A remote engine parallelizes across positions, so several at once is the
+ * point. It must still be a window rather than "everything": a whole-game
+ * review is a few hundred positions, and pushing them all onto one WebSocket at
+ * once both bursts the wire and, in Chrome, exhausts the browser's WebSocket
+ * budget ("Connection failed: Insufficient resources"), after which every
+ * further connect fails. 32 is wider than any sensible server's
+ * `numAnalysisThreads`, so it costs no throughput in practice.
+ *
+ * The local worker keeps one search tree and cancels a background group down to
+ * its newest request, so it stays serialized.
+ */
+const REMOTE_ANALYSIS_WINDOW = 32;
+const engineAnalysisWindow = (settings: GameSettings): number =>
+  isRemoteEngine(settings) ? REMOTE_ANALYSIS_WINDOW : 1;
+
+analysisQueue.setConcurrency(engineAnalysisWindow(initialSettings));
 
 let continuousToken = 0;
 /**
@@ -4204,7 +4218,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // Switching between the local worker and a remote server changes how many
       // analyses may be in flight; see the queue's setConcurrency.
-      analysisQueue.setConcurrency(isRemoteEngine(nextSettings) ? Number.POSITIVE_INFINITY : 1);
+      analysisQueue.setConcurrency(engineAnalysisWindow(nextSettings));
 
       continuousToken++;
       selfplayToken++;

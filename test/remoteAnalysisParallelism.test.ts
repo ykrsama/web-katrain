@@ -74,15 +74,18 @@ describe('remote analysis parallelism', () => {
     useGameStore.setState({ engineError: null, engineStatus: 'idle', notification: null, isAnalysisMode: true });
   });
 
-  it('serializes on the local worker and not on a remote engine', async () => {
+  it('serializes on the local worker and opens a window on a remote engine', async () => {
     const { analysisQueue } = await import('../src/utils/analysisQueue');
     const { useGameStore } = await import('../src/store/gameStore');
 
     useGameStore.getState().updateSettings(localSettings);
     expect(analysisQueue.getConcurrency()).toBe(1);
 
+    // A finite window, not "everything": a whole-game review is hundreds of
+    // positions, and sending them all at once exhausts the browser's WebSocket
+    // budget ("Connection failed: Insufficient resources").
     useGameStore.getState().updateSettings(remoteSettings);
-    expect(analysisQueue.getConcurrency()).toBe(Number.POSITIVE_INFINITY);
+    expect(analysisQueue.getConcurrency()).toBe(32);
   });
 
   it('equalize asks for one query per candidate, after the move, all at once', async () => {
@@ -128,5 +131,45 @@ describe('remote analysis parallelism', () => {
     expect(node.analysis?.moves[0]!.scoreLead).toBe(5);
     // The PV of a refined candidate starts with the move itself.
     expect(node.analysis?.moves[0]!.pv?.[0]).toBe('D16');
+  });
+
+  it('keeps a whole-game review inside the in-flight window', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    useGameStore.getState().updateSettings(remoteSettings);
+    // Build the line without live analysis adding engine calls of its own.
+    useGameStore.setState({ isAnalysisMode: false });
+    for (let i = 0; i < 40; i++) {
+      useGameStore.getState().playMove(i % 19, Math.floor(i / 19));
+    }
+    expect(useGameStore.getState().currentNode.gameState.moveHistory).toHaveLength(40);
+
+    const held: Array<() => void> = [];
+    analyzeMock.mockClear();
+    analyzeMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          held.push(() => resolve(rootPayload([candidate(3, 3)])));
+        }),
+    );
+
+    useGameStore.getState().startFastGameAnalysis();
+    await waitFor(() => held.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // 41 positions on the line, but only the window may be on the wire.
+    expect(held.length).toBe(32);
+    expect(analyzeMock.mock.calls.length).toBe(32);
+
+    // Releasing one lets exactly one more through.
+    held.shift()!();
+    await waitFor(() => held.length === 32);
+    expect(analyzeMock.mock.calls.length).toBe(33);
+
+    // Drain: each release lets the next waiting position start.
+    while (useGameStore.getState().isGameAnalysisRunning) {
+      for (const release of held.splice(0)) release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(analyzeMock.mock.calls.length).toBe(41);
   });
 });

@@ -204,16 +204,23 @@ uses all three, the way KaTrain does:
   change) sends the engine a `terminate`, which is what actually frees the
   analysis thread. The engine may never answer a terminated query, so the client
   settles the promise itself rather than waiting for the reply.
-- With a remote engine the queue runs every job at once
-  (`setConcurrency(Infinity)`) instead of one at a time, and whole-game analysis
-  hands it the entire line together. The local worker is the opposite: it keeps
-  a single search tree and cancels a background group down to its newest
-  request, so it stays serialized and takes nodes one at a time.
-- Because that can leave hundreds of queries in flight, connection handling is
-  single-flight: concurrent callers share one connect-and-retry chain, so a
-  failed handshake is one error rather than one socket per waiter. A reconnect
-  re-sends the queries the dropped socket was carrying, which is what keeps a
-  blip from failing a whole game review.
+- A remote engine gets a window of concurrent analyses
+  (`REMOTE_ANALYSIS_WINDOW`, 32) instead of one at a time, and whole-game
+  analysis feeds the line through it. The window is wider than any sensible
+  server's `numAnalysisThreads`, so it costs no throughput, but it is finite for
+  a reason: the queue used to run every job at once, and a review of a few
+  hundred positions pushed them all onto one socket, after which Chrome refused
+  further connections with "Connection failed: Insufficient resources". The
+  local worker is serialized (1) because it keeps a single search tree and
+  cancels a background group down to its newest request — a concurrent batch
+  would cancel itself down to its last node.
+- Connection handling is single-flight: concurrent callers share one
+  connect-and-retry chain, so a failed handshake is one error rather than one
+  socket per waiter, and the retry budget is the same one a reconnect gets
+  (6 attempts, 1s→10s). The socket being replaced is closed explicitly, since
+  the browser counts sockets it has not reclaimed yet. A reconnect re-sends the
+  queries the dropped socket was carrying, which is what keeps a blip from
+  failing a whole game review.
 
 Sweep and equalize follow KaTrain's `refine_move`: on the remote engine they ask
 for one query per candidate, each searching the position *after* that move

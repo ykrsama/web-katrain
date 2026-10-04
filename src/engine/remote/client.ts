@@ -151,6 +151,8 @@ class RemoteEngineClient {
   }
 
   private _connecting: Promise<void> | null = null;
+  /** How many analyses are waiting on the connect chain (diagnostics only). */
+  private _connectingWaiters = 0;
 
   private async _ensureConnected(): Promise<void> {
     if (this._closing) throw new Error('Remote engine is shutting down');
@@ -181,21 +183,45 @@ class RemoteEngineClient {
         this._connecting = null;
       });
     }
-    await this._connecting;
+    this._connectingWaiters++;
+    try {
+      await this._connecting;
+    } finally {
+      this._connectingWaiters--;
+    }
   }
 
+  /**
+   * Establish the connection, waiting out a refusal the same way the reconnect
+   * loop does.
+   *
+   * Three quick attempts were not enough in practice: a relay or reverse proxy
+   * that is still holding the previous connection refuses the next one for a
+   * few seconds, which turned one blip into "skipped 206 of 208 positions".
+   * The retry budget and backoff are therefore the same as after a drop.
+   */
   private async _connectWithRetries(): Promise<void> {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 1; attempt <= this.RECONNECT_ATTEMPTS; attempt++) {
       if (this._closing) throw new Error('Remote engine is shutting down');
       try {
         await this._connect();
         return;
       } catch (err) {
-        if (attempt === 2 || this._closing) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        if (attempt === this.RECONNECT_ATTEMPTS || this._closing) {
+          console.info(
+            `[remote-engine] Could not connect after ${attempt} attempts (${message}); failing ${this._connectingWaiters} waiting analyses`,
+          );
+          // Do not keep a dead socket as "the" connection: the next caller must
+          // start a clean attempt rather than reading a stale readyState.
+          this.ws = null;
+          throw err;
+        }
+        const delay = Math.min(this.RECONNECT_BACKOFF_S * attempt, this.RECONNECT_MAX_BACKOFF_S);
         console.info(
-          `[remote-engine] Connect attempt ${attempt + 1} failed: ${err instanceof Error ? err.message : err}; retrying...`,
+          `[remote-engine] Connect attempt ${attempt}/${this.RECONNECT_ATTEMPTS} failed: ${message}; retrying in ${delay.toFixed(0)}s`,
         );
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, delay * 1000));
       }
     }
   }
@@ -375,6 +401,19 @@ class RemoteEngineClient {
     return new Promise<void>((resolve, reject) => {
       this._connId++;
       const connId = this._connId;
+      // Release the socket this one replaces. Chrome refuses to open a new
+      // WebSocket once too many are held ("Connection failed: Insufficient
+      // resources"), and a socket left to be garbage collected keeps counting
+      // against that budget. The id was already bumped, so the old socket's
+      // handlers see themselves as superseded and stay quiet.
+      const previous = this.ws;
+      if (previous) {
+        try {
+          previous.close();
+        } catch {
+          // Already gone.
+        }
+      }
       let settled = false;
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
