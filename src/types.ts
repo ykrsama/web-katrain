@@ -2,6 +2,17 @@ export type BoardSize = 9 | 13 | 19;
 export const DEFAULT_BOARD_SIZE: BoardSize = 19;
 export const KOMI = 7.5;
 
+/**
+ * How many candidate moves the engine reports and the board hints, unless the
+ * user changes "Top Moves" in Advanced Engine Tuning.
+ *
+ * One number on purpose: it is the setting's default, the candidate list's
+ * fallback and the board's fallback, so the three cannot drift apart and leave
+ * a reader who raises the setting seeing more candidates in the list than on
+ * the board.
+ */
+export const DEFAULT_TOP_MOVES = 16;
+
 export type Player = 'black' | 'white';
 export type Intersection = Player | null;
 export type BoardState = Intersection[][];

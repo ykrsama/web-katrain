@@ -865,8 +865,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   }, [currentNode, drillAsking, hasAnalysisOverlay, settings.analysisShowChildren]);
 
   const analysisHintMoves = useMemo(
-    () => selectAnalysisHintMoves(visibleAnalysis?.moves ?? [], compactAnalysisHints),
-    [compactAnalysisHints, visibleAnalysis]
+    () => selectAnalysisHintMoves(visibleAnalysis?.moves ?? [], compactAnalysisHints, settings.katagoTopK),
+    [compactAnalysisHints, settings.katagoTopK, visibleAnalysis]
   );
 
   const bestHintMoveCoords = useMemo(() => {

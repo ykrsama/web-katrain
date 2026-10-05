@@ -133,6 +133,28 @@ describe('a live read against a position that already has analysis', () => {
     expect(depth()).toBe(12000);
   });
 
+  it('asks the engine for as many top moves as the setting says', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    const { analysisQueue } = await import('../src/utils/analysisQueue');
+    const { DEFAULT_TOP_MOVES } = await import('../src/types');
+    expect(useGameStore.getState().settings.katagoTopK).toBe(DEFAULT_TOP_MOVES);
+
+    // A live read reports that many candidates, which is what the board draws
+    // its hints from; a private cap in this path would starve the board.
+    searchTo(1000);
+    await useGameStore.getState().runAnalysis({ force: true, visits: 1000 });
+    const lastCall = analyzeMock.mock.calls.at(-1)?.[0] as { topK?: number } | undefined;
+    expect(lastCall?.topK).toBe(DEFAULT_TOP_MOVES);
+
+    useGameStore.setState((s) => ({ settings: { ...s.settings, katagoTopK: 24 } }));
+    analysisQueue.clearCache();
+    searchTo(1000);
+    await useGameStore.getState().runAnalysis({ force: true, visits: 1000 });
+    const raised = analyzeMock.mock.calls.at(-1)?.[0] as { topK?: number } | undefined;
+    expect(raised?.topK).toBe(24);
+    useGameStore.setState((s) => ({ settings: { ...s.settings, katagoTopK: DEFAULT_TOP_MOVES } }));
+  });
+
   it('lets an explicit extra-analysis action replace it with a shallower view', async () => {
     const { useGameStore } = await import('../src/store/gameStore');
     const depth = () => useGameStore.getState().currentNode.analysis?.rootVisits;

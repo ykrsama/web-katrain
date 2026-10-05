@@ -75,7 +75,7 @@ describe('the candidate list', () => {
     expect(source).toContain('<span className="cl-quality" aria-hidden="true">{t(\'Quality\')}</span>');
     expect(source).toContain("sortButton('visits', t('Visits')");
     // Pro honours the Settings cap instead of a private 24-row limit.
-    expect(source).toContain('Math.min(Number.isFinite(topK) ? topK : 10, 50)');
+    expect(source).toContain('Math.min(Number.isFinite(topK) ? topK : DEFAULT_TOP_MOVES, 50)');
     expect(source).toContain('data-analysis-experience={analysisExperience}');
   });
 });

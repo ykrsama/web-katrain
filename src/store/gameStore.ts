@@ -1,5 +1,5 @@
 import { createWithEqualityFn as create } from 'zustand/traditional';
-import { DEFAULT_BOARD_SIZE, KOMI, type FloatArray, type GameRules, type GameState, type BoardState, type Player, type AnalysisResult, type BoardDrawing, type GameNode, type Move, type GameSettings, type CandidateMove, type RegionOfInterest, type BoardSize, type KataGoBackendPreference, type EditTool } from '../types';
+import { DEFAULT_BOARD_SIZE, DEFAULT_TOP_MOVES, KOMI, type FloatArray, type GameRules, type GameState, type BoardState, type Player, type AnalysisResult, type BoardDrawing, type GameNode, type Move, type GameSettings, type CandidateMove, type RegionOfInterest, type BoardSize, type KataGoBackendPreference, type EditTool } from '../types';
 import { findMistakeNavigationTarget } from '../utils/mistakeNavigation';
 import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLiberties, getLegalMoves, isEye, isValidMove } from '../utils/gameLogic';
 import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } from '../utils/sound';
@@ -1187,7 +1187,7 @@ const defaultSettings: GameSettings = {
   katagoMaxTimeMs: 8000,
   katagoBatchSize: 16,
   katagoMaxChildren: DEFAULT_BOARD_SIZE * DEFAULT_BOARD_SIZE,
-  katagoTopK: 10,
+  katagoTopK: DEFAULT_TOP_MOVES,
   katagoReuseTree: true,
   katagoOwnershipMode: 'root',
   katagoWideRootNoise: 0.04,
@@ -3526,7 +3526,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const maxTimeMs = Math.max(250, Math.min(get().settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
       const batchSize = Math.max(1, Math.min(get().settings.katagoBatchSize, 64));
       const maxChildren = Math.max(4, Math.min(get().settings.katagoMaxChildren, boardSize * boardSize));
-      const topK = Math.max(1, Math.min(get().settings.katagoTopK, 10));
+      // Report as many candidates as the reader asked for, the same as the live
+      // read and the full review do: this writes the node's analysis, and the
+      // board draws its hints from it, so a private cap of ten here would put
+      // the list and the board out of step again.
+      const topK = Math.max(1, Math.min(get().settings.katagoTopK, 50));
       const analysisPvLen = Math.max(0, Math.min(get().settings.katagoAnalysisPvLen, 15));
 
       let done = 0;

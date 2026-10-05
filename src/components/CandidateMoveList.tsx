@@ -3,7 +3,7 @@ import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { isDrillHidingAnswer } from '../utils/mistakeDrill';
-import type { CandidateMove } from '../types';
+import { DEFAULT_TOP_MOVES, type CandidateMove } from '../types';
 import { DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from '../utils/nodeAnalysis';
 import { evalColorToCss, getKaTrainEvalColors } from '../utils/katrainTheme';
 import { formatBoardMoveLabel } from '../utils/playedMoveQuality';
@@ -106,7 +106,7 @@ export const CandidateMoveList: React.FC<CandidateMoveListProps> = ({ hoveredKey
 
   // The list used to stop at 24 rows whatever Settings said; the engine
   // itself is asked for up to 50.
-  const visibleCap = Math.max(1, Math.min(Number.isFinite(topK) ? topK : 10, 50));
+  const visibleCap = Math.max(1, Math.min(Number.isFinite(topK) ? topK : DEFAULT_TOP_MOVES, 50));
   const rows = useMemo(() => {
     if (drillHidesAnswer) return [];
     const onBoard = (moves ?? []).filter((move) => move.x >= 0 && move.y >= 0).slice(0, visibleCap);
