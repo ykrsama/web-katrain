@@ -83,10 +83,11 @@ def main():
  p=argparse.ArgumentParser(description=__doc__)
  p.add_argument('--dist',type=Path,required=True);p.add_argument('--manifest',type=Path,required=True)
  p.add_argument('--port',type=int,default=18767);p.add_argument('--proxy',default='')
+ p.add_argument('--allow-insecure-http',action='store_true',help='Explicitly allow legacy HTTP SGF fallback after HTTPS fails (untrusted transport).')
  a=p.parse_args()
  if not (a.dist/'index.html').is_file():raise SystemExit('Missing built dist/index.html')
  manifest=json.loads(a.manifest.read_text())
- server=ThreadingHTTPServer(('127.0.0.1',a.port),make_handler(FoxClient(proxy=a.proxy),a.dist,manifest))
+ server=ThreadingHTTPServer(('127.0.0.1',a.port),make_handler(FoxClient(proxy=a.proxy,allow_insecure_http=a.allow_insecure_http),a.dist,manifest))
  server.daemon_threads=True
  print(json.dumps({'listen':f'http://127.0.0.1:{a.port}','manifest':manifest}),flush=True)
  try:server.serve_forever()

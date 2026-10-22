@@ -420,6 +420,17 @@ export const Layout: React.FC = () => {
   const [photoBoardInitialFile, setPhotoBoardInitialFile] = useState<File | null>(null);
   const [isPasteSgfOpen, setIsPasteSgfOpen] = useState(false);
   const [isFoxImportOpen, setIsFoxImportOpen] = useState(false);
+  const [foxImportAvailable, setFoxImportAvailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    let active = true;
+    void fetch('/api/fox/status', { signal: controller.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(status => { if (active) setFoxImportAvailable(status?.ok === true && status?.fox === 'public-records-only'); })
+      .catch(() => { if (active) setFoxImportAvailable(false); });
+    return () => { active = false; controller.abort(); window.clearTimeout(timer); };
+  }, []);
   const openFoxImport = useCallback((returnFocus?: HTMLElement | null) => {
     modalReturnFocusRef.current = returnFocus ?? null;
     setIsFoxImportOpen(true);
@@ -3493,7 +3504,7 @@ export const Layout: React.FC = () => {
         saveLabel={saveControlLabel}
         onSaveToLibrary={handleOpenSaveToLibraryDialog}
         onLoad={handleLoadClick}
-        onFoxImport={openFoxImport}
+        onFoxImport={foxImportAvailable ? openFoxImport : undefined}
         onScanBoard={() => openPhotoBoard()}
         onScoreQuiz={() => setIsScoreQuizOpen(true)}
         onRankLadder={() => setIsTournamentOpen(true)}
@@ -3730,7 +3741,7 @@ export const Layout: React.FC = () => {
             onSaveToLibrary={handleOpenSaveToLibraryDialog}
             onLoadSgf={handleLoadClick}
             onPasteSgf={handlePasteSgf}
-            onFoxImport={openFoxImport}
+            onFoxImport={foxImportAvailable ? openFoxImport : undefined}
             onScanBoard={(returnFocus) => openPhotoBoard(null, returnFocus)}
             onBlindfold={() => setIsBlindfoldOpen(true)}
             onSettings={() => setIsSettingsOpen(true)}
@@ -4189,12 +4200,12 @@ export const Layout: React.FC = () => {
           onConfirm={confirmClearAnalysisCache}
         />
       )}
-      <FoxSgfImport open={isFoxImportOpen} onClose={closeFoxImport} returnFocus={modalReturnFocusRef.current} onImport={(parsed, sourceName) => {
+      {isFoxImportOpen && <FoxSgfImport open={isFoxImportOpen} onClose={closeFoxImport} returnFocus={modalReturnFocusRef.current} onImport={(parsed, sourceName) => {
         loadGame(parsed);
         setLoadedLibraryFile(null);
         setLoadedExternalFile({ kind: 'file', name: sourceName });
         markCurrentGameCleanAndClearAutoSave();
-      }} />
+      }} />}
     </div>
   );
 };

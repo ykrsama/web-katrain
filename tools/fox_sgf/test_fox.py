@@ -5,6 +5,16 @@ from fox import FoxClient, FoxError, SGF_ENDPOINTS
 
 
 class FoxRegressionTests(unittest.TestCase):
+    def test_https_is_attempted_before_explicit_legacy_fallback(self):
+        calls = []
+        def respond(url, **kwargs):
+            calls.append(url)
+            if url.startswith('https:'): raise FoxError('fixture TLS endpoint unavailable')
+            return {'result': 0, 'chess': '(;SZ[19];B[pd])'}
+        client = FoxClient(request_json=respond)
+        with self.assertRaises(FoxError): client.fetch_sgf('123')
+        self.assertTrue(all(url.startswith('https:') for url in calls), calls)
+
     def test_explicit_uid_does_not_query_nickname_endpoint(self):
         def unexpected(*args, **kwargs):
             self.fail('A UID lookup must not perform a nickname request')
@@ -46,21 +56,23 @@ class FoxRegressionTests(unittest.TestCase):
         def fake(url, **kwargs):
             requests.append((url, kwargs))
             if len(requests) == 1:
-                raise FoxError('fixture primary offline')
+                raise FoxError('fixture HTTPS offline')
             if len(requests) == 2:
                 return {'result': 1, 'resultstr': 'fixture secondary unavailable'}
             return {'result': 0, 'chess': original}
-        data = FoxClient(request_json=fake).fetch_sgf('123456')
+        data = FoxClient(request_json=fake, allow_insecure_http=True).fetch_sgf('123456')
         self.assertEqual(data['sgf'], original)
         self.assertEqual(data['bytes'], len(original.encode('utf-8')))
         self.assertEqual(len(data['attempts']), 2)
-        self.assertEqual(requests[0][0], SGF_ENDPOINTS[0])
-        self.assertEqual(requests[0][1]['data'], b'chessid=123456')
-        self.assertIsNone(requests[-1][1]['data'])
+        self.assertTrue(requests[0][0].startswith('https:'))
+        self.assertIsNone(requests[0][1]['data'])
+        self.assertEqual(requests[-1][0], SGF_ENDPOINTS[1])
+        self.assertEqual(requests[-1][1]['data'], b'chessid=123456')
+        self.assertFalse(data['secure_transport'])
         self.assertTrue(any('KM[375]' in w for w in data['info']['warnings']))
 
     def test_all_download_failures_are_reported_without_fabricated_sgf(self):
-        with self.assertRaisesRegex(FoxError, '三个下载地址均失败'):
+        with self.assertRaisesRegex(FoxError, '所有已启用的下载地址均失败'):
             FoxClient(request_json=lambda *a, **k: {'result': 0, 'chess': ''}).fetch_sgf('123')
 
     def test_html_is_not_accepted_as_sgf(self):

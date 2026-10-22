@@ -53,13 +53,14 @@ def inspect_sgf(sgf: str) -> dict:
 
 
 class FoxClient:
-    def __init__(self, request_json=None, proxy=None, timeout=15):
+    def __init__(self, request_json=None, proxy=None, timeout=15, allow_insecure_http=False):
         # Empty FOX_PROXY disables proxies; unset respects environment variables.
         proxy = os.environ.get('FOX_PROXY') if proxy is None else proxy
         self.proxy = proxy
         self.opener = build_opener(ProxyHandler({'http': proxy, 'https': proxy})
                                   if proxy else ProxyHandler({}) if proxy == '' else ProxyHandler())
         self.timeout = timeout
+        self.allow_insecure_http = allow_insecure_http
         self._lock = threading.Lock()
         self._cache = {}
         self._last_request = 0.0
@@ -143,8 +144,9 @@ class FoxClient:
         _identity(chessid, '棋谱 ID')
         body = urlencode({'chessid': chessid}).encode('utf-8')
         attempts = []
-        endpoints = [(url, body, 'okhttp/3.12.12') for url in SGF_ENDPOINTS]
-        endpoints.append((H5 + '/YHWQFetchChess?' + urlencode({'chessid': chessid}), None, MOBILE_UA))
+        endpoints = [(H5 + '/YHWQFetchChess?' + urlencode({'chessid': chessid}), None, MOBILE_UA)]
+        if self.allow_insecure_http:
+            endpoints.extend((url, body, 'okhttp/3.12.12') for url in SGF_ENDPOINTS)
         for endpoint, data, user_agent in endpoints:
             try:
                 payload = self._success(self.request_json(endpoint, data=data, user_agent=user_agent))
@@ -153,7 +155,8 @@ class FoxClient:
                     raise FoxError('chess 字段为空。')
                 info = inspect_sgf(sgf)
                 return {'chessid': chessid, 'sgf': sgf, 'bytes': len(sgf.encode('utf-8')),
-                        'endpoint': endpoint.split('?')[0], 'info': info, 'attempts': attempts}
+                        'endpoint': endpoint.split('?')[0], 'secure_transport': endpoint.startswith('https:'),
+                        'info': info, 'attempts': attempts}
             except FoxError as error:
                 attempts.append({'endpoint': endpoint.split('?')[0], 'error': str(error)})
-        raise FoxError('三个下载地址均失败：' + '；'.join(a['error'] for a in attempts))
+        raise FoxError('所有已启用的下载地址均失败：' + '；'.join(a['error'] for a in attempts))

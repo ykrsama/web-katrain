@@ -3,12 +3,12 @@ import { useGameStore } from '../store/gameStore';
 import { useT, type TranslationVars } from '../i18n';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { parseSgf } from '../utils/sgf';
-import { FoxImportError, resolveFoxKomi } from '../utils/foxImport';
+import { FoxImportError, resolveFoxKomi, assertFoxMoveNodes } from '../utils/foxImport';
 import './FoxSgfImport.css';
 
 type Game = { chessid: string; black: string; white: string; date: string; moves: number | string };
 type Page = { games: Game[]; count: number; next_cursor: string | null; can_request_next: boolean; user?: { uid: string; nickname: string }; uid: string };
-type RecordData = { chessid: string; sgf: string; bytes: number; info: { black: string; white: string; komi: string } };
+type RecordData = { chessid: string; sgf: string; bytes: number; secure_transport?: boolean; info: { black: string; white: string; komi: string } };
 type Notice = { key: string; vars?: TranslationVars; detail?: string };
 
 export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: boolean; onClose: () => void; returnFocus?: HTMLElement | null; onImport: (parsed: ReturnType<typeof parseSgf>, sourceName: string) => void }) {
@@ -99,9 +99,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     setError(null);
     try {
       const parsed = parseSgf(record.sgf);
-      if ((parsed.tree?.props.B?.length ?? 0) > 1 || (parsed.tree?.props.W?.length ?? 0) > 1) {
-        throw new FoxImportError('This record has multiple moves in one node and cannot be imported safely. Download the original SGF to preserve handicap stones.');
-      }
+      assertFoxMoveNodes(parsed.tree);
       const confirmedKomi = resolveFoxKomi(parsed.tree?.props.KM?.[0], komi);
       if (confirmedKomi !== undefined) {
         parsed.komi = confirmedKomi;
@@ -137,6 +135,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
         </>}
         {record && <section className="fox-import-detail">
           <h3>{t('{black} vs {white}', { black: record.info.black, white: record.info.white })}</h3><p>{t('Record {id} · {bytes} bytes · original komi KM[{komi}]', { id: record.chessid, bytes: record.bytes, komi: record.info.komi })}</p>
+          {record.secure_transport === false && <p className="fox-import-warning">{t('Untrusted transport: this record used a legacy HTTP fallback. Verify its source before importing.')}</p>}
           <p className="fox-import-warning">{t('Original SGF: variations, handicap and komi have not been normalized.')}</p>
           {Math.abs(Number(record.info.komi)) >= 100 && <p className="fox-import-warning">{t('KM[{komi}] may use Fox-specific encoding. Confirm the komi before importing.', { komi: record.info.komi })}</p>}
           <label>{t('Import komi (points)')}<input aria-label={t('Import komi')} type="number" step="0.5" min="-99.5" max="99.5" value={komi} placeholder={t('Confirm encoded komi before entering a value')} onChange={event => setKomi(event.target.value)} /></label>

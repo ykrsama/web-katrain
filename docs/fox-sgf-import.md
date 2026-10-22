@@ -2,6 +2,8 @@
 
 This feature adds **Import from Fox** to the desktop **⋯ → Import** menu and the mobile **Menu → Game** actions. The Chinese label is **野狐抓谱**. There is no floating launcher.
 
+The menu entry is exposed only after the same-origin `/api/fox/status` capability check succeeds. A static GitHub Pages build without this API hides the entry rather than advertising a broken import action. The supplied gateway serves from `/`; API paths intentionally target the origin root.
+
 It imports public historical records, not live games. No Fox account, cookies or credentials are required. Availability, retention and permitted use remain controlled by Fox; this is an unofficial client, not a guarantee of complete account history.
 
 ## Run locally
@@ -37,11 +39,13 @@ The gateway does **not** provide the app's `/katago-proxy` WebSocket engine. Con
 4. For special komi such as `KM[375]`, verify the rules and enter komi **in points** explicitly. The importer does not silently assume 375 points or guess a conversion factor. The original download stays byte-identical; only the parsed import copy gets the confirmed value.
 5. Replay normally. The upstream loader opens from the start by default. Imported records get an external filename and detach the previous library save target, so saving does not overwrite the previously opened library record.
 
-Multiple move values in a root node are rejected rather than silently dropping handicap stones. This is not a comprehensive Fox SGF normalizer. Raw downloads retain variations, handicap and komi as supplied upstream. Some download fallback endpoints use HTTP and are not TLS-protected.
+Repeated or mixed black/white move values in **any node, including variations**, are rejected rather than silently dropping handicap stones. This is not a comprehensive Fox SGF normalizer. Raw downloads retain variations, handicap and komi as supplied upstream. SGF downloads use HTTPS by default. Legacy HTTP fallback is **disabled by default**; explicitly add `--allow-insecure-http` only if compatibility is required after HTTPS fails. Such responses are marked as untrusted transport in the import UI. This flag does not make HTTP data trustworthy.
 
 ## Localization
 
 Menu entries, dialog labels, warnings and notifications use the existing `useT()` interface with English source keys. `src/i18n/zh/fox.ts` adds Chinese values without rewriting existing catalogue modules or shadowing their keys. Other declared locales use the app's existing English fallback; this feature does not add complete translations for them.
+
+Closing the dialog unmounts its session, aborts its request, and discards the selected record, komi and board-replacement permission; reopening starts fresh. Old async state updates cannot affect the new component session.
 
 Status/error state stores source keys and interpolation variables, so it re-renders when the app locale changes. Raw server diagnostics are available under **Upstream details (original language)** rather than presented as translated UI.
 
@@ -57,6 +61,14 @@ npm run verify
 ```
 
 The Python transport and gateway tests use explicitly synthetic fixtures and never claim those fixtures are real downloaded games. The frontend guard checks prior catalogue module bytes, effective values in the actual spread order, absence of new key collisions, placeholder parity, English fallback and real component SSR in English/Chinese.
+
+Optional browser boundary checks (requires Playwright and a running gateway):
+
+```bash
+FOX_TEST_URL=http://127.0.0.1:18767 python3 scripts/check-fox-boundaries.py
+```
+
+These checks use explicitly synthetic routed responses for stale replacement consent, cancelled/reopened requests, repeated/mixed moves in any variation, and missing-backend static deployments. Their evidence is written to the ignored `.external/fox-evidence/` directory.
 
 The implementation was also exercised against real public Fox records through a loopback gateway: nickname lookup, pagination listing, raw download byte equality, encoded-komi refusal and explicit confirmation, library-to-import switching, separate save download, full replay, mobile menu and runtime language switching. Engine-specific tests remain opt-in; these checks do not establish live GPU analysis or live observation support.
 

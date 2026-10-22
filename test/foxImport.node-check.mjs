@@ -1,6 +1,19 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveFoxKomi} from '../src/utils/foxImport.ts';
+import * as foxImport from '../src/utils/foxImport.ts';
+const {resolveFoxKomi}=foxImport;
+const validate=foxImport.assertFoxMoveNodes;
+test('rejects repeated or mixed moves anywhere in the tree',()=>{
+ for(const props of [{B:['pd','dp']},{B:['pd'],W:['dp']},{B:[''],W:['']}]) {
+  for(const tree of [{props,children:[]},{props:{},children:[{props,children:[]}]},{props:{},children:[{props:{},children:[]},{props,children:[]}]}]) {
+   assert.throws(()=>validate(tree),/multiple moves/);
+  }
+ }
+});
+test('accepts normal moves and setup stones without altering the tree',()=>{
+ const tree={props:{AB:['pd','dp']},children:[{props:{W:['qq']},children:[]}]};
+ const snapshot=JSON.stringify(tree);validate(tree);assert.equal(JSON.stringify(tree),snapshot);
+});
 test('encoded Fox komi must not silently become 375 points',()=>{
  assert.throws(()=>resolveFoxKomi('375',''),/confirm/);
 });
