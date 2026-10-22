@@ -139,6 +139,7 @@ export interface DesktopDashboardProps {
   onSaveToLibrary: (returnFocus?: HTMLElement | null) => void;
   onLoadSgf: () => void;
   onPasteSgf: (returnFocus?: HTMLElement | null) => void;
+  onFoxImport?: (returnFocus?: HTMLElement | null) => void;
   onScanBoard: (returnFocus?: HTMLElement | null) => void;
   onBlindfold: () => void;
   onSettings: () => void;
@@ -225,7 +226,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     navigateBack, navigateForward, canNavigateBack, canNavigateForward, navigateStart, navigateEnd, navigateToMove,
     jumpBack, jumpForward, findMistake, canFindPreviousMistake, canFindNextMistake, rotateBoard, switchBranch, undoToBranchPoint, makeCurrentNodeMainBranch,
     passTurn, onUndo, onAiMove, onResign, onPlayBest,
-    onNewGame, onSaveSgf, onCopySgf, onSaveToLibrary, onLoadSgf, onPasteSgf, onScanBoard,
+    onNewGame, onSaveSgf, onCopySgf, onSaveToLibrary, onLoadSgf, onPasteSgf, onFoxImport, onScanBoard,
     onBlindfold, onSettings, onCommandPalette, onKeyboardHelp, onAbout,
     toast, headerNotification,
   } = props;
@@ -1153,6 +1154,9 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <button type="button" className="menu-item" aria-label={t('Photo Board')} onClick={() => { const trigger = popTriggerRef.current; closePop(); onScanBoard(trigger); }}>
             <Icon name="camera" size={14} /><span className="mi-label">{t('Board from photo')}</span>
           </button>
+          {onFoxImport && <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onFoxImport(trigger); }}>
+            <Icon name="search" size={14} /><span className="mi-label">{t('Import from Fox')}</span>
+          </button>}
         </div>
       )}
       {pop?.id === 'help' && (

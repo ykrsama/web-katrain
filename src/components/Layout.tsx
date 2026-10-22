@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo
 import { shallow } from 'zustand/shallow';
 import { setNotificationHeld, useGameStore } from '../store/gameStore';
 import { GoBoard } from './GoBoard';
+import { FoxSgfImport } from './FoxSgfImport';
 import { AnalysisCommandBar } from './AnalysisCommandBar';
 import { CandidatePvTiles } from './CandidatePvTiles';
 import { EditToolbar } from './EditToolbar';
@@ -418,6 +419,23 @@ export const Layout: React.FC = () => {
   const [isPhotoBoardOpen, setIsPhotoBoardOpen] = useState(false);
   const [photoBoardInitialFile, setPhotoBoardInitialFile] = useState<File | null>(null);
   const [isPasteSgfOpen, setIsPasteSgfOpen] = useState(false);
+  const [isFoxImportOpen, setIsFoxImportOpen] = useState(false);
+  const [foxImportAvailable, setFoxImportAvailable] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    let active = true;
+    void fetch('/api/fox/status', { signal: controller.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(status => { if (active) setFoxImportAvailable(status?.ok === true && status?.fox === 'public-records-only'); })
+      .catch(() => { if (active) setFoxImportAvailable(false); });
+    return () => { active = false; controller.abort(); window.clearTimeout(timer); };
+  }, []);
+  const openFoxImport = useCallback((returnFocus?: HTMLElement | null) => {
+    modalReturnFocusRef.current = returnFocus ?? null;
+    setIsFoxImportOpen(true);
+  }, []);
+  const closeFoxImport = useCallback(() => setIsFoxImportOpen(false), []);
   const [saveToLibraryDialog, setSaveToLibraryDialog] = useState<SaveToLibraryDialogState | null>(null);
   const [isUnsavedChangesOpen, setIsUnsavedChangesOpen] = useState(false);
   const [pendingResignPlayer, setPendingResignPlayer] = useState<Player | null>(null);
@@ -3144,6 +3162,7 @@ export const Layout: React.FC = () => {
     isProblemOpen ||
     isPhotoBoardOpen ||
     isPasteSgfOpen ||
+    isFoxImportOpen ||
     saveToLibraryDialog ||
     pendingResignPlayer ||
     isClearAnalysisCacheConfirmOpen ||
@@ -3485,6 +3504,7 @@ export const Layout: React.FC = () => {
         saveLabel={saveControlLabel}
         onSaveToLibrary={handleOpenSaveToLibraryDialog}
         onLoad={handleLoadClick}
+        onFoxImport={foxImportAvailable ? openFoxImport : undefined}
         onScanBoard={() => openPhotoBoard()}
         onScoreQuiz={() => setIsScoreQuizOpen(true)}
         onRankLadder={() => setIsTournamentOpen(true)}
@@ -3721,6 +3741,7 @@ export const Layout: React.FC = () => {
             onSaveToLibrary={handleOpenSaveToLibraryDialog}
             onLoadSgf={handleLoadClick}
             onPasteSgf={handlePasteSgf}
+            onFoxImport={foxImportAvailable ? openFoxImport : undefined}
             onScanBoard={(returnFocus) => openPhotoBoard(null, returnFocus)}
             onBlindfold={() => setIsBlindfoldOpen(true)}
             onSettings={() => setIsSettingsOpen(true)}
@@ -4179,6 +4200,12 @@ export const Layout: React.FC = () => {
           onConfirm={confirmClearAnalysisCache}
         />
       )}
+      {isFoxImportOpen && <FoxSgfImport open={isFoxImportOpen} onClose={closeFoxImport} returnFocus={modalReturnFocusRef.current} onImport={(parsed, sourceName) => {
+        loadGame(parsed);
+        setLoadedLibraryFile(null);
+        setLoadedExternalFile({ kind: 'file', name: sourceName });
+        markCurrentGameCleanAndClearAutoSave();
+      }} />}
     </div>
   );
 };
