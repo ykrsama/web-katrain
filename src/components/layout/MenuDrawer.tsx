@@ -46,6 +46,7 @@ interface MenuDrawerProps {
   onSaveToLibrary: () => void;
   onLoad: () => void;
   onScanBoard: () => void;
+  onFoxImport?: (returnFocus?: HTMLElement | null) => void;
   onScoreQuiz?: () => void;
   onRankLadder?: () => void;
   onProGames?: () => void;
@@ -78,6 +79,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   onSaveToLibrary,
   onLoad,
   onScanBoard,
+  onFoxImport,
   onScoreQuiz,
   onRankLadder,
   onProGames,
@@ -103,6 +105,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   const activeLocale = getAppLocaleOption(appLocale);
   const drawerRef = React.useRef<HTMLDivElement>(null);
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const actionReturnFocusRef = React.useRef<HTMLElement | null>(null);
   const focusInputModeRef = React.useRef<'pointer' | 'keyboard'>('keyboard');
   const [focusInputMode, setFocusInputMode] = React.useState<'pointer' | 'keyboard'>('keyboard');
   const [showScrollHint, setShowScrollHint] = React.useState(false);
@@ -117,6 +120,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
     if (!open) return;
 
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    actionReturnFocusRef.current = previouslyFocused;
     const updateFocusInputMode = (mode: 'pointer' | 'keyboard') => {
       focusInputModeRef.current = mode;
       setFocusInputMode(mode);
@@ -337,6 +341,9 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   <FaCamera className="shrink-0" aria-hidden="true" /> {t('Photo Board')}
                 </span>
               </button>
+              {onFoxImport && <button type="button" className={menuAction} onClick={() => { onClose(); onFoxImport(actionReturnFocusRef.current); }}>
+                <span className="flex min-w-0 items-center gap-2"><FaSearch className="shrink-0" aria-hidden="true" /> {t('Import from Fox')}</span>
+              </button>}
             </div>
           </div>
           <div>
