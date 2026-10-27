@@ -351,7 +351,7 @@ describe('remote analysis query', () => {
     expect(names).toEqual(['japanese', 'korean', 'chinese', 'aga', 'new_zealand', 'tromp_taylor', 'stone_scoring']);
   });
 
-  it('merges region-of-interest avoids with explicit avoid moves and allow moves', () => {
+  it('sends region-of-interest avoids in the schema KataGo accepts', () => {
     const query = buildAnalysisQuery({
       ...base,
       options: {
@@ -361,9 +361,55 @@ describe('remote analysis query', () => {
       },
     });
 
-    // Every point outside the 4x4 corner is avoided, plus the explicit avoid.
-    expect(query.avoidMoves).toHaveLength(19 * 19 - 16 + 1);
-    expect(query.avoidMoves).toContainEqual({ move: 'Q19', untilDepth: 1 });
-    expect(query.allowMoves).toEqual([{ moves: ['Q19'], untilDepth: 1 }]);
+    // KataGo wants "a list of dicts with subfields 'player', 'moves',
+    // 'untilDepth'". A bare `{move}` entry made it reject the whole query, which
+    // is what drawing a region with `g` did on a remote engine.
+    const roi = query.avoidMoves?.[0];
+    expect(roi).toMatchObject({ player: 'B', untilDepth: 1 });
+    expect(roi?.moves).toHaveLength(19 * 19 - 16);
+    // The 4x4 corner is the region; every other point is off limits.
+    expect(roi?.moves).toContain('A19');
+    expect(roi?.moves).not.toContain('Q19');
+    // The explicit avoid is its own entry, still for the side to move.
+    expect(query.avoidMoves).toContainEqual({ player: 'B', moves: ['Q19'], untilDepth: 1 });
+    expect(query.allowMoves).toEqual([{ player: 'B', moves: ['Q19'], untilDepth: 1 }]);
+  });
+
+  it('defaults the restricted player to whoever is to move in the query', () => {
+    // One Black move played: White is to move, so a region of interest drawn now
+    // restricts White's root move.
+    const afterBlack = {
+      initialStones: [] as Array<[string, string]>,
+      moves: [['B', 'D4']] as Array<[string, string]>,
+      initialPlayer: 'B' as const,
+    };
+    const query = buildAnalysisQuery({
+      ...base,
+      position: afterBlack,
+      options: {
+        regionOfInterest: { xMin: 15, yMin: 0, xMax: 18, yMax: 3 },
+        avoidMoves: [{ x: 3, y: 3 }],
+      },
+    });
+
+    expect(query.avoidMoves?.[0]).toMatchObject({ player: 'W' });
+    expect(query.avoidMoves?.[1]).toMatchObject({ player: 'W', moves: ['D16'] });
+  });
+
+  it('honours an explicit player and folds allow lists per player', () => {
+    const query = buildAnalysisQuery({
+      ...base,
+      options: {
+        avoidMoves: [{ x: 3, y: 3, player: 'black', untilDepth: 2 }],
+        // KataGo allows at most one allowMoves dict per player.
+        allowMoves: [
+          { moves: [{ x: 15, y: 0 }] },
+          { moves: [{ x: 16, y: 0 }], untilDepth: 3 },
+        ],
+      },
+    });
+
+    expect(query.avoidMoves).toEqual([{ player: 'B', moves: ['D16'], untilDepth: 2 }]);
+    expect(query.allowMoves).toEqual([{ player: 'B', moves: ['Q19', 'R19'], untilDepth: 3 }]);
   });
 });

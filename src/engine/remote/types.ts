@@ -46,10 +46,13 @@ export interface RemoteQuery {
    * game scan that was queued earlier. Larger is more urgent; unset is 0.
    */
   priority?: number;
-  // KataGo 1.14+ "avoidMoves": array of moves the search may not play at the root.
-  avoidMoves?: Array<{ move: string; player?: string; untilDepth?: number }>;
-  // KataGo 1.14+ "allowMoves": the complement of avoidMoves.
-  allowMoves?: Array<{ moves: string[]; player?: string; untilDepth?: number }>;
+  // KataGo 1.14+ "avoidMoves": one entry per player, each banning a list of
+  // moves before `untilDepth` plies. The schema is strict: a dict with only a
+  // `move` string is rejected with "Must be a list of dicts with subfields
+  // 'player', 'moves', 'untilDepth'".
+  avoidMoves?: Array<{ player: 'B' | 'W'; moves: string[]; untilDepth: number }>;
+  // KataGo 1.14+ "allowMoves": the same shape, and at most one entry per player.
+  allowMoves?: Array<{ player: 'B' | 'W'; moves: string[]; untilDepth: number }>;
 }
 
 // ─── Response (what we receive) ──────────────────────────────────────────
@@ -347,8 +350,22 @@ export type RemoteAnalysisOptions = {
   conservativePass?: boolean;
   fillDameBeforePass?: boolean;
   regionOfInterest?: RegionOfInterest | null;
-  avoidMoves?: Array<{ x: number; y: number; untilDepth?: number }>;
-  allowMoves?: Array<{ moves: Array<{ x: number; y: number }>; untilDepth?: number }>;
+  avoidMoves?: Array<{ x: number; y: number; player?: Player; untilDepth?: number }>;
+  allowMoves?: Array<{ moves: Array<{ x: number; y: number }>; player?: Player; untilDepth?: number }>;
+};
+
+/**
+ * The player the analyzed position has to move, as KataGo reads it.
+ *
+ * Every move entry carries its own colour, so the side to move is the opposite
+ * of the last one; with no moves it is `initialPlayer`. The ROI and any avoid
+ * list default to this player, the same default the local worker uses for
+ * `avoidMoves` (`move.player ?? msg.currentPlayer`).
+ */
+const playerToMove = (position: RemoteQueryPosition): 'B' | 'W' => {
+  const last = position.moves[position.moves.length - 1];
+  if (!last) return position.initialPlayer;
+  return last[0] === 'B' ? 'W' : 'B';
 };
 
 /**
@@ -426,7 +443,11 @@ export function buildAnalysisQuery(args: {
     query.analysisPVLen = analysisPvLen;
   }
 
-  // Region of interest: the search may not play outside it.
+  // Region of interest: the search may not play outside it at the root. KataGo
+  // takes one dict per player with a *list* of moves, so the points outside the
+  // box go in a single entry for the side to move (the only player the root
+  // move belongs to). Until depth 1 keeps it at the root, matching the local
+  // worker's root mask.
   if (options.regionOfInterest) {
     const roi = options.regionOfInterest;
     const avoidList: string[] = [];
@@ -438,23 +459,34 @@ export function buildAnalysisQuery(args: {
       }
     }
     if (avoidList.length > 0) {
-      query.avoidMoves = avoidList.map((move) => ({ move, untilDepth: 1 }));
+      query.avoidMoves = [{ player: playerToMove(position), moves: avoidList, untilDepth: 1 }];
     }
   }
 
   if (options.avoidMoves && options.avoidMoves.length > 0) {
     const existing = query.avoidMoves ?? [];
     for (const am of options.avoidMoves) {
-      existing.push({ move: coordToGtp(am.x, am.y, boardSize), untilDepth: am.untilDepth ?? 1 });
+      existing.push({
+        player: am.player ? colorToKataGo(am.player) : playerToMove(position),
+        moves: [coordToGtp(am.x, am.y, boardSize)],
+        untilDepth: am.untilDepth ?? 1,
+      });
     }
     query.avoidMoves = existing;
   }
 
   if (options.allowMoves && options.allowMoves.length > 0) {
-    query.allowMoves = options.allowMoves.map((am) => ({
-      moves: am.moves.map((m) => coordToGtp(m.x, m.y, boardSize)),
-      untilDepth: am.untilDepth ?? 1,
-    }));
+    // "At most one dict may be specified per player", so fold same-player
+    // entries into one and keep the deepest limit among them.
+    const byPlayer = new Map<'B' | 'W', { moves: string[]; untilDepth: number }>();
+    for (const am of options.allowMoves) {
+      const player = am.player ? colorToKataGo(am.player) : playerToMove(position);
+      const entry = byPlayer.get(player) ?? { moves: [], untilDepth: 1 };
+      entry.moves.push(...am.moves.map((m) => coordToGtp(m.x, m.y, boardSize)));
+      entry.untilDepth = Math.max(entry.untilDepth, am.untilDepth ?? 1);
+      byPlayer.set(player, entry);
+    }
+    query.allowMoves = [...byPlayer].map(([player, entry]) => ({ player, ...entry }));
   }
 
   return query;

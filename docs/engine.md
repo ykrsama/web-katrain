@@ -175,6 +175,12 @@ without the top move" uses it to answer what the rest of the board is worth when
 one move dominates the reading. A region of interest restricts the root the same
 way, and the two compose.
 
+On the remote path this has to travel as KataGo's own schema: a list of dicts
+with `player`, `moves` (a list) and `untilDepth`, one per player. The analysis
+engine rejects anything else with "Must be a list of dicts with subfields
+'player', 'moves', 'untilDepth'", and the region-of-interest mask is one such
+dict for the side to move.
+
 ## Analysis Modes
 
 The store uses the engine in several ways:
