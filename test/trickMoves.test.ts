@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TRICK_LOSS_THRESHOLD,
+  TRICK_WINRATE_DROP,
   evaluateTrickReplies,
   summarizeTrickRow,
   type TrickMoveMark,
@@ -63,17 +64,45 @@ describe('trick-move criterion', () => {
     expect(evaluation.isTrick).toBe(true);
   });
 
-  it('still requires the second reply to lose the points', () => {
+  it('can be a trap on winrate alone, inside the point threshold', () => {
+    // The second reply loses only one point, but it costs White 10% winrate.
     const evaluation = evaluateTrickReplies({
-      replies: [reply(0, 0.45), reply(2, 0.55)],
+      replies: [reply(0, 0.45), reply(1, 0.6)],
       rootScoreLead: 0,
       baselineWinRate: baseline,
       mover: 'white',
     });
 
-    expect(evaluation.secondLoss).toBe(2);
-    expect(evaluation.winRateDrop).toBeGreaterThan(0);
+    expect(evaluation.secondLoss).toBe(1);
+    expect(evaluation.winRateDrop).toBeCloseTo(0.1, 10);
+    expect(evaluation.isTrick).toBe(true);
+  });
+
+  it('does not flag a small loss on both measures', () => {
+    // One point (under the threshold) and 2% winrate (under five): not a trap.
+    const evaluation = evaluateTrickReplies({
+      replies: [reply(0, 0.45), reply(1, 0.52)],
+      rootScoreLead: 0,
+      baselineWinRate: baseline,
+      mover: 'white',
+    });
+
+    expect(evaluation.secondLoss).toBe(1);
+    expect(evaluation.winRateDrop).toBeCloseTo(0.02, 10);
     expect(evaluation.isTrick).toBe(false);
+  });
+
+  it('does not need the full five percent when the point loss is there', () => {
+    const evaluation = evaluateTrickReplies({
+      replies: [reply(0, 0.45), reply(5, 0.51)],
+      rootScoreLead: 0,
+      baselineWinRate: baseline,
+      mover: 'white',
+    });
+
+    expect(evaluation.secondLoss).toBe(5);
+    expect(evaluation.winRateDrop).toBeCloseTo(0.01, 10);
+    expect(evaluation.isTrick).toBe(true);
   });
 
   it('does not flag a lost position, where even the best reply loses points', () => {
@@ -108,22 +137,32 @@ describe('trick-move criterion', () => {
     expect(evaluation.isTrick).toBe(true);
   });
 
-  it('uses three points as the default threshold', () => {
-    expect(TRICK_LOSS_THRESHOLD).toBe(3);
+  it('uses one and a half points and five percent as the defaults', () => {
+    expect(TRICK_LOSS_THRESHOLD).toBe(1.5);
+    expect(TRICK_WINRATE_DROP).toBe(0.05);
     const atThreshold = evaluateTrickReplies({
-      replies: [reply(0, 0.45), reply(3, 0.55)],
+      replies: [reply(0, 0.45), reply(1.5, 0.55)],
       rootScoreLead: 0,
       baselineWinRate: baseline,
       mover: 'white',
     });
     expect(atThreshold.isTrick).toBe(true);
+    // Under the point threshold and under five percent: not a trap.
     const below = evaluateTrickReplies({
-      replies: [reply(0, 0.45), reply(2.9, 0.55)],
+      replies: [reply(0, 0.45), reply(1.4, 0.52)],
       rootScoreLead: 0,
       baselineWinRate: baseline,
       mover: 'white',
     });
     expect(below.isTrick).toBe(false);
+    // Under the point threshold, but well over five percent: a trap.
+    const winrateOnly = evaluateTrickReplies({
+      replies: [reply(0, 0.45), reply(1.4, 0.6)],
+      rootScoreLead: 0,
+      baselineWinRate: baseline,
+      mover: 'white',
+    });
+    expect(winrateOnly.isTrick).toBe(true);
   });
 });
 

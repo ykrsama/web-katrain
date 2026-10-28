@@ -206,11 +206,12 @@ Two questions are answered by small batches instead of the live analysis:
 - Trick moves: every legal point of the position is read at the fast-review
   depth -- one query per point, all dispatched together so a remote engine can
   batch them across its threads -- and a point is kept when two things hold in
-  the opponent's reply list: their best reply loses less than three points and
-  their second-best loses at least three, and their winrate after that second
-  choice is below the winrate they held before the move. The first is "only one
-  good reply"; the second is what makes it a trap rather than merely a good
-  move -- the opponent is worse off than before unless they find the one answer.
+  the opponent's reply list: their best reply loses less than 1.5 points; their
+  second-choice reply leaves them below the winrate they held before the move;
+  and that second choice either loses at least 1.5 points or costs them more
+  than five percentage points of winrate. The first is "only one good reply";
+  the rest is what makes it a trap rather than merely a good move -- the
+  opponent is worse off than before unless they find the one answer.
   The reply list considered is the Top Moves cap, and a framed region narrows
   the points that are tested; the opponent's replies are judged without it.
 

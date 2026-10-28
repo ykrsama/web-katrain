@@ -48,20 +48,22 @@ const startNineByNine = async () => {
  * A fake engine that answers every candidate read with the opponent's replies.
  *
  * Black holds 50% at the scanned position, so White does too. The candidate at
- * (3,3) is the trap: White's best reply keeps 50% and their second choice drops
- * to 45% while losing 5 points. (4,4) also costs White points on their second
- * choice but keeps their winrate, so it must not be marked. Everything else
- * leaves a reply that holds. Scores and winrates are black-perspective, the
- * frame the app reads.
+ * (3,3) is a trap on points: White's second choice loses 5 points and drops them
+ * to 45%. (5,5) is a trap on winrate alone: the second choice loses only a
+ * point but costs White 10%. (4,4) loses 5 points but *raises* White's winrate,
+ * so it must not be marked; every other candidate loses only a point and keeps
+ * White's winrate. Scores and winrates are black-perspective, the frame the app
+ * reads.
  */
 const installEngine = () => {
   analyzeMock.mockImplementation(async (args: AnalyzeArgs) => {
     const move = args.nextMove;
     if (!move) throw new Error('trick scan asked for a position with no move');
-    const isTrap = move.x === 3 && move.y === 3;
-    const losesPointsOnly = move.x === 4 && move.y === 4;
-    const secondScore = isTrap || losesPointsOnly ? 5 : 2;
-    const secondWinRate = isTrap ? 0.55 : 0.45;
+    const pointTrap = move.x === 3 && move.y === 3;
+    const winrateTrap = move.x === 5 && move.y === 5;
+    const losesPointsButNotWinrate = move.x === 4 && move.y === 4;
+    const secondScore = pointTrap || losesPointsButNotWinrate ? 5 : 1;
+    const secondWinRate = pointTrap ? 0.55 : winrateTrap ? 0.6 : 0.45;
     return {
       rootWinRate: 0.5,
       rootScoreLead: 0,
@@ -121,8 +123,14 @@ describe('find trick moves', () => {
     expect(state.trickScanTotal).toBe(81);
     expect(state.trickScanDone).toBe(81);
     expect(analyzeMock).toHaveBeenCalledTimes(81);
-    expect(state.trickMoves).toEqual({ nodeId: node.id, marks: [{ x: 3, y: 3, secondLoss: 5 }] });
-    expect(state.notification?.message).toBe('Trick moves: 1.');
+    expect(state.trickMoves).toEqual({
+      nodeId: node.id,
+      marks: [
+        { x: 3, y: 3, secondLoss: 5 },
+        { x: 5, y: 5, secondLoss: 1 },
+      ],
+    });
+    expect(state.notification?.message).toBe('Trick moves: 2.');
     // The scan analyses positions that were never played: it must not rewrite
     // the node, which still carries the live analysis.
     expect(node.analysis).toBe(previousAnalysis);
@@ -133,15 +141,19 @@ describe('find trick moves', () => {
     const node = await startNineByNine();
     node.analysis = analysis();
     installEngine();
-    // A 3x3 box around (3,3).
-    useGameStore.setState({ regionOfInterest: { xMin: 2, yMin: 2, xMax: 4, yMax: 4 } });
+    // A 4x4 box holding both traps, (3,3) and (5,5), and the near miss (4,4).
+    useGameStore.setState({ regionOfInterest: { xMin: 2, yMin: 2, xMax: 5, yMax: 5 } });
 
     useGameStore.getState().findTrickMoves();
     await flush();
 
-    expect(analyzeMock).toHaveBeenCalledTimes(9);
-    expect(useGameStore.getState().trickScanTotal).toBe(9);
-    expect(useGameStore.getState().trickMoves?.marks).toEqual([{ x: 3, y: 3, secondLoss: 5 }]);
+    expect(analyzeMock).toHaveBeenCalledTimes(16);
+    expect(useGameStore.getState().trickScanTotal).toBe(16);
+    // The box has (3,3) and (5,5) in it: both traps survive the region filter.
+    expect(useGameStore.getState().trickMoves?.marks).toEqual([
+      { x: 3, y: 3, secondLoss: 5 },
+      { x: 5, y: 5, secondLoss: 1 },
+    ]);
     // The region narrows the reader's own candidates, not the opponent's
     // answers: the follow-up reads are unrestricted.
     for (const call of analyzeMock.mock.calls) {
@@ -171,7 +183,7 @@ describe('find trick moves', () => {
         rootWinRate: 0.5,
         rootScoreLead: 0,
         rootVisits: 25,
-        moves: [reply(0, 5, 0, 0, 0.45), reply(1, 5, 1, 2, 0.45)],
+        moves: [reply(0, 5, 0, 0, 0.45), reply(1, 5, 1, 1, 0.45)],
         ownership: [],
       };
     });

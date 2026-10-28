@@ -5,7 +5,15 @@ import type { Player } from '../types';
  * to count as "only one good move". KaTrain-style score loss, not winrate: a
  * move can hold the winrate and still throw away points.
  */
-export const TRICK_LOSS_THRESHOLD = 3;
+export const TRICK_LOSS_THRESHOLD = 1.5;
+
+/**
+ * How far the opponent's second choice has to drop their winrate, below where
+ * they stand before the candidate move, before it counts as a trap on its own.
+ * Five percentage points, so a reply that gives up points but barely moves the
+ * winrate still needs the point loss to qualify.
+ */
+export const TRICK_WINRATE_DROP = 0.05;
 
 /** One board point that survived the scan, with the number behind it. */
 export type TrickMoveMark = {
@@ -46,15 +54,16 @@ export type TrickReplyEvaluation = {
 /**
  * Does playing here trap the player to move?
  *
- * Two things must hold, both read from the engine's reply list:
+ * The trick has three parts, all read from the engine's reply list:
  *
- * 1. Only one reply keeps the position: the best reply loses less than
- *    `threshold` points and the second-best loses at least `threshold`.
- * 2. The opponent's second choice leaves them worse off than they are now:
- *    their winrate after it is below their winrate at the position *before* the
+ * 1. The best reply holds the position: it loses less than `threshold` points.
+ * 2. The opponent's second choice leaves them worse off than they are now: their
+ *    winrate after it is below their winrate at the position *before* the
  *    candidate move. That is what makes the move a trick rather than merely a
- *    good move -- they had something to lose, and every answer but the one good
- *    one loses it.
+ *    good move -- they had something to lose.
+ * 3. That second choice is bad enough to matter on at least one measure: it
+ *    loses `threshold` points or more, or it costs them more than
+ *    `winRateDropThreshold` of winrate.
  *
  * `replies` are in the engine's rank order, so `replies[0]` is 一选 and
  * `replies[1]` is 二选. Scores and winrates are black-perspective, the frame
@@ -68,6 +77,7 @@ export function evaluateTrickReplies(args: {
   /** The player who has to choose among the replies. */
   mover: Player;
   threshold?: number;
+  winRateDropThreshold?: number;
 }): TrickReplyEvaluation {
   const threshold = args.threshold ?? TRICK_LOSS_THRESHOLD;
   const sign = args.mover === 'black' ? 1 : -1;
@@ -77,6 +87,7 @@ export function evaluateTrickReplies(args: {
   if (replies.length < 2) {
     return { topLoss: 0, secondLoss: null, winRateDrop: null, isTrick: false };
   }
+  const winRateDropThreshold = args.winRateDropThreshold ?? TRICK_WINRATE_DROP;
   const rootValue = sign * args.rootScoreLead;
   const topLoss = Math.max(0, rootValue - sign * replies[0]!.scoreLead);
   const secondLoss = Math.max(0, rootValue - sign * replies[1]!.scoreLead);
@@ -87,7 +98,9 @@ export function evaluateTrickReplies(args: {
     topLoss,
     secondLoss,
     winRateDrop,
-    isTrick: topLoss < threshold && secondLoss >= threshold && winRateDrop > 0,
+    isTrick:
+      topLoss < threshold &&
+      ((secondLoss >= threshold && winRateDrop > 0) || winRateDrop > winRateDropThreshold),
   };
 }
 
