@@ -19,11 +19,11 @@ type AnalyzeArgs = {
   regionOfInterest?: unknown;
 };
 
-const reply = (x: number, y: number, order: number, scoreLead: number) => ({
+const reply = (x: number, y: number, order: number, scoreLead: number, winRate: number) => ({
   x,
   y,
   order,
-  winRate: 0.5,
+  winRate,
   scoreLead,
   visits: 20,
   pointsLost: 0,
@@ -32,10 +32,10 @@ const reply = (x: number, y: number, order: number, scoreLead: number) => ({
 const flush = async () => {
   for (let i = 0; i < 400; i++) {
     const { useGameStore } = await import('../src/store/gameStore');
-    if (!useGameStore.getState().isSavageScanRunning) return;
+    if (!useGameStore.getState().isTrickScanRunning) return;
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  throw new Error('savage scan did not finish');
+  throw new Error('trick scan did not finish');
 };
 
 const startNineByNine = async () => {
@@ -47,20 +47,26 @@ const startNineByNine = async () => {
 /**
  * A fake engine that answers every candidate read with the opponent's replies.
  *
- * The candidate at (3,3) is the one that leaves White a single reply that
- * holds; every other candidate leaves two. Scores are black-perspective, the
+ * Black holds 50% at the scanned position, so White does too. The candidate at
+ * (3,3) is the trap: White's best reply keeps 50% and their second choice drops
+ * to 45% while losing 5 points. (4,4) also costs White points on their second
+ * choice but keeps their winrate, so it must not be marked. Everything else
+ * leaves a reply that holds. Scores and winrates are black-perspective, the
  * frame the app reads.
  */
 const installEngine = () => {
   analyzeMock.mockImplementation(async (args: AnalyzeArgs) => {
     const move = args.nextMove;
-    if (!move) throw new Error('savage scan asked for a position with no move');
-    const secondScore = move.x === 3 && move.y === 3 ? 5 : 2;
+    if (!move) throw new Error('trick scan asked for a position with no move');
+    const isTrap = move.x === 3 && move.y === 3;
+    const losesPointsOnly = move.x === 4 && move.y === 4;
+    const secondScore = isTrap || losesPointsOnly ? 5 : 2;
+    const secondWinRate = isTrap ? 0.55 : 0.45;
     return {
       rootWinRate: 0.5,
       rootScoreLead: 0,
       rootVisits: 25,
-      moves: [reply(0, 5, 0, 0), reply(1, 5, 1, secondScore)],
+      moves: [reply(0, 5, 0, 0, 0.45), reply(1, 5, 1, secondScore, secondWinRate)],
       ownership: [],
     };
   });
@@ -74,7 +80,7 @@ const analysis = (): AnalysisResult => ({
   territory: Array.from({ length: 9 }, () => Array(9).fill(0)),
 });
 
-describe('find savage moves', () => {
+describe('find trick moves', () => {
   beforeEach(async () => {
     analyzeMock.mockReset();
     const { analysisQueue } = await import('../src/utils/analysisQueue');
@@ -88,8 +94,8 @@ describe('find savage moves', () => {
       isAiPlaying: false,
       aiColor: null,
       regionOfInterest: null,
-      isSavageScanRunning: false,
-      savageMoves: null,
+      isTrickScanRunning: false,
+      trickMoves: null,
       notification: null,
     });
   });
@@ -107,16 +113,16 @@ describe('find savage moves', () => {
     node.analysis = previousAnalysis;
     installEngine();
 
-    useGameStore.getState().findSavageMoves();
+    useGameStore.getState().findTrickMoves();
     await flush();
 
     const state = useGameStore.getState();
     // A 9x9 empty board has 81 legal points, and every one of them is read.
-    expect(state.savageScanTotal).toBe(81);
-    expect(state.savageScanDone).toBe(81);
+    expect(state.trickScanTotal).toBe(81);
+    expect(state.trickScanDone).toBe(81);
     expect(analyzeMock).toHaveBeenCalledTimes(81);
-    expect(state.savageMoves).toEqual({ nodeId: node.id, marks: [{ x: 3, y: 3, secondLoss: 5 }] });
-    expect(state.notification?.message).toBe('Savage moves: 1.');
+    expect(state.trickMoves).toEqual({ nodeId: node.id, marks: [{ x: 3, y: 3, secondLoss: 5 }] });
+    expect(state.notification?.message).toBe('Trick moves: 1.');
     // The scan analyses positions that were never played: it must not rewrite
     // the node, which still carries the live analysis.
     expect(node.analysis).toBe(previousAnalysis);
@@ -124,17 +130,18 @@ describe('find savage moves', () => {
 
   it('only scans the legal points inside the framed region', async () => {
     const { useGameStore } = await import('../src/store/gameStore');
-    await startNineByNine();
+    const node = await startNineByNine();
+    node.analysis = analysis();
     installEngine();
     // A 3x3 box around (3,3).
     useGameStore.setState({ regionOfInterest: { xMin: 2, yMin: 2, xMax: 4, yMax: 4 } });
 
-    useGameStore.getState().findSavageMoves();
+    useGameStore.getState().findTrickMoves();
     await flush();
 
     expect(analyzeMock).toHaveBeenCalledTimes(9);
-    expect(useGameStore.getState().savageScanTotal).toBe(9);
-    expect(useGameStore.getState().savageMoves?.marks).toEqual([{ x: 3, y: 3, secondLoss: 5 }]);
+    expect(useGameStore.getState().trickScanTotal).toBe(9);
+    expect(useGameStore.getState().trickMoves?.marks).toEqual([{ x: 3, y: 3, secondLoss: 5 }]);
     // The region narrows the reader's own candidates, not the opponent's
     // answers: the follow-up reads are unrestricted.
     for (const call of analyzeMock.mock.calls) {
@@ -145,7 +152,8 @@ describe('find savage moves', () => {
   it('dispatches the reads together instead of awaiting them one by one', async () => {
     const { useGameStore } = await import('../src/store/gameStore');
     const { analysisQueue } = await import('../src/utils/analysisQueue');
-    await startNineByNine();
+    const node = await startNineByNine();
+    node.analysis = analysis();
 
     // Hold every answer until all 81 reads are in flight. A sequential loop
     // starts one, waits for it, and never gets there; the queue's remote window
@@ -163,13 +171,13 @@ describe('find savage moves', () => {
         rootWinRate: 0.5,
         rootScoreLead: 0,
         rootVisits: 25,
-        moves: [reply(0, 5, 0, 0), reply(1, 5, 1, 2)],
+        moves: [reply(0, 5, 0, 0, 0.45), reply(1, 5, 1, 2, 0.45)],
         ownership: [],
       };
     });
     analysisQueue.setConcurrency(81);
 
-    useGameStore.getState().findSavageMoves();
+    useGameStore.getState().findTrickMoves();
     await flush();
 
     expect(started).toBe(81);
@@ -177,12 +185,12 @@ describe('find savage moves', () => {
 
   it('puts the control next to the play-elsewhere read and draws its marks on the board', () => {
     const row = readFileSync('src/components/TenukiRow.tsx', 'utf8');
-    expect(row).toContain('findSavageMoves');
-    expect(row).toContain('summarizeSavageRow');
+    expect(row).toContain('findTrickMoves');
+    expect(row).toContain('summarizeTrickRow');
 
     const board = readFileSync('src/components/GoBoard.tsx', 'utf8');
-    expect(board).toContain('savageCanvasRef');
-    expect(board).toContain('savageMoves?.nodeId === currentNode.id');
-    expect(board).toContain('data-savage-move-count');
+    expect(board).toContain('trickCanvasRef');
+    expect(board).toContain('trickMoves?.nodeId === currentNode.id');
+    expect(board).toContain('data-trick-move-count');
   });
 });

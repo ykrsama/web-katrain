@@ -203,14 +203,16 @@ Two questions are answered by small batches instead of the live analysis:
 
 - Play elsewhere: evaluate the position again after the side to move passes and
   price the point at the gap (see `utils/tenukiValue.ts`).
-- Savage moves: every legal point of the position is read at the fast-review
+- Trick moves: every legal point of the position is read at the fast-review
   depth -- one query per point, all dispatched together so a remote engine can
-  batch them across its threads -- and a point is kept when the opponent's best
-  reply loses less than three points and their second-best loses at least
-  three. That is the "only one good reply" position, and the marks say which of
-  the reader's moves creates it. The reply list considered is the Top Moves
-  cap, and a framed region narrows the points that are tested; the opponent's
-  replies are judged without it.
+  batch them across its threads -- and a point is kept when two things hold in
+  the opponent's reply list: their best reply loses less than three points and
+  their second-best loses at least three, and their winrate after that second
+  choice is below the winrate they held before the move. The first is "only one
+  good reply"; the second is what makes it a trap rather than merely a good
+  move -- the opponent is worse off than before unless they find the one answer.
+  The reply list considered is the Top Moves cap, and a framed region narrows
+  the points that are tested; the opponent's replies are judged without it.
 
 Both describe positions that were never played, so neither writes to the game
 tree: results carry the node id they belong to and are drawn as overlays.

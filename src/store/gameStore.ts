@@ -18,7 +18,7 @@ import { getPreferredAppLocaleId, isAppLocaleId } from '../utils/locales';
 import { createEmptyBoard, getHandicapPoints, getMaxHandicap, normalizeBoardSize } from '../utils/boardSize';
 import { makeAnalysisPositionKey, makeGameStateAnalysisPositionKey } from '../utils/analysisPositionKey';
 import { computeTenukiValue, opponentFollowUp, type TenukiAnalysisState } from '../utils/tenukiValue';
-import { evaluateSavageReplies, type SavageMoveMark, type SavageMoveMarks } from '../utils/savageMoves';
+import { evaluateTrickReplies, type TrickMoveMark, type TrickMoveMarks } from '../utils/trickMoves';
 import {
   collectDrillMistakes,
   drillSummaryText,
@@ -156,15 +156,15 @@ interface GameStore extends GameState {
    */
   tenukiAnalysis: TenukiAnalysisState | null;
   /**
-   * The candidates from the last "find savage moves" scan: moves that leave the
+   * The candidates from the last "find trick moves" scan: moves that leave the
    * opponent only one reply that does not throw points away. Kept off the game
    * tree -- the scan analyses positions that were never played -- and carries
    * the node id it belongs to, like `tenukiAnalysis`.
    */
-  savageMoves: SavageMoveMarks | null;
-  isSavageScanRunning: boolean;
-  savageScanDone: number;
-  savageScanTotal: number;
+  trickMoves: TrickMoveMarks | null;
+  isTrickScanRunning: boolean;
+  trickScanDone: number;
+  trickScanTotal: number;
   /**
    * A run through the mistakes on the line being reviewed, one position at a
    * time, with the engine's answer hidden until the player commits to a move.
@@ -202,13 +202,14 @@ interface GameStore extends GameState {
   analyzeTenuki: () => void;
   clearTenukiAnalysis: () => void;
   /**
-   * Scan every legal point of the current position for "savage moves": moves
-   * that leave the opponent exactly one reply that does not lose points.
+   * Scan every legal point of the current position for "trick moves": moves
+   * that leave the opponent exactly one reply that does not lose points and
+   * make their second-best reply worse for them than the position is now.
    * Equal-depth quick read at the fast-review depth, all candidates at once;
    * starts and stops are the same action.
    */
-  findSavageMoves: () => void;
-  stopSavageScan: () => void;
+  findTrickMoves: () => void;
+  stopTrickScan: () => void;
   clearAnalysisCache: () => void;
   toggleTeachMode: () => void;
   clearNotification: () => void;
@@ -1531,8 +1532,8 @@ let refineToken = 0;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 /** Bumped per play-elsewhere request; see `analyzeTenuki`. */
 let tenukiToken = 0;
-/** Bumped per savage-move scan; `stopSavageScan` and navigation retire a run. */
-let savageToken = 0;
+/** Bumped per trick-move scan; `stopTrickScan` and navigation retire a run. */
+let trickToken = 0;
 
 const ANALYSIS_QUEUE_PRIORITY = {
   interactive: 100,
@@ -1544,7 +1545,7 @@ const ANALYSIS_QUEUE_PRIORITY = {
   equalize: 40,
   // Explicitly asked for, but a scan behind the live read: it must not preempt
   // anything, and it only orders among the jobs already queued.
-  savage: 30,
+  trick: 30,
   fullGame: 20,
   fastGame: 15,
   // A sweep is a broad, slow scan: it outranks the background game review but
@@ -2039,10 +2040,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   notification: null,
   analysisData: null,
   tenukiAnalysis: null,
-  savageMoves: null,
-  isSavageScanRunning: false,
-  savageScanDone: 0,
-  savageScanTotal: 0,
+  trickMoves: null,
+  isTrickScanRunning: false,
+  trickScanDone: 0,
+  trickScanTotal: 0,
   mistakeDrill: null,
   blindfold: null,
   analysisCacheSize: getAnalysisCacheSize(initialRoot),
@@ -2205,10 +2206,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // A sweep/equalize batch is a background scan the user may want to call
       // off on its own; its results are already folded in one at a time.
       analysisQueue.cancelGroup('refine');
-      // The savage-move scan is the same kind of batch, and it also writes no
+      // The trick-move scan is the same kind of batch, and it also writes no
       // results to the tree, so stopping drops nothing the reader can see.
-      savageToken++;
-      analysisQueue.cancelGroup('savage');
+      trickToken++;
+      analysisQueue.cancelGroup('trick');
       // Cancelling an *active* queue job only aborts its signal; the rejection
       // arrives when the engine call finally settles. Waiting for that would
       // leave the play-elsewhere readout saying "Checking..." after the user
@@ -2220,7 +2221,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         engineStatus: 'idle',
         engineError: null,
         tenukiAnalysis: null,
-        isSavageScanRunning: false,
+        isTrickScanRunning: false,
       });
   },
 
@@ -2388,7 +2389,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   /**
-   * Scan this position's candidates for "savage moves": moves that leave the
+   * Scan this position's candidates for "trick moves": moves that leave the
    * opponent exactly one reply which does not throw points away.
    *
    * Quick, equal-depth reads at the fast-review depth, the way the Equalize
@@ -2404,10 +2405,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
    * whether they have another good move, not whether they have one inside the
    * box.
    */
-  findSavageMoves: () => {
+  findTrickMoves: () => {
     const state = get();
-    if (state.isSavageScanRunning) {
-      get().stopSavageScan();
+    if (state.isTrickScanRunning) {
+      get().stopTrickScan();
       return;
     }
 
@@ -2426,13 +2427,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const komi = komiWithHandicapBonus(state.rootNode.gameState.board, rules, node.gameState.komi);
     const parentBoard = node.parent?.gameState.board;
     const grandparentBoard = node.parent?.parent?.gameState.board;
-    const token = ++savageToken;
-    const ownsRun = () => token === savageToken && get().currentNode.id === node.id;
+    const token = ++trickToken;
+    const ownsRun = () => token === trickToken && get().currentNode.id === node.id;
     const stopIfLeft = () => {
       if (ownsRun()) return false;
       // Navigation retires the scan: what it would report belongs to a position
       // the reader has left.
-      if (token === savageToken) get().stopSavageScan();
+      if (token === trickToken) get().stopTrickScan();
       return true;
     };
 
@@ -2445,29 +2446,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
       (move) => !roi || (move.x >= roi.xMin && move.x <= roi.xMax && move.y >= roi.yMin && move.y <= roi.yMax)
     );
 
-    // One equal-depth read per candidate, all pushed to the queue together. A
-    // sequential loop left the remote engine analysing a single position at a
-    // time; the queue's window is what lets it batch them across its threads.
-    const queryCandidate = (candidate: { x: number; y: number }) =>
+    // One read per position: the candidate's follow-up, or (once) the current
+    // position when the board has no analysis to take its winrate from. All are
+    // pushed to the queue together, so the remote engine can batch them across
+    // its threads instead of being handed one position at a time.
+    const queryPosition = (args: {
+      suffix: string;
+      label: string;
+      currentPlayer: Player;
+      nextMove?: Move;
+      regionOfInterest?: RegionOfInterest | null;
+    }) =>
       analysisQueue.enqueue<KataGoAnalysisPayload>({
-        id: `savage:${token}:${candidate.x},${candidate.y}`,
-        label: `Savage: ${gtpOf(candidate.x, candidate.y, boardSize)}`,
-        group: 'savage',
-        priority: ANALYSIS_QUEUE_PRIORITY.savage,
+        id: `trick:${token}:${args.suffix}`,
+        label: args.label,
+        group: 'trick',
+        priority: ANALYSIS_QUEUE_PRIORITY.trick,
         bypassCache: true,
         run: (ctx) =>
           getEngineClient(get().settings).analyze({
-            positionId: `${node.id}:savage:${candidate.x},${candidate.y}`,
+            positionId: `${node.id}:trick:${args.suffix}`,
             modelUrl,
             backend: get().settings.katagoBackend,
             board: node.gameState.board,
             previousBoard: parentBoard,
             previousPreviousBoard: grandparentBoard,
-            currentPlayer: opponent,
+            currentPlayer: args.currentPlayer,
             moveHistory: node.gameState.moveHistory,
-            nextMove: { x: candidate.x, y: candidate.y, player: mover },
+            nextMove: args.nextMove,
             komi,
             rules,
+            regionOfInterest: args.regionOfInterest ?? null,
             // Only the root value and the reply list are needed: these reads
             // exist to compare the opponent's answers, not to draw a line.
             topK,
@@ -2493,44 +2502,79 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (candidates.length === 0) {
       set({
-        isSavageScanRunning: false,
-        savageScanDone: 0,
-        savageScanTotal: 0,
-        savageMoves: { nodeId: node.id, marks: [] },
+        isTrickScanRunning: false,
+        trickScanDone: 0,
+        trickScanTotal: 0,
+        trickMoves: { nodeId: node.id, marks: [] },
         notification: { message: 'No legal points to test here.', type: 'info' },
       });
       return;
     }
 
+    // The winrate the opponent stands at *before* the candidate (the board's own
+    // winrate). Prefer the analysis the reader is looking at; without one, the
+    // scan reads the position once itself.
+    const analysisWinRate = node.analysis?.rootWinRate;
+    let baselineWinRate: number | null =
+      typeof analysisWinRate === 'number' && Number.isFinite(analysisWinRate) ? analysisWinRate : null;
+
     set({
-      isSavageScanRunning: true,
-      savageScanDone: 0,
-      savageScanTotal: candidates.length,
-      savageMoves: { nodeId: node.id, marks: [] },
+      isTrickScanRunning: true,
+      trickScanDone: 0,
+      trickScanTotal: candidates.length,
+      trickMoves: { nodeId: node.id, marks: [] },
     });
 
     void (async () => {
-      const marks: SavageMoveMark[] = [];
+      const marks: TrickMoveMark[] = [];
       let done = 0;
       let firstError: unknown = null;
 
       try {
+        if (baselineWinRate === null) {
+          const base = await queryPosition({
+            suffix: 'position',
+            label: 'Trick: position',
+            currentPlayer: mover,
+            regionOfInterest: roi,
+          });
+          if (stopIfLeft()) return;
+          baselineWinRate = base.rootWinRate;
+        }
+        const baseline = baselineWinRate;
+        if (typeof baseline !== 'number' || !Number.isFinite(baseline)) {
+          set({
+            isTrickScanRunning: false,
+            notification: { message: 'Trick scan: the engine returned no winrate for this position.', type: 'error' },
+          });
+          return;
+        }
+
         await Promise.all(
           candidates.map(async (candidate) => {
             if (stopIfLeft()) return;
             try {
-              const replies = await queryCandidate(candidate);
+              const replies = await queryPosition({
+                suffix: `${candidate.x},${candidate.y}`,
+                label: `Trick: ${gtpOf(candidate.x, candidate.y, boardSize)}`,
+                currentPlayer: opponent,
+                nextMove: { x: candidate.x, y: candidate.y, player: mover },
+              });
               if (stopIfLeft()) return;
               // The opponent's candidates as the app would list them; a remote
               // engine reports every move it looked at, not the Top Moves cap.
-              const evaluation = evaluateSavageReplies({
-                scores: replies.moves.slice(0, topK).map((move) => move.scoreLead),
+              const evaluation = evaluateTrickReplies({
+                replies: replies.moves.slice(0, topK).map((move) => ({
+                  scoreLead: move.scoreLead,
+                  winRate: move.winRate,
+                })),
                 rootScoreLead: replies.rootScoreLead,
+                baselineWinRate: baseline,
                 mover: opponent,
               });
-              if (evaluation.isSavage) {
+              if (evaluation.isTrick) {
                 marks.push({ x: candidate.x, y: candidate.y, secondLoss: evaluation.secondLoss ?? 0 });
-                set({ savageMoves: { nodeId: node.id, marks: [...marks] } });
+                set({ trickMoves: { nodeId: node.id, marks: [...marks] } });
               }
             } catch (err) {
               if (!isAnalysisCanceled(err) && firstError === null) firstError = err;
@@ -2538,20 +2582,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
               done++;
               // A stopped or superseded scan must not keep writing progress
               // into a newer run's counters.
-              if (token === savageToken && (done === candidates.length || done % 4 === 0)) {
-                set({ savageScanDone: done, savageScanTotal: candidates.length });
+              if (token === trickToken && (done === candidates.length || done % 4 === 0)) {
+                set({ trickScanDone: done, trickScanTotal: candidates.length });
               }
             }
           })
         );
       } catch (err) {
-        if (token !== savageToken) return;
+        if (token !== trickToken) return;
         const message = errorMessage(err);
         set({
-          isSavageScanRunning: false,
+          isTrickScanRunning: false,
           engineStatus: 'error',
           engineError: message,
-          notification: { message: `Savage scan failed: ${message}`, type: 'error' },
+          notification: { message: `Trick scan failed: ${message}`, type: 'error' },
         });
         return;
       }
@@ -2560,30 +2604,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (firstError !== null) {
         const message = errorMessage(firstError);
         set({
-          isSavageScanRunning: false,
+          isTrickScanRunning: false,
           engineStatus: 'error',
           engineError: message,
-          notification: { message: `Savage scan failed: ${message}`, type: 'error' },
+          notification: { message: `Trick scan failed: ${message}`, type: 'error' },
         });
         return;
       }
       set({
-        isSavageScanRunning: false,
-        savageScanDone: done,
-        savageScanTotal: candidates.length,
-        savageMoves: { nodeId: node.id, marks },
+        isTrickScanRunning: false,
+        trickScanDone: done,
+        trickScanTotal: candidates.length,
+        trickMoves: { nodeId: node.id, marks },
         notification: {
-          message: marks.length === 0 ? 'No savage moves here.' : `Savage moves: ${marks.length}.`,
+          message: marks.length === 0 ? 'No trick moves here.' : `Trick moves: ${marks.length}.`,
           type: 'info',
         },
       });
     })();
   },
 
-  stopSavageScan: () => {
-    savageToken++;
-    analysisQueue.cancelGroup('savage', 'Savage-move scan stopped');
-    set({ isSavageScanRunning: false });
+  stopTrickScan: () => {
+    trickToken++;
+    analysisQueue.cancelGroup('trick', 'Trick-move scan stopped');
+    set({ isTrickScanRunning: false });
   },
 
   clearAnalysisCache: () => {

@@ -117,12 +117,12 @@ const MOVE_NUMBER_LAST_COLOR = [0.85, 0.68, 0.4, 1] as const;
  */
 const TENUKI_MARKER_COLOR = 'rgba(168, 85, 247, 0.95)';
 /**
- * The savage-move scan's marks. Rose, and drawn as a ring plus a warning badge,
+ * The trick-move scan's marks. Rose, and drawn as a ring plus a warning badge,
  * so it cannot be read as the play-elsewhere ring (violet, dashed) or as a hint
  * circle (filled, coloured by the move's value).
  */
-const SAVAGE_MARKER_COLOR = 'rgba(251, 113, 133, 0.95)';
-const SAVAGE_BADGE_TEXT_COLOR = '#2a0d12';
+const TRICK_MARKER_COLOR = 'rgba(251, 113, 133, 0.95)';
+const TRICK_BADGE_TEXT_COLOR = '#2a0d12';
 const STONE_MIN_ALPHA = 0.85; // KaTrain Theme.STONE_MIN_ALPHA
 
 /**
@@ -304,7 +304,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     aiColor,
     treeVersion,
     tenukiAnalysis,
-    savageMoves,
+    trickMoves,
     navigateBack,
     navigateForward,
     navigateNextMistake,
@@ -343,7 +343,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       aiColor: state.aiColor,
       treeVersion: state.treeVersion,
       tenukiAnalysis: state.tenukiAnalysis,
-      savageMoves: state.savageMoves,
+      trickMoves: state.trickMoves,
       navigateBack: state.navigateBack,
       navigateForward: state.navigateForward,
       navigateNextMistake: state.navigateNextMistake,
@@ -499,7 +499,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const evalCanvasRef = useRef<HTMLCanvasElement>(null);
   const moveNumbersCanvasRef = useRef<HTMLCanvasElement>(null);
   const tenukiCanvasRef = useRef<HTMLCanvasElement>(null);
-  const savageCanvasRef = useRef<HTMLCanvasElement>(null);
+  const trickCanvasRef = useRef<HTMLCanvasElement>(null);
   const dotImageRef = useRef<HTMLImageElement | null>(null);
   const topMoveImageRef = useRef<HTMLImageElement | null>(null);
   const stoneImagesRef = useRef<{ black: HTMLImageElement[]; white: HTMLImageElement[]; inner: HTMLImageElement | null }>({
@@ -2749,8 +2749,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   }, [cellSize, currentNode.id, originX, originY, setupOverlayCanvas, tenukiAnalysis, toDisplay, releaseOverlayCanvas]);
 
   /**
-   * The "savage move" marks from the on-demand scan: candidates that leave the
-   * opponent only one reply that does not lose points.
+   * The "trick move" marks from the on-demand scan: candidates that leave the
+   * opponent only one reply that does not lose points and make their second
+   * choice worse for them than the position is now.
    *
    * Its own layer and a rose ring plus a warning badge, so a mark cannot be
    * mistaken for the play-elsewhere ring (violet, dashed) or for a hint circle
@@ -2758,9 +2759,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
    * scan analyses positions that were never played, so the mark is an outline.
    */
   useEffect(() => {
-    const canvas = savageCanvasRef.current;
+    const canvas = trickCanvasRef.current;
     if (!canvas) return;
-    const marks = savageMoves?.nodeId === currentNode.id ? savageMoves.marks : null;
+    const marks = trickMoves?.nodeId === currentNode.id ? trickMoves.marks : null;
     if (!marks || marks.length === 0) {
       releaseOverlayCanvas(canvas);
       return;
@@ -2786,7 +2787,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.lineWidth = Math.max(2, cellSize * 0.095);
-      ctx.strokeStyle = SAVAGE_MARKER_COLOR;
+      ctx.strokeStyle = TRICK_MARKER_COLOR;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.stroke();
@@ -2798,18 +2799,18 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ctx.beginPath();
       ctx.arc(bx, by, badgeRadius + 1.5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = SAVAGE_MARKER_COLOR;
+      ctx.fillStyle = TRICK_MARKER_COLOR;
       ctx.beginPath();
       ctx.arc(bx, by, badgeRadius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = SAVAGE_BADGE_TEXT_COLOR;
+      ctx.fillStyle = TRICK_BADGE_TEXT_COLOR;
       ctx.font = badgeFont;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('!', bx, by + 0.5);
     }
     ctx.restore();
-  }, [cellSize, currentNode.id, originX, originY, releaseOverlayCanvas, savageMoves, setupOverlayCanvas, toDisplay]);
+  }, [cellSize, currentNode.id, originX, originY, releaseOverlayCanvas, trickMoves, setupOverlayCanvas, toDisplay]);
 
   useEffect(() => {
     const canvas = hintsCanvasRef.current;
@@ -3227,7 +3228,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         data-board-labels={(boardQaProps.LB ?? []).join(',')}
         data-analysis-hint-mode={compactAnalysisHints ? 'compact' : 'full'}
         data-analysis-hint-count={shouldShowHints ? analysisHintMoves.length : 0}
-        data-savage-move-count={savageMoves?.nodeId === currentNode.id ? savageMoves.marks.length : 0}
+        data-trick-move-count={trickMoves?.nodeId === currentNode.id ? trickMoves.marks.length : 0}
         ref={boardSnapshotRef}
         style={{
           width: boardWidth,
@@ -3686,7 +3687,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         />
         {/* Candidates that leave the opponent only one good reply. */}
         <canvas
-          ref={savageCanvasRef}
+          ref={trickCanvasRef}
           className="absolute pointer-events-none"
           style={{
             left: 0,
