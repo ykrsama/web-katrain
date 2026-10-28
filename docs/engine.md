@@ -203,18 +203,17 @@ Two questions are answered by small batches instead of the live analysis:
 
 - Play elsewhere: evaluate the position again after the side to move passes and
   price the point at the gap (see `utils/tenukiValue.ts`).
-- Savage moves: for every candidate of the current position, read the position
-  after it, then equalize the opponent's replies -- one query per reply at the
-  fast-review depth -- and keep the candidates where the best reply loses less
-  than three points and the second-best loses at least three. That is the
-  "only one good reply" position, and the marks say which of the reader's moves
-  creates it.
+- Savage moves: every legal point of the position is read at the fast-review
+  depth -- one query per point, all dispatched together so a remote engine can
+  batch them across its threads -- and a point is kept when the opponent's best
+  reply loses less than three points and their second-best loses at least
+  three. That is the "only one good reply" position, and the marks say which of
+  the reader's moves creates it. The reply list considered is the Top Moves
+  cap, and a framed region narrows the points that are tested; the opponent's
+  replies are judged without it.
 
 Both describe positions that were never played, so neither writes to the game
-tree: results carry the node id they belong to and are drawn as overlays. The
-savage scan reads at most the Top Moves setting's candidates, and the framed
-region decides which of *those* are tested; the opponent's replies are judged
-without it.
+tree: results carry the node id they belong to and are drawn as overlays.
 
 ### Remote analysis and the engine's parallelism
 

@@ -202,9 +202,10 @@ interface GameStore extends GameState {
   analyzeTenuki: () => void;
   clearTenukiAnalysis: () => void;
   /**
-   * Scan every candidate of the current position for "savage moves": moves that
-   * leave the opponent exactly one reply that does not lose points. Equal-depth
-   * quick read at the fast-review depth; starts and stops are the same action.
+   * Scan every legal point of the current position for "savage moves": moves
+   * that leave the opponent exactly one reply that does not lose points.
+   * Equal-depth quick read at the fast-review depth, all candidates at once;
+   * starts and stops are the same action.
    */
   findSavageMoves: () => void;
   stopSavageScan: () => void;
@@ -593,20 +594,6 @@ const normalizeRegionOfInterest = (roi: RegionOfInterest | null, boardSize: numb
 const isMoveInRegion = (m: CandidateMove, roi: RegionOfInterest): boolean => {
   if (m.x < 0 || m.y < 0) return true; // Pass always allowed.
   return m.x >= roi.xMin && m.x <= roi.xMax && m.y >= roi.yMin && m.y <= roi.yMax;
-};
-
-/**
- * The board after a move, captures included, without touching the tree.
- *
- * The savage-move scan analyses positions that were never played, so it needs
- * to walk forward from the current board rather than from a node.
- */
-const boardAfterMove = (board: BoardState, move: Move): BoardState => {
-  const next = board.map((row) => row.slice());
-  if (move.x < 0 || move.y < 0) return next;
-  next[move.y]![move.x] = move.player;
-  applyCapturesInPlace(next, move.x, move.y, move.player);
-  return next;
 };
 
 const createNode = (
@@ -2440,8 +2427,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const parentBoard = node.parent?.gameState.board;
     const grandparentBoard = node.parent?.parent?.gameState.board;
     const token = ++savageToken;
-    // Every query is a position that was never played, so the queue must not
-    // answer one from its cache of tree positions.
     const ownsRun = () => token === savageToken && get().currentNode.id === node.id;
     const stopIfLeft = () => {
       if (ownsRun()) return false;
@@ -2451,41 +2436,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return true;
     };
 
-    const query = (args: {
-      board: BoardState;
-      previousBoard?: BoardState;
-      previousPreviousBoard?: BoardState;
-      currentPlayer: Player;
-      moveHistory: Move[];
-      nextMove?: Move;
-      regionOfInterest?: RegionOfInterest | null;
-      queryTopK: number;
-      label: string;
-      suffix: string;
-    }) =>
+    // Every legal point is a candidate: the scan is a full-board search, not
+    // just the moves the live read happens to rank. A framed region narrows it
+    // to the points the reader asked about.
+    const candidates = getLegalMoves(node.gameState.board, mover, parentBoard, {
+      multiStoneSuicideLegal: isSuicideLegal(rules),
+    }).filter(
+      (move) => !roi || (move.x >= roi.xMin && move.x <= roi.xMax && move.y >= roi.yMin && move.y <= roi.yMax)
+    );
+
+    // One equal-depth read per candidate, all pushed to the queue together. A
+    // sequential loop left the remote engine analysing a single position at a
+    // time; the queue's window is what lets it batch them across its threads.
+    const queryCandidate = (candidate: { x: number; y: number }) =>
       analysisQueue.enqueue<KataGoAnalysisPayload>({
-        id: `savage:${token}:${args.suffix}`,
-        label: args.label,
+        id: `savage:${token}:${candidate.x},${candidate.y}`,
+        label: `Savage: ${gtpOf(candidate.x, candidate.y, boardSize)}`,
         group: 'savage',
         priority: ANALYSIS_QUEUE_PRIORITY.savage,
         bypassCache: true,
         run: (ctx) =>
           getEngineClient(get().settings).analyze({
-            positionId: `${node.id}:savage:${args.suffix}`,
+            positionId: `${node.id}:savage:${candidate.x},${candidate.y}`,
             modelUrl,
             backend: get().settings.katagoBackend,
-            board: args.board,
-            previousBoard: args.previousBoard,
-            previousPreviousBoard: args.previousPreviousBoard,
-            currentPlayer: args.currentPlayer,
-            moveHistory: args.moveHistory,
-            nextMove: args.nextMove,
+            board: node.gameState.board,
+            previousBoard: parentBoard,
+            previousPreviousBoard: grandparentBoard,
+            currentPlayer: opponent,
+            moveHistory: node.gameState.moveHistory,
+            nextMove: { x: candidate.x, y: candidate.y, player: mover },
             komi,
             rules,
-            regionOfInterest: args.regionOfInterest ?? null,
-            topK: args.queryTopK,
-            // Only root values are needed: these reads exist to compare replies,
-            // not to draw a line.
+            // Only the root value and the reply list are needed: these reads
+            // exist to compare the opponent's answers, not to draw a line.
+            topK,
             analysisPvLen: 1,
             includeMovesOwnership: false,
             visits: fastVisits,
@@ -2506,121 +2491,61 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }),
       });
 
+    if (candidates.length === 0) {
+      set({
+        isSavageScanRunning: false,
+        savageScanDone: 0,
+        savageScanTotal: 0,
+        savageMoves: { nodeId: node.id, marks: [] },
+        notification: { message: 'No legal points to test here.', type: 'info' },
+      });
+      return;
+    }
+
     set({
       isSavageScanRunning: true,
       savageScanDone: 0,
-      savageScanTotal: 0,
+      savageScanTotal: candidates.length,
       savageMoves: { nodeId: node.id, marks: [] },
     });
 
     void (async () => {
+      const marks: SavageMoveMark[] = [];
+      let done = 0;
+      let firstError: unknown = null;
+
       try {
-        // The candidates the board is already offering, within the framed
-        // region. Without an analysis there is nothing on offer, so read the
-        // position once -- without writing it down.
-        let candidates = (node.analysis?.moves ?? [])
-          .filter((m) => m.x >= 0 && m.y >= 0 && (!roi || isMoveInRegion(m, roi)))
-          // The remote analysis engine reports every move it looked at, not the
-          // app's Top Moves cap, so the cap has to come from here.
-          .slice(0, topK)
-          .map((m) => ({ x: m.x, y: m.y }));
-        if (candidates.length === 0) {
-          const base = await query({
-            board: node.gameState.board,
-            previousBoard: parentBoard,
-            previousPreviousBoard: grandparentBoard,
-            currentPlayer: mover,
-            moveHistory: node.gameState.moveHistory,
-            regionOfInterest: roi,
-            queryTopK: topK,
-            label: 'Savage: position',
-            suffix: 'position',
-          });
-          if (stopIfLeft()) return;
-          candidates = base.moves
-            .filter((m) => m.x >= 0 && m.y >= 0 && (!roi || isMoveInRegion(m, roi)))
-            .slice(0, topK)
-            .map((m) => ({ x: m.x, y: m.y }));
-        }
-
-        set({ savageScanTotal: candidates.length });
-        const marks: SavageMoveMark[] = [];
-        let done = 0;
-
-        for (const candidate of candidates) {
-          if (stopIfLeft()) return;
-          const move: Move = { x: candidate.x, y: candidate.y, player: mover };
-          const boardAfter = boardAfterMove(node.gameState.board, move);
-          const historyAfter = [...node.gameState.moveHistory, move];
-
-          // What the opponent can answer this move with.
-          const replies = await query({
-            board: node.gameState.board,
-            previousBoard: parentBoard,
-            previousPreviousBoard: grandparentBoard,
-            currentPlayer: opponent,
-            moveHistory: node.gameState.moveHistory,
-            nextMove: move,
-            queryTopK: topK,
-            label: 'Savage: replies',
-            suffix: `replies:${candidate.x},${candidate.y}`,
-          });
-          if (stopIfLeft()) return;
-
-          // Equalize them: each reply gets its own read of the same depth, so
-          // the second-best value is a small search of its own rather than the
-          // visit or two the first read could spare.
-          const scores: number[] = [];
-          for (const reply of replies.moves.slice(0, topK)) {
+        await Promise.all(
+          candidates.map(async (candidate) => {
             if (stopIfLeft()) return;
-            const replyMove: Move = { x: reply.x, y: reply.y, player: opponent };
-            const equalized = await query({
-              board: boardAfter,
-              previousBoard: parentBoard,
-              currentPlayer: mover,
-              moveHistory: historyAfter,
-              nextMove: replyMove,
-              queryTopK: 1,
-              label: 'Savage: reply value',
-              suffix: `reply:${candidate.x},${candidate.y}:${reply.x},${reply.y}`,
-            });
-            scores.push(equalized.rootScoreLead);
-          }
-
-          const evaluation = evaluateSavageReplies({
-            scores,
-            rootScoreLead: replies.rootScoreLead,
-            mover: opponent,
-          });
-          if (evaluation.isSavage) {
-            marks.push({ x: candidate.x, y: candidate.y, secondLoss: evaluation.secondLoss ?? 0 });
-            set({ savageMoves: { nodeId: node.id, marks: [...marks] } });
-          }
-          done++;
-          set({ savageScanDone: done, savageScanTotal: candidates.length });
-        }
-
-        if (stopIfLeft()) return;
-        set({
-          isSavageScanRunning: false,
-          savageScanDone: done,
-          savageScanTotal: candidates.length,
-          savageMoves: { nodeId: node.id, marks },
-          notification: {
-            message: marks.length === 0
-              ? 'No savage moves here.'
-              : `Savage moves: ${marks.length}.`,
-            type: 'info',
-          },
-        });
+            try {
+              const replies = await queryCandidate(candidate);
+              if (stopIfLeft()) return;
+              // The opponent's candidates as the app would list them; a remote
+              // engine reports every move it looked at, not the Top Moves cap.
+              const evaluation = evaluateSavageReplies({
+                scores: replies.moves.slice(0, topK).map((move) => move.scoreLead),
+                rootScoreLead: replies.rootScoreLead,
+                mover: opponent,
+              });
+              if (evaluation.isSavage) {
+                marks.push({ x: candidate.x, y: candidate.y, secondLoss: evaluation.secondLoss ?? 0 });
+                set({ savageMoves: { nodeId: node.id, marks: [...marks] } });
+              }
+            } catch (err) {
+              if (!isAnalysisCanceled(err) && firstError === null) firstError = err;
+            } finally {
+              done++;
+              // A stopped or superseded scan must not keep writing progress
+              // into a newer run's counters.
+              if (token === savageToken && (done === candidates.length || done % 4 === 0)) {
+                set({ savageScanDone: done, savageScanTotal: candidates.length });
+              }
+            }
+          })
+        );
       } catch (err) {
         if (token !== savageToken) return;
-        if (isAnalysisCanceled(err)) {
-          // The live read or another user action preempted the scan. Leave the
-          // partial marks in place, but stop claiming it is still running.
-          set({ isSavageScanRunning: false });
-          return;
-        }
         const message = errorMessage(err);
         set({
           isSavageScanRunning: false,
@@ -2628,7 +2553,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
           engineError: message,
           notification: { message: `Savage scan failed: ${message}`, type: 'error' },
         });
+        return;
       }
+
+      if (stopIfLeft()) return;
+      if (firstError !== null) {
+        const message = errorMessage(firstError);
+        set({
+          isSavageScanRunning: false,
+          engineStatus: 'error',
+          engineError: message,
+          notification: { message: `Savage scan failed: ${message}`, type: 'error' },
+        });
+        return;
+      }
+      set({
+        isSavageScanRunning: false,
+        savageScanDone: done,
+        savageScanTotal: candidates.length,
+        savageMoves: { nodeId: node.id, marks },
+        notification: {
+          message: marks.length === 0 ? 'No savage moves here.' : `Savage moves: ${marks.length}.`,
+          type: 'info',
+        },
+      });
     })();
   },
 
