@@ -116,6 +116,13 @@ const MOVE_NUMBER_LAST_COLOR = [0.85, 0.68, 0.4, 1] as const;
  * that happened -- so it reads as a move nobody played.
  */
 const TENUKI_MARKER_COLOR = 'rgba(168, 85, 247, 0.95)';
+/**
+ * The savage-move scan's marks. Rose, and drawn as a ring plus a warning badge,
+ * so it cannot be read as the play-elsewhere ring (violet, dashed) or as a hint
+ * circle (filled, coloured by the move's value).
+ */
+const SAVAGE_MARKER_COLOR = 'rgba(251, 113, 133, 0.95)';
+const SAVAGE_BADGE_TEXT_COLOR = '#2a0d12';
 const STONE_MIN_ALPHA = 0.85; // KaTrain Theme.STONE_MIN_ALPHA
 
 /**
@@ -297,6 +304,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     aiColor,
     treeVersion,
     tenukiAnalysis,
+    savageMoves,
     navigateBack,
     navigateForward,
     navigateNextMistake,
@@ -335,6 +343,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       aiColor: state.aiColor,
       treeVersion: state.treeVersion,
       tenukiAnalysis: state.tenukiAnalysis,
+      savageMoves: state.savageMoves,
       navigateBack: state.navigateBack,
       navigateForward: state.navigateForward,
       navigateNextMistake: state.navigateNextMistake,
@@ -490,6 +499,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const evalCanvasRef = useRef<HTMLCanvasElement>(null);
   const moveNumbersCanvasRef = useRef<HTMLCanvasElement>(null);
   const tenukiCanvasRef = useRef<HTMLCanvasElement>(null);
+  const savageCanvasRef = useRef<HTMLCanvasElement>(null);
   const dotImageRef = useRef<HTMLImageElement | null>(null);
   const topMoveImageRef = useRef<HTMLImageElement | null>(null);
   const stoneImagesRef = useRef<{ black: HTMLImageElement[]; white: HTMLImageElement[]; inner: HTMLImageElement | null }>({
@@ -2738,6 +2748,69 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     ctx.restore();
   }, [cellSize, currentNode.id, originX, originY, setupOverlayCanvas, tenukiAnalysis, toDisplay, releaseOverlayCanvas]);
 
+  /**
+   * The "savage move" marks from the on-demand scan: candidates that leave the
+   * opponent only one reply that does not lose points.
+   *
+   * Its own layer and a rose ring plus a warning badge, so a mark cannot be
+   * mistaken for the play-elsewhere ring (violet, dashed) or for a hint circle
+   * (filled, coloured by the move's value). Like the play-elsewhere read the
+   * scan analyses positions that were never played, so the mark is an outline.
+   */
+  useEffect(() => {
+    const canvas = savageCanvasRef.current;
+    if (!canvas) return;
+    const marks = savageMoves?.nodeId === currentNode.id ? savageMoves.marks : null;
+    if (!marks || marks.length === 0) {
+      releaseOverlayCanvas(canvas);
+      return;
+    }
+    const ctx = setupOverlayCanvas(canvas);
+    if (!ctx) return;
+
+    const radius = cellSize * STONE_SIZE * (HINT_SCALE + 0.34);
+    const badgeRadius = Math.max(5, cellSize * 0.17);
+    const badgeOffset = cellSize * 0.34;
+    const badgeFont = `700 ${Math.max(8, badgeRadius * 1.45)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+
+    ctx.save();
+    for (const mark of marks) {
+      const d = toDisplay(mark.x, mark.y);
+      const cx = originX + d.x * cellSize;
+      const cy = originY + d.y * cellSize;
+
+      // Dark backing first, for legibility over a stone of either colour.
+      ctx.lineWidth = Math.max(3.5, cellSize * 0.15);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(2, cellSize * 0.095);
+      ctx.strokeStyle = SAVAGE_MARKER_COLOR;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // A warning badge on the upper-right shoulder of the point.
+      const bx = cx + badgeOffset;
+      const by = cy - badgeOffset;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.beginPath();
+      ctx.arc(bx, by, badgeRadius + 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = SAVAGE_MARKER_COLOR;
+      ctx.beginPath();
+      ctx.arc(bx, by, badgeRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = SAVAGE_BADGE_TEXT_COLOR;
+      ctx.font = badgeFont;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('!', bx, by + 0.5);
+    }
+    ctx.restore();
+  }, [cellSize, currentNode.id, originX, originY, releaseOverlayCanvas, savageMoves, setupOverlayCanvas, toDisplay]);
+
   useEffect(() => {
     const canvas = hintsCanvasRef.current;
     if (!canvas) return;
@@ -3154,6 +3227,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         data-board-labels={(boardQaProps.LB ?? []).join(',')}
         data-analysis-hint-mode={compactAnalysisHints ? 'compact' : 'full'}
         data-analysis-hint-count={shouldShowHints ? analysisHintMoves.length : 0}
+        data-savage-move-count={savageMoves?.nodeId === currentNode.id ? savageMoves.marks.length : 0}
         ref={boardSnapshotRef}
         style={{
           width: boardWidth,
@@ -3608,6 +3682,18 @@ export const GoBoard: React.FC<GoBoardProps> = ({
             width: boardWidth,
             height: boardHeight,
             zIndex: 18,
+          }}
+        />
+        {/* Candidates that leave the opponent only one good reply. */}
+        <canvas
+          ref={savageCanvasRef}
+          className="absolute pointer-events-none"
+          style={{
+            left: 0,
+            top: 0,
+            width: boardWidth,
+            height: boardHeight,
+            zIndex: 19,
           }}
         />
         {/* PV Overlay (Hover) */}

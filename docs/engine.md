@@ -197,6 +197,25 @@ The store uses the engine in several ways:
 The main-thread `analysisQueue` handles cancellation, staleness, priority, and
 cache reuse before requests reach the worker.
 
+### On-demand reads that never touch the tree
+
+Two questions are answered by small batches instead of the live analysis:
+
+- Play elsewhere: evaluate the position again after the side to move passes and
+  price the point at the gap (see `utils/tenukiValue.ts`).
+- Savage moves: for every candidate of the current position, read the position
+  after it, then equalize the opponent's replies -- one query per reply at the
+  fast-review depth -- and keep the candidates where the best reply loses less
+  than three points and the second-best loses at least three. That is the
+  "only one good reply" position, and the marks say which of the reader's moves
+  creates it.
+
+Both describe positions that were never played, so neither writes to the game
+tree: results carry the node id they belong to and are drawn as overlays. The
+savage scan reads at most the Top Moves setting's candidates, and the framed
+region decides which of *those* are tested; the opponent's replies are judged
+without it.
+
 ### Remote analysis and the engine's parallelism
 
 A remote KataGo analysis engine spreads its work over `numAnalysisThreads`
