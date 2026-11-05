@@ -30,6 +30,8 @@ const baseProps = {
   currentMoveNumber: 1,
   totalMovesInCurrentLine: 12,
   boardSize: 19,
+  rules: 'japanese' as const,
+  komi: 6.5,
   handicap: 0,
   isInsertMode: false,
   passPolicyColor: null,
@@ -125,7 +127,7 @@ describe('BottomControlBar', () => {
     expect(html).toContain('mobile-bottom-move-button');
     expect(componentSource).toContain('mobile-bottom-move-total');
     expect(html).toContain('aria-label="Move 1 of 12. Tap to jump to a move."');
-    expect(css).toMatch(/@media \(max-width: 430px\)[\s\S]*\.mobile-bottom-board-size[\s\S]*display: none/);
+    expect(css).toMatch(/@media \(max-width: 430px\)[\s\S]*\.mobile-bottom-game-facts[\s\S]*display: none/);
     expect(css).toContain(".mobile-bottom-meta [data-bottom-branch-chip='true']");
     expect(css).not.toContain(".mobile-bottom-meta:has([data-mobile-save-status='true']) .mobile-bottom-turn-chip");
     expect(css).toMatch(/@media \(max-width: 380px\)[\s\S]*\.mobile-bottom-meta \[data-mobile-save-status='true'\][\s\S]*display: none/);

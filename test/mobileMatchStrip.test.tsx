@@ -11,6 +11,7 @@ const baseProps = {
   capturedBlack: 0,
   capturedWhite: 2,
   boardSize: 19,
+  rules: 'japanese' as const,
   komi: 6.5,
   handicap: 0,
 };
@@ -30,14 +31,11 @@ describe('MobileMatchStrip', () => {
     expect(html).toContain('<span class="sr-only">to move</span>');
   });
 
-  it('says komi out loud and leaves the repeated facts decorative', () => {
-    // Board size and handicap are read out by the bottom control bar, so a
-    // second copy here would say them twice. Komi is nowhere else in the mobile
-    // shell, so hiding it left a fact the desktop game strip announces with no
-    // spoken equivalent on a phone.
+  it('shows rules and komi in place of board size', () => {
     const html = renderToStaticMarkup(<MobileMatchStrip {...baseProps} handicap={4} />);
 
-    expect(html).toContain('<span class="mobile-match-fact" aria-hidden="true">19×19</span>');
+    expect(html).toContain('<span class="mobile-match-fact">Japanese</span>');
+    expect(html).not.toContain('19×19');
     expect(html).toContain('<span class="mobile-match-fact" aria-hidden="true">H4</span>');
     expect(html).toContain('<span class="mobile-match-fact">komi 6.5</span>');
     expect(html).not.toContain('class="mobile-match-facts" aria-hidden');

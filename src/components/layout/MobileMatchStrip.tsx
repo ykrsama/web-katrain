@@ -1,6 +1,7 @@
 import React from 'react';
-import type { Player } from '../../types';
+import type { GameRules, Player } from '../../types';
 import { useT } from '../../i18n';
+import { formatRulesLabel } from '../../utils/gameInfoDisplay';
 
 interface MobileMatchStripProps {
   currentPlayer: Player;
@@ -13,6 +14,7 @@ interface MobileMatchStripProps {
   /** White stones taken off the board, i.e. what Black has captured. */
   capturedWhite: number;
   boardSize: number;
+  rules: GameRules;
   komi: number;
   handicap: number;
 }
@@ -67,7 +69,7 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
   whiteRank,
   capturedBlack,
   capturedWhite,
-  boardSize,
+  rules,
   komi,
   handicap,
 }) => {
@@ -90,13 +92,9 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
       toMove={currentPlayer === 'white'}
       fallback={t('White')}
     />
-    {/* Board size and handicap are also in the bottom control bar, which reads
-        them out, so this copy stays decorative rather than saying them twice.
-        Komi is not: the bottom bar has no room for it, so this row is the only
-        place the mobile shell says it at all, and hiding it left a fact the
-        desktop game strip announces with no spoken equivalent on a phone. */}
+    {/* Keep the game's rules and komi visible in the narrow layout. */}
     <div className="mobile-match-facts">
-      <span className="mobile-match-fact" aria-hidden="true">{boardSize}×{boardSize}</span>
+      <span className="mobile-match-fact">{t(formatRulesLabel(rules))}</span>
       {handicap > 0 ? <span className="mobile-match-fact" aria-hidden="true">H{handicap}</span> : null}
       <span className="mobile-match-fact">{t('komi')} {komi}</span>
     </div>

@@ -326,12 +326,9 @@
       display: none;
     }
 
-    /* The strip clips with overflow-hidden, and at 414px the fixed board size
-       pushed the save-status badge past the edge. Drop the values that never
-       change rather than a live "unsaved" warning or the current-turn chip,
-       which flexbox already squeezes toward zero under pressure. */
+    /* At 414px, game facts move to MobileMatchStrip to leave room for status. */
     .mobile-bottom-current-captures,
-    .mobile-bottom-board-size,
+    .mobile-bottom-game-facts,
     .mobile-bottom-handicap,
     .mobile-bottom-meta-divider,
     .mobile-bottom-meta [data-bottom-branch-chip='true'] {
@@ -6065,7 +6062,7 @@
 
     .mobile-bottom-dock .mobile-bottom-current-player,
     .mobile-bottom-dock .mobile-bottom-current-captures,
-    .mobile-bottom-dock .mobile-bottom-board-size,
+    .mobile-bottom-dock .mobile-bottom-game-facts,
     .mobile-bottom-dock .mobile-bottom-handicap,
     .mobile-bottom-dock .mobile-bottom-meta-divider,
     .mobile-bottom-dock .mobile-bottom-meta [data-bottom-branch-chip='true'] {

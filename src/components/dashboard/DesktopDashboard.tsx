@@ -773,10 +773,9 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                   </div>
                 </div>
                 <span className="gs-sep" />
-                <span className="gs-fact gs-fact-primary">{boardSize}×{boardSize}</span>
-                <span className="gs-fact">{t('komi')} <b>{komi}</b></span>
+                <span className="gs-fact gs-fact-primary">{t(rulesLabel)}</span>
+                <span className="gs-fact gs-fact-primary">{t('komi')} <b>{komi}</b></span>
                 {handicap > 0 ? <span className="gs-fact">H{handicap}</span> : null}
-                <span className="gs-fact">{t(rulesLabel)}</span>
                 {result ? <span className="gs-result">{result}</span> : null}
                 <span className="gs-sep gs-sep-file" />
                 <div className="gs-file">

@@ -19,12 +19,12 @@ import {
   FaEdit,
   FaCalculator,
 } from 'react-icons/fa';
-import type { Player } from '../../types';
+import type { GameRules, Player } from '../../types';
 import { IconButton } from './ui';
 import { STONE_SIZE } from './types';
 import { publicUrl } from '../../utils/publicUrl';
 import { useShortcutLabels } from '../../hooks/useShortcutLabels';
-import { formatGameInfoPlayer } from '../../utils/gameInfoDisplay';
+import { formatGameInfoPlayer, formatRulesLabel } from '../../utils/gameInfoDisplay';
 import { restoreFocusIfUnclaimed } from '../../utils/focusRestore';
 import { getResizeObserverConstructor } from '../../utils/resizeObserver';
 import { parseIntegerDraft } from '../../utils/numberDraft';
@@ -71,6 +71,8 @@ interface BottomControlBarProps {
   currentMoveNumber: number;
   totalMovesInCurrentLine: number;
   boardSize: number;
+  rules: GameRules;
+  komi: number;
   handicap: number;
   blackName?: string;
   whiteName?: string;
@@ -122,7 +124,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   currentPlayer,
   currentMoveNumber,
   totalMovesInCurrentLine,
-  boardSize,
+  rules,
+  komi,
   handicap,
   blackName = 'Black',
   whiteName = 'White',
@@ -544,7 +547,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
               ) : null}
             </span>
             <span className={`${metaDividerClass} mx-1`}>|</span>
-            <span className="mobile-bottom-board-size ui-text-faint">{boardSize}×{boardSize}</span>
+            <span className="mobile-bottom-game-facts ui-text-faint">{t(formatRulesLabel(rules))} · {t('komi')} {komi}</span>
             {handicap > 0 && (
               <>
                 <span className={metaDividerClass}>·</span>

@@ -4744,6 +4744,7 @@ export const Layout: React.FC = () => {
                 capturedWhite={capturedWhite}
                 boardSize={boardSize}
                 komi={komi}
+                rules={settings.gameRules}
                 handicap={handicap}
               />
             )}
@@ -4887,6 +4888,8 @@ export const Layout: React.FC = () => {
                     currentMoveNumber={currentMoveNumber}
                     totalMovesInCurrentLine={totalMovesInCurrentLine}
                     boardSize={boardSize}
+                    rules={settings.gameRules}
+                    komi={komi}
                     handicap={handicap}
                     blackName={blackName}
                     whiteName={whiteName}
