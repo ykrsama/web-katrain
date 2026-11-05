@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { normalizeLocalizedSource } from './helpers/localizedSource';
 import { describe, expect, it } from 'vitest';
 import { APP_ISSUE_REPORT_URL } from '../src/utils/appInfo';
 
@@ -25,6 +26,129 @@ describe('DesktopDashboard', () => {
     expect(source).toContain("settings.engineMode === 'remote' && !!settings.remoteEngineUrl.trim()");
     expect(source).toContain("t(isRemote ? 'KataGo · remote' : 'KataGo · in-browser')");
     expect(source).toContain("{isRemote ? t('Remote') : formatEngineBackendLabel(backend)}");
+  });
+
+  it('reads every prop it declares', () => {
+    // 106 props, and one of them -- engineMeta -- was threaded in from Layout
+    // and never read: the pill shows enginePillLabel and puts the long form on
+    // its own title, so the compact label the phone renders had nothing to do
+    // here. An interface this wide accumulates that kind of thing quietly, and
+    // a dead prop is a thing Layout still has to compute and keep correct.
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const match = /export interface DesktopDashboardProps \{([\s\S]*?)\n\}/.exec(source);
+    expect(match, 'DesktopDashboardProps not found').not.toBeNull();
+
+    const body = match![1]!;
+    const fields = [...body.matchAll(/^ {2}([a-zA-Z][A-Za-z0-9_]*)\??:/gm)].map((m) => m[1]!);
+    expect(fields.length).toBeGreaterThan(80);
+
+    const after = source.slice(match!.index! + match![0]!.length);
+    // One mention is the destructuring in the component signature; a prop that
+    // is actually used shows up at least twice.
+    const unread = [...new Set(fields)].filter(
+      (field) => (after.match(new RegExp(`\\b${field}\\b`, 'g')) ?? []).length <= 1
+    );
+
+    expect(unread, `declared but never read: ${unread.join(', ')}`).toEqual([]);
+  });
+
+  it('gives desktop a game info section, not just the read-only strip', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+
+    // The sidebar used to skip this on the grounds that the gamestrip above the
+    // board was "a strict superset" of it. It is not: the strip shows title,
+    // size, rules, players, komi, captures, handicap, result and save state,
+    // all read-only. Event, round, date, place and the time settings appeared
+    // nowhere on desktop, and nothing on desktop could edit any of it -- the
+    // panel that does is behind `{!isDesktop && ...}` in Layout, so a game's
+    // provenance was legible only on a phone.
+    expect(source).toContain("import { GameInfoPanel } from '../GameInfoPanel'");
+    expect(source).toContain("sectionHead('gameinfo', t('Game info'), 'info')");
+    expect(source).toContain('<GameInfoPanel />');
+    // Closed by default: the strip already carries the summary, and opening it
+    // would push the game tree down for everyone.
+    expect(source).toMatch(/useState\(\{\s*gameinfo: false,/);
+    expect(source).not.toContain('strict\n                superset');
+  });
+
+  it('says how far past the fork the branch chip is', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+
+    // The chip read "Branch 1/3" identically at the fork and four moves down
+    // the variation, so it could not say whether "Back to branch point" had
+    // anywhere to go. depthFromBranchRoot was already on branchInfo here; the
+    // phone's tree toolbar had been rendering it all along.
+    expect(source).toContain('{!branchInfo.isAtFork && (');
+    expect(source).toContain('+{branchInfo.depthFromBranchRoot}');
+    // Spelled out on hover, because "+2" alone says nothing.
+    expect(normalizeLocalizedSource(source)).toContain('move${branchInfo.depthFromBranchRoot === 1 ? \'\' : \'s\'} into this variation');
+    expect(source).toContain('at the branch point');
+    // The title has to sit on a wrapper: .pbtn:hover repaints, and the chip is
+    // not a button, so the inner span keeps pointer events off.
+    expect(source).toContain("style={{ display: 'inline-flex', cursor: 'default' }}");
+    // --accent is not a token this stylesheet defines; --ui-accent is.
+    expect(source).not.toContain("color: 'var(--accent)'");
+  });
+
+  it('puts the play-on toggle beside the review actions, with a visible pressed state', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
+
+    expect(source).toContain('onPlayFromHere');
+    expect(source).toContain('aria-pressed={!!engineOpponent}');
+    // aria-pressed alone was true for a screen reader and invisible to
+    // everyone else: .tbtn had no pressed style before this toggle existed.
+    expect(source).toContain("`tbtn${engineOpponent ? ' on' : ''}`");
+    expect(css).toContain('.wk-dashboard .tbtn.on');
+  });
+
+  it('tells the Swing chip what it is measuring against, and why not', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const swing = readFileSync('src/utils/territorySwing.ts', 'utf8');
+
+    // Turning a toggle on and seeing no change reads as broken, and each reason
+    // wants something different from the reader: wait, play a move, or "that is
+    // the answer". The reasons live with the resolver that decides between them.
+    expect(source).toContain('resolveSwingBaseline(currentNode, settings.analysisSwingCompare');
+    expect(source).toContain("if (baseline.kind === 'unavailable') return baseline.reason;");
+    // And the chip names the baseline, so "13 toward Black" is never ambiguous
+    // about what it is 13 more than.
+    expect(source).toContain("baseline.kind === 'best' ? `vs ${baseline.label}` : 'vs the move before'");
+    expect(swing).toContain("'needs this move and the one before it analyzed'");
+    expect(swing).toContain('play ${label} from the previous move to compare against it');
+  });
+
+  it('makes Play best mean the engine\u2019s pick, not the configured bot\u2019s move', () => {
+    const layout = readFileSync('src/components/Layout.tsx', 'utf8');
+    const dashboard = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+
+    // Both buttons used to call requestAiMove, so review mode carried two
+    // adjacent controls doing exactly the same thing -- and makeAiMove follows
+    // settings.aiStrategy, so "Play best" played whatever bot was configured.
+    expect(layout).toContain('onPlayBest={playBestAnalysisMove}');
+    expect(layout).toContain('onAiMove={requestAiMove}');
+    expect(layout).toContain("node.analysis?.moves?.find((move) => move.order === 0)");
+    // The engine ranks passing like any other move; it must not become a stone.
+    expect(layout).toMatch(/if \(best\.x < 0 \|\| best\.y < 0\) \{\s*\n\s*passTurn\(\);/);
+    // And the button cannot promise a move the analysis has not produced.
+    expect(dashboard).toContain('disabled={!bestMove}');
+  });
+
+  it('offers teach mode on the shell where it could only be configured', () => {
+    const dashboard = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const layout = readFileSync('src/components/Layout.tsx', 'utf8');
+    const topBar = readFileSync('src/components/layout/TopControlBar.tsx', 'utf8');
+
+    // The only control in the app was in TopControlBar's mobile tools sheet, so
+    // on the desktop dashboard Settings could configure teach mode -- undo
+    // prompts, thresholds, dots, save-sgf -- with no way to switch it on.
+    expect(topBar).toContain('toggleTeachMode()');
+    expect(dashboard).toContain('onToggleTeachMode');
+    expect(dashboard).toContain('aria-pressed={isTeachMode}');
+    expect(layout).toContain('isTeachMode={isTeachMode}');
+    expect(layout).toContain('onToggleTeachMode={toggleTeachMode}');
+    // And a palette entry, so it is reachable by search on both shells.
+    expect(layout).toContain("id: 'toggle-teach-mode'");
   });
 
   it('keeps the language switcher on the wide desktop dashboard header', () => {

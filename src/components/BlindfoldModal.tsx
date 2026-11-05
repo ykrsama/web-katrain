@@ -212,7 +212,7 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
               type="button"
               onClick={() => void handleMicTest()}
               disabled={!recognitionSupported || micTest.status === 'listening'}
-              className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--ui-border)] px-4 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--ui-border)] px-4 py-2 text-sm text-[var(--ui-text-muted)] not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <FaMicrophone aria-hidden="true" />
               {micTest.status === 'listening' ? t('Listening…') : t('Test the microphone')}
@@ -275,7 +275,7 @@ export const BlindfoldModal: React.FC<BlindfoldModalProps> = ({ onClose }) => {
             type="button"
             onClick={handleTest}
             disabled={!synthesisSupported}
-            className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--ui-border)] px-4 py-2 text-sm text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--ui-border)] px-4 py-2 text-sm text-[var(--ui-text-muted)] not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FaVolumeUp aria-hidden="true" />
             {t('Test the voice')}

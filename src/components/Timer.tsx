@@ -1,10 +1,21 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FaPause, FaPlay } from 'react-icons/fa';
 import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
-import { formatKaTrainClockSeconds, stepKaTrainTimer, type KaTrainTimerDisplay } from '../utils/katrainTimer';
+import {
+  acquireSharedClockCursor,
+  describeKaTrainClock,
+  formatKaTrainClockSeconds,
+  isGameClockStopped,
+  releaseSharedClockCursor,
+  stepKaTrainTimer,
+  type KaTrainTimerDisplay,
+} from '../utils/katrainTimer';
 import { getAnimationNow } from '../utils/animationFrame';
 import { useT } from '../i18n';
+
+const isClockStopped = (s: ReturnType<typeof useGameStore.getState>): boolean =>
+  isGameClockStopped(s.currentNode, s.rootNode);
 
 export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 'default' }) => {
   const t = useT();
@@ -26,37 +37,35 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
     isAiTurn: false,
   }));
 
-  const lastUpdateMsRef = useRef<number>(0);
-  const lastUpdateNodeIdRef = useRef<string | null>(null);
-
   useEffect(() => {
     const isDisabled = timerSettings.mainTimeMinutes <= 0 && timerSettings.byoPeriods <= 0;
-    if (isDisabled) {
-      lastUpdateMsRef.current = 0;
-      lastUpdateNodeIdRef.current = null;
-      return;
-    }
+    if (isDisabled) return;
+
+    // Shared, not per-instance: see acquireSharedClockCursor. Two clocks on
+    // screen used to charge the game twice for the same seconds.
+    const cursor = acquireSharedClockCursor();
 
     const tick = () => {
       const nowMs = getAnimationNow();
       const s = useGameStore.getState();
 
-      if (lastUpdateMsRef.current <= 0) {
-        lastUpdateMsRef.current = nowMs;
-        lastUpdateNodeIdRef.current = s.currentNode.id;
+      if (cursor.lastUpdateMs <= 0) {
+        cursor.lastUpdateMs = nowMs;
+        cursor.lastUpdateNodeId = s.currentNode.id;
       }
 
       const isAiTurn = s.isAiPlaying && s.aiColor === s.currentPlayer;
+      const stopped = isClockStopped(s);
       const periodsUsedForPlayer = s.timerPeriodsUsed[s.currentPlayer] ?? 0;
       const nodeTimeUsedSeconds = s.currentNode.timeUsedSeconds ?? 0;
 
       const result = stepKaTrainTimer({
         nowMs,
-        lastUpdateMs: lastUpdateMsRef.current,
-        lastUpdateNodeId: lastUpdateNodeIdRef.current,
+        lastUpdateMs: cursor.lastUpdateMs,
+        lastUpdateNodeId: cursor.lastUpdateNodeId,
         currentNodeId: s.currentNode.id,
         currentNodeHasChildren: s.currentNode.children.length > 0,
-        paused: s.timerPaused,
+        paused: s.timerPaused || stopped,
         isAiTurn,
         mainTimeMinutes: s.settings.timerMainTimeMinutes,
         byoLengthSeconds: s.settings.timerByoLengthSeconds,
@@ -67,21 +76,62 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
         periodsUsedForPlayer,
       });
 
-      lastUpdateMsRef.current = result.lastUpdateMs;
-      lastUpdateNodeIdRef.current = result.lastUpdateNodeId;
+      cursor.lastUpdateMs = result.lastUpdateMs;
+      cursor.lastUpdateNodeId = result.lastUpdateNodeId;
 
       s.timerMainTimeUsedSeconds = result.mainTimeUsedSeconds;
       s.timerPeriodsUsed[s.currentPlayer] = result.periodsUsedForPlayer;
       s.currentNode.timeUsedSeconds = result.nodeTimeUsedSeconds;
 
-      setDisplay(result.display);
+      // A new object each tick re-rendered the clock 14 times a second with
+      // nothing to show.
+      const next = result.display;
+      setDisplay((prev) =>
+        prev.timeSeconds === next.timeSeconds &&
+        prev.periodsRemaining === next.periodsRemaining &&
+        prev.timeout === next.timeout &&
+        prev.isAiTurn === next.isAiTurn
+          ? prev
+          : next
+      );
     };
 
-    lastUpdateMsRef.current = 0;
-    lastUpdateNodeIdRef.current = null;
+    // Tick only while the clock can move. Ticking every 70ms paused or not
+    // woke a phone 14 times a second (twice, with two clocks on screen) to
+    // show the same numbers; a paused or finished clock now ticks once when
+    // what it shows can change -- a move, navigation, pause or resume.
+    let id: number | null = null;
+    const sync = () => {
+      const s = useGameStore.getState();
+      const shouldRun = !s.timerPaused && !isClockStopped(s);
+      if (shouldRun && id === null) id = window.setInterval(tick, 70);
+      else if (!shouldRun && id !== null) {
+        window.clearInterval(id);
+        id = null;
+      }
+    };
     tick();
-    const id = window.setInterval(tick, 70);
-    return () => window.clearInterval(id);
+    sync();
+    const unsubscribe = useGameStore.subscribe((s, prev) => {
+      if (
+        s.currentNode === prev.currentNode &&
+        s.timerPaused === prev.timerPaused &&
+        s.currentPlayer === prev.currentPlayer &&
+        s.isAiPlaying === prev.isAiPlaying &&
+        s.aiColor === prev.aiColor &&
+        s.treeVersion === prev.treeVersion
+      ) return;
+      // Nothing ticked while stopped, so the cursor still holds the moment
+      // it stopped; charging from there would bill the whole pause on resume.
+      if (id === null) cursor.lastUpdateMs = getAnimationNow();
+      tick();
+      sync();
+    });
+    return () => {
+      unsubscribe();
+      if (id !== null) window.clearInterval(id);
+      releaseSharedClockCursor();
+    };
   }, [timerSettings.mainTimeMinutes, timerSettings.byoLengthSeconds, timerSettings.byoPeriods]);
 
   const isTimerDisabled = timerSettings.mainTimeMinutes <= 0 && timerSettings.byoPeriods <= 0;
@@ -92,6 +142,8 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
     () => (isTimerDisabled ? t('Off') : formatKaTrainClockSeconds(effectiveDisplay.timeSeconds)),
     [effectiveDisplay.timeSeconds, isTimerDisabled, t]
   );
+  const timeLabel = describeKaTrainClock(effectiveDisplay, isTimerDisabled);
+
   const timeoutClass = isTimerDisabled
     ? 'text-[var(--ui-text-muted)]'
     : effectiveDisplay.timeout
@@ -111,7 +163,9 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
       <div className="status-bar-timer">
         <div
           className={['status-bar-item font-mono', compactTimeoutClass].join(' ')}
-          title={effectiveDisplay.isAiTurn ? t('AI to play') : undefined}
+          title={effectiveDisplay.isAiTurn ? t('AI to play') : timeLabel}
+          aria-label={timeLabel}
+          data-timer-timeout={effectiveDisplay.timeout ? 'true' : undefined}
         >
           {timeText}
           {effectiveDisplay.periodsRemaining !== null ? ` ×${effectiveDisplay.periodsRemaining}` : ''}
@@ -132,7 +186,12 @@ export const Timer: React.FC<{ variant?: 'default' | 'status' }> = ({ variant = 
   return (
     <div className="ui-surface border border-[var(--ui-border)] rounded px-4 py-3 flex items-center gap-3">
       <div className="flex items-baseline gap-2 font-mono">
-        <div className={['text-2xl leading-none', timeoutClass].join(' ')} title={effectiveDisplay.isAiTurn ? t('AI to play') : undefined}>
+        <div
+          className={['text-2xl leading-none', timeoutClass].join(' ')}
+          title={effectiveDisplay.isAiTurn ? t('AI to play') : timeLabel}
+          aria-label={timeLabel}
+          data-timer-timeout={effectiveDisplay.timeout ? 'true' : undefined}
+        >
           {timeText}
         </div>
         {!isTimerDisabled && effectiveDisplay.periodsRemaining !== null && (

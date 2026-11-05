@@ -117,6 +117,15 @@ No server-side persistence exists.
 ## Data Formats
 
 - SGF import/export is handled by `src/utils/sgf.ts`.
+- File bytes are decoded by `src/utils/sgfEncoding.ts` before parsing, including
+  picker, drop, PWA launch, and library ZIP entries. A BOM takes precedence;
+  otherwise the first game's root `CA` selects a browser-supported encoding.
+  Without `CA`, valid UTF-8 is accepted first, then SGF's Latin-1 default.
+  Unsupported labels and invalid declared byte sequences produce errors.
+  Library SGF downloads and ZIP exports normalize the declaration to UTF-8,
+  including records originally pasted as Unicode. The game parser opens the
+  first game in a collection; mixed-charset collections and automatic detection
+  of undeclared East Asian encodings remain unsupported.
 - KaTrain-style `KT` analysis data is encoded and decoded by
   `src/utils/katrainSgfAnalysis.ts`.
 - Kaya-style `KA` analysis data is encoded and decoded by
@@ -152,7 +161,8 @@ code, not the compiler's, so a real failure reads as success.
 
 ## Project Invariants
 
-- Supported board sizes are 9, 13, and 19.
+- Supported board sizes are 5, 7, 9, 11, 13, 15, 17, and 19. Star and handicap
+  points are derived from size; the standard 9, 13, and 19 layouts are preserved.
 - Analysis values are stored from Black's perspective: `rootWinRate` is Black
   win probability and `rootScoreLead` is Black score lead.
 - Worker messages must remain serializable.

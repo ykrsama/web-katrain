@@ -2,6 +2,7 @@ import React from 'react';
 import { FaCheck, FaCheckCircle, FaCopy, FaExclamationTriangle, FaInfoCircle, FaTimes } from 'react-icons/fa';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { useT } from '../../i18n';
+import { useDocumentFlag } from '../../hooks/useDocumentFlag';
 
 export type NotificationToastType = 'info' | 'error' | 'success';
 
@@ -17,7 +18,7 @@ interface NotificationToastProps {
   notification: NotificationToastMessage;
   onClose: () => void;
   commandBarVisible?: boolean;
-  placement?: 'default' | 'desktop-dashboard' | 'desktop-header';
+  placement?: 'default' | 'desktop-dashboard' | 'desktop-header' | 'mobile-panel';
   /** Called as the pointer or focus enters and leaves, to hold the dismissal timer. */
   onHoldChange?: (held: boolean) => void;
   /** Reverts the change the toast is reporting; enables the Undo button. */
@@ -58,6 +59,8 @@ export function NotificationToast({
   const Icon = meta.Icon;
   const [copyState, setCopyState] = React.useState<'idle' | 'copied' | 'failed'>('idle');
   const canCopy = notification.type === 'error';
+  // Tells the install card to step aside while a toast is up (index.css).
+  useDocumentFlag('notification-shown', 'true');
 
   React.useEffect(() => {
     setCopyState('idle');
@@ -74,6 +77,7 @@ export function NotificationToast({
         commandBarVisible ? 'notification-toast-region--below-command-bar' : '',
         placement === 'desktop-dashboard' ? 'notification-toast-region--desktop-dashboard' : '',
         placement === 'desktop-header' ? 'notification-toast-region--desktop-header' : '',
+        placement === 'mobile-panel' ? 'notification-toast-region--mobile-panel' : '',
       ].join(' ')}
       data-notification-region="true"
     >

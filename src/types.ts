@@ -1,6 +1,8 @@
-export type BoardSize = 9 | 13 | 19;
+import type { LegacyGameEncoding } from './utils/gameRecordImport';
+
+export type BoardSize = 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19;
 export const DEFAULT_BOARD_SIZE: BoardSize = 19;
-export const KOMI = 7.5;
+export const KOMI = 7;
 
 /**
  * How many candidate moves the engine reports and the board hints, unless the
@@ -189,6 +191,7 @@ export interface GameSettings {
   timerMinimalUseSeconds: number; // KaTrain timer/minimal_use (seconds)
   showLastNMistakes: number; // KaTrain-like eval dots: 0 disables, else show last N moves
   mistakeThreshold: number; // Points lost to consider a mistake for navigation/highlights.
+  legacyGameEncoding: LegacyGameEncoding; // Character encoding for GIB / NGF imports.
   loadSgfRewind: boolean; // KaTrain general/load_sgf_rewind
   loadSgfFastAnalysis: boolean; // KaTrain general/load_fast_analysis
   animPvTimeSeconds: number; // KaTrain general/anim_pv_time
@@ -226,6 +229,13 @@ export interface GameSettings {
   analysisShowOwnership: boolean; // T
   engineMode: 'local' | 'remote';
   remoteEngineUrl: string;
+  /** Paint what the played move changed instead of who owns what. */
+  analysisShowSwing: boolean;
+  /**
+   * What the swing map holds the current position against: the move before it,
+   * or the engine's own move played out as a variation.
+   */
+  analysisSwingCompare: 'previous' | 'best';
   katagoModelUrl: string;
   katagoBackend: KataGoBackendPreference;
   katagoVisits: number;

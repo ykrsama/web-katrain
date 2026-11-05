@@ -1,0 +1,193 @@
+import { describe, expect, it } from 'vitest';
+import { describeLibraryImport, describeLibraryImportFailure, type LibraryImportCounts } from '../src/utils/libraryImportSummary';
+
+const counts = (over: Partial<LibraryImportCounts> = {}): LibraryImportCounts => ({
+  importedEntries: 0,
+  importedFiles: 0,
+  openedPhotoBoard: false,
+  skippedUnsupportedPhotoImages: 0,
+  skippedOversizedSgfFiles: 0,
+  skippedInvalidSgfFiles: 0,
+  unreadableFiles: 0,
+  ...over,
+});
+
+describe('what an import tells you', () => {
+  it('reports a clean import as a plain success', () => {
+    const report = describeLibraryImport(counts({ importedEntries: 3, importedFiles: 3 }));
+    expect(report).toEqual({ message: 'Imported 3 files.', tone: 'success' });
+  });
+
+  it('counts one file in the singular', () => {
+    expect(describeLibraryImport(counts({ importedEntries: 1, importedFiles: 1 })).message).toBe(
+      'Imported 1 file.'
+    );
+  });
+
+  /**
+   * The bug this file exists for. Import counted oversized files and named them
+   * only when *nothing* imported, so the ordinary case -- some in, some too big
+   * -- said "Imported 3 files." and stopped. The number was already in hand.
+   */
+  it('names files skipped for size even when others imported', () => {
+    const report = describeLibraryImport(
+      counts({ importedEntries: 3, importedFiles: 3, skippedOversizedSgfFiles: 2 })
+    );
+    expect(report.message).toBe('Imported 3 files. Skipped 2 files over 500 MB.');
+    expect(report.tone).toBe('error');
+  });
+
+  /** The other half: a file that threw was not counted anywhere at all. */
+  it('names files it could not read', () => {
+    const report = describeLibraryImport(
+      counts({ importedEntries: 4, importedFiles: 4, unreadableFiles: 1 })
+    );
+    expect(report.message).toBe('Imported 4 files. Could not read 1 file.');
+    expect(report.tone).toBe('error');
+  });
+
+  it('stacks every reason it skipped something', () => {
+    const report = describeLibraryImport(
+      counts({
+        importedEntries: 9,
+        importedFiles: 9,
+        skippedUnsupportedPhotoImages: 1,
+        skippedOversizedSgfFiles: 3,
+        skippedInvalidSgfFiles: 2,
+        unreadableFiles: 4,
+      })
+    );
+    expect(report.message).toBe(
+      'Imported 9 files. Skipped 1 unsupported board image. Skipped 3 files over 500 MB.' +
+        ' Skipped 2 invalid game files. Could not read 4 files.'
+    );
+  });
+
+  it('mentions every count it was given, whichever one it is', () => {
+    // The point of the type is that a new reason cannot be added without a
+    // place in the message; this checks each existing one reaches it.
+    const keys = [
+      'skippedUnsupportedPhotoImages',
+      'skippedOversizedSgfFiles',
+      'skippedInvalidSgfFiles',
+      'unreadableFiles',
+    ] as const;
+    for (const key of keys) {
+      const report = describeLibraryImport(counts({ importedEntries: 2, importedFiles: 2, [key]: 7 }));
+      expect(report.message, key).toContain('7');
+      expect(report.tone, key).toBe('error');
+    }
+  });
+
+  /**
+   * A collection -- several games in one file -- imports as one item and opens
+   * at its first game. The rest are stored and export back intact, but nothing
+   * on screen reaches them, so the message has to admit it.
+   */
+  describe('a file holding more than one game', () => {
+    it('says only the first game opens', () => {
+      const report = describeLibraryImport(counts({ importedEntries: 1, importedFiles: 1, collectionFiles: 1 }));
+      expect(report.message).toBe('Imported 1 file. 1 file holds more than one game; only the first opens.');
+      // Nothing was lost, so this is not a failure -- but not a plain success.
+      expect(report.tone).toBe('info');
+    });
+
+    it('counts several of them', () => {
+      const report = describeLibraryImport(counts({ importedEntries: 5, importedFiles: 5, collectionFiles: 2 }));
+      expect(report.message).toContain('2 files hold more than one game; only the first of each opens.');
+    });
+
+    it('keeps quiet about ordinary single-game files', () => {
+      const report = describeLibraryImport(counts({ importedEntries: 2, importedFiles: 2, collectionFiles: 0 }));
+      expect(report).toEqual({ message: 'Imported 2 files.', tone: 'success' });
+    });
+
+    it('does not bury a real skip underneath it', () => {
+      const report = describeLibraryImport(
+        counts({ importedEntries: 2, importedFiles: 2, collectionFiles: 1, unreadableFiles: 3 })
+      );
+      expect(report.message).toContain('Could not read 3 files.');
+      expect(report.message).toContain('only the first opens');
+      expect(report.tone).toBe('error');
+    });
+  });
+
+  it('still says the photo board opened', () => {
+    expect(
+      describeLibraryImport(counts({ importedEntries: 2, importedFiles: 2, openedPhotoBoard: true })).message
+    ).toBe('Imported 2 files and opened photo board image.');
+    expect(describeLibraryImport(counts({ openedPhotoBoard: true }))).toEqual({
+      message: 'Opened photo board from image.',
+      tone: 'info',
+    });
+  });
+
+  describe('when nothing came in', () => {
+    it('says so plainly when there was nothing to import', () => {
+      expect(describeLibraryImport(counts())).toEqual({
+        message: 'No SGF, GIB, NGF, ZIP, or board image files were imported.',
+        tone: 'info',
+      });
+    });
+
+    it('gives the size limit', () => {
+      expect(describeLibraryImport(counts({ skippedOversizedSgfFiles: 1 }))).toEqual({
+        message: 'Game files are limited to 500 MB. 1 file skipped.',
+        tone: 'error',
+      });
+    });
+
+    it('reports files it could not read, which it used to drop in silence', () => {
+      expect(describeLibraryImport(counts({ unreadableFiles: 2 }))).toEqual({
+        message: 'Could not read 2 files.',
+        tone: 'error',
+      });
+    });
+
+    it('reports invalid SGFs', () => {
+      expect(describeLibraryImport(counts({ skippedInvalidSgfFiles: 3 })).message).toBe(
+        'No valid games were imported.'
+      );
+    });
+  });
+});
+
+
+describe('actionable archive and file failures', () => {
+  it('shows the skipped archive count and first reason after a partial import', () => {
+    const firstFailure = describeLibraryImportFailure('Study.zip/Bad.gib', new Error('Invalid GIB move on line 2.'));
+    expect(describeLibraryImport(counts({ importedEntries: 1, importedFiles: 1, skippedArchiveGames: 3, firstFailure })))
+      .toEqual({ message: 'Imported 1 file. Skipped 3 archive games. Could not import "Study.zip/Bad.gib". Invalid GIB move on line 2.', tone: 'error' });
+  });
+
+  it('reports all rejected archive and loose files even when nothing imports', () => {
+    expect(describeLibraryImport(counts({ skippedArchiveGames: 3, unreadableFiles: 1 }))).toEqual({
+      message: 'No games were imported. Skipped 3 archive games. Could not read 1 file.', tone: 'error',
+    });
+  });
+
+  it('counts different loose-file failures when nothing survives', () => {
+    expect(describeLibraryImport(counts({ skippedOversizedSgfFiles: 2, skippedInvalidSgfFiles: 1, unreadableFiles: 1 }))).toEqual({
+      message: 'No games were imported. Skipped 2 files over 500 MB. Skipped 1 invalid game file. Could not read 1 file.', tone: 'error',
+    });
+  });
+
+  it('retains encoding guidance for an unreadable loose file', () => {
+    const firstFailure = describeLibraryImportFailure('Old.ngf', new Error('Choose an encoding in Settings.'));
+    expect(describeLibraryImport(counts({ unreadableFiles: 1, firstFailure })).message)
+      .toBe('Could not read 1 file. Could not import "Old.ngf". Choose an encoding in Settings.');
+  });
+
+  it('keeps the photo-board success alongside rejected archive games', () => {
+    expect(describeLibraryImport(counts({ openedPhotoBoard: true, skippedArchiveGames: 2 }))).toEqual({
+      message: 'Opened photo board from image. Skipped 2 archive games.', tone: 'error',
+    });
+  });
+
+  it('bounds error details and removes misleading filename controls', () => {
+    const description = describeLibraryImportFailure('\u202e' + 'x'.repeat(1000), new Error('reason '.repeat(1000)));
+    expect(description).not.toContain('\u202e');
+    expect(description.length).toBeLessThan(510);
+    expect(description).toContain('…');
+  });
+});

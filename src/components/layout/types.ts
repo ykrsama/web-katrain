@@ -8,6 +8,7 @@ export type AnalysisControlsState = {
   analysisShowHints: boolean;
   analysisShowPolicy: boolean;
   analysisShowOwnership: boolean;
+  analysisShowSwing: boolean;
 };
 
 export type GraphOptions = { score: boolean; winrate: boolean };
@@ -48,6 +49,7 @@ export function defaultUiState(): UiState {
         analysisShowHints: false,
         analysisShowPolicy: false,
         analysisShowOwnership: false,
+        analysisShowSwing: false,
       },
       analyze: {
         analysisShowChildren: true,
@@ -55,6 +57,7 @@ export function defaultUiState(): UiState {
         analysisShowHints: true,
         analysisShowPolicy: false,
         analysisShowOwnership: true,
+        analysisShowSwing: false,
       },
     },
     panels: {

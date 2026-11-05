@@ -1,11 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { AnalysisResult, CandidateMove, GameNode, GameState, Move } from '../src/types';
+import { resolveSwingBaseline } from '../src/utils/territorySwing';
 import {
   collectDrillMistakes,
   drillPromptText,
   drillSummaryText,
   drillVerdictText,
   gradeDrillGuess,
+  isAnswerHidden,
   isDrillSolved,
 } from '../src/utils/mistakeDrill';
 
@@ -149,6 +152,16 @@ describe('gradeDrillGuess', () => {
     expect(isDrillSolved(verdict.kind)).toBe(true);
   });
 
+  it('does not call a guess worse than the drilled move good enough', () => {
+    const { root } = line();
+    root.analysis = analysis(10, [candidate(3, 3, 0, 0), candidate(15, 15, 0.6, 1), candidate(9, 9, 0.95, 2)]);
+
+    const verdict = gradeDrillGuess(root, { x: 9, y: 9 }, 0.6, { x: 15, y: 15 })!;
+
+    expect(verdict.kind).toBe('miss');
+    expect(isDrillSolved(verdict.kind)).toBe(false);
+  });
+
   it('separates a real improvement from repeating the mistake', () => {
     const { root } = line();
     root.analysis = analysis(10, [candidate(3, 3, 0, 0), candidate(4, 4, 3, 1), candidate(9, 9, 5.5, 2)]);
@@ -246,11 +259,11 @@ describe('nothing on screen answers the position the drill is asking about', () 
       'src/components/CandidatePvTiles.tsx',
       'src/components/CandidateMoveList.tsx',
     ]) {
-      expect(await read(path), path).toContain('isDrillHidingAnswer');
+      expect(await read(path), path).toContain('isAnswerHidden');
     }
     // The dashboard takes the answer as a prop rather than reading the store.
     expect(await read('src/components/dashboard/DesktopDashboard.tsx')).toContain('drillHidesAnswer ? null :');
-    expect(await read('src/components/Layout.tsx')).toContain('isDrillHidingAnswer(mistakeDrill, currentNode.id)');
+    expect(await read('src/components/Layout.tsx')).toContain('isAnswerHidden({ mistakeDrill, punishQuizArmedNodeId }, currentNode.id)');
   });
 
   it('covers every reader of the best-move summary', async () => {
@@ -263,13 +276,88 @@ describe('nothing on screen answers the position the drill is asking about', () 
       .filter(Boolean);
     expect(hits.length).toBeGreaterThan(0);
     for (const path of hits) {
-      expect(await read(path), path).toContain('isDrillHidingAnswer');
+      expect(await read(path), path).toContain('isAnswerHidden');
     }
+  });
+
+  it('keeps the swing map\u2019s baseline off the answer the drill is withholding', () => {
+    /**
+     * The drill sits on `parentNodeId` -- the position *before* the mistake --
+     * so the answer is the best move at the node the board is showing. The
+     * swing map's "compare with the engine's move" reads one level further up,
+     * `parent.analysis`, which is the previous position's best move and not the
+     * answer. That is the only reason its chip may name a move during a drill,
+     * and it is worth pinning: pointing the baseline at the current node's own
+     * analysis would turn that tooltip into an answer key.
+     */
+    const answerAtTheDrillPosition = { x: 7, y: 7, order: 0 };
+    const bestOneMoveEarlier = { x: 3, y: 3, order: 0 };
+    type Fake = {
+      move?: { x: number; y: number } | null;
+      analysis?: {
+        territory?: number[][];
+        moves?: Array<{ x: number; y: number; order: number }>;
+      } | null;
+      parent?: Fake | null;
+      children?: Fake[];
+    };
+    const parent: Fake = {
+      analysis: { territory: [[0]], moves: [bestOneMoveEarlier] },
+      children: [],
+    };
+    const node: Fake = {
+      parent,
+      move: { x: 1, y: 1 },
+      analysis: { territory: [[0]], moves: [answerAtTheDrillPosition] },
+    };
+    parent.children = [node];
+
+    const baseline = resolveSwingBaseline(node, 'best', (x, y) => `${x},${y}`);
+    expect(baseline.kind).toBe('unavailable');
+    expect(baseline.kind === 'unavailable' && baseline.reason).toContain('3,3');
+    expect(baseline.kind === 'unavailable' && baseline.reason).not.toContain('7,7');
   });
 
   it('hides the candidates without blaming the engine for the silence', async () => {
     expect(await read('src/components/CandidateMoveList.tsx')).toContain(
       'Hidden while the drill is asking about this position.'
     );
+  });
+});
+
+describe('what a drill will not accept or ask', () => {
+  it('never grades the move actually played as an answer', () => {
+    const { root } = line();
+    // K10 lost six by the score change, four by the candidate list.
+    const verdict = gradeDrillGuess(root, { x: 9, y: 9 }, 6, { x: 9, y: 9 });
+    expect(verdict?.kind).toBe('miss');
+    expect(isDrillSolved(verdict!.kind)).toBe(false);
+  });
+
+  it('skips a position whose best move is the one played, or a pass', () => {
+    const { root, blunder } = line();
+    root.analysis = analysis(10, [candidate(9, 9, 0, 0), candidate(3, 3, 1, 1)]);
+    expect(collectDrillMistakes({ rootNode: root, threshold: 3 })).toHaveLength(0);
+
+    root.analysis = analysis(10, [candidate(-1, -1, 0, 0), candidate(3, 3, 2.5, 1)]);
+    expect(collectDrillMistakes({ rootNode: root, threshold: 3 })).toHaveLength(0);
+    expect(blunder.move).toMatchObject({ x: 9, y: 9 });
+  });
+});
+
+describe('isAnswerHidden', () => {
+  it('hides the answer for an armed punish quiz as well as for a drill', () => {
+    expect(isAnswerHidden({ mistakeDrill: null, punishQuizArmedNodeId: 'blunder' }, 'blunder')).toBe(true);
+    expect(isAnswerHidden({ mistakeDrill: null, punishQuizArmedNodeId: 'blunder' }, 'other')).toBe(false);
+    expect(isAnswerHidden({ mistakeDrill: null, punishQuizArmedNodeId: null }, 'blunder')).toBe(false);
+  });
+
+  it('is what every panel that names the engine move asks', () => {
+    for (const file of ['CandidateMoveList', 'CandidatePvTiles', 'AnalysisCommandBar', 'AnalysisPanel']) {
+      const source = readFileSync(`src/components/${file}.tsx`, 'utf8');
+      expect(source).toContain('isAnswerHidden(state, state.currentNode.id)');
+      expect(source).not.toContain('isDrillHidingAnswer(');
+    }
+    expect(readFileSync('src/components/GoBoard.tsx', 'utf8')).toContain('setPunishQuizArmedNodeId(armedNodeId)');
   });
 });

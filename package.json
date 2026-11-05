@@ -13,6 +13,10 @@
     "test": "vitest run",
     "test:engine": "ENGINE_TESTS=1 vitest run",
     "test:viewport": "node scripts/check-viewports.mjs",
+    "test:responsiveness": "node scripts/check-responsiveness.mjs",
+    "test:analysis": "node scripts/check-analysis-responsiveness.mjs",
+    "test:study": "node scripts/check-study-performance.mjs",
+    "test:offline": "node scripts/check-offline.mjs",
     "bench": "BENCH=1 vitest run test/enginePerfBench.test.ts --reporter=verbose",
     "test:typecheck": "tsc -p tsconfig.test.json --noEmit",
     "audit": "npm audit --audit-level=moderate",
@@ -49,11 +53,13 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vitest": "^4.0.16"
+    "vitest": "^4.1.12"
   },
   "overrides": {
-    "@typescript-eslint/typescript-estree": {
-      "minimatch": "^11.0.1"
+    "@typescript-eslint/typescript-estree": { "minimatch": "^11.0.1" },
+    "js-yaml": "^4.3.2",
+    "@tensorflow/tfjs": {
+      "argparse": "^2.0.1"
     }
   }
 }

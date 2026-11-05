@@ -23,6 +23,63 @@ describe('desktop dashboard layout', () => {
     expect(responsiveBlock).not.toContain('setSidebarOpen(true');
   });
 
+  it('fits the command rail on one row with the library docked', () => {
+    // The rail wraps, so every flex item on it costs a gap whether or not it
+    // draws anything -- and it was 3.2px over its 596.8px column at 1280x800
+    // with the library docked, which dropped the play actions onto a second
+    // row and took ~33px of height off the board. `npm run test:viewport` is
+    // the probe that measures this; these two guard what it found.
+    const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
+
+    // The play actions push themselves right; no empty element does it. The
+    // class name survives in the comments that explain its removal, so match
+    // the rule and the markup rather than the word.
+    expect(dashboardSource).not.toContain('navbar-spacer');
+    expect(css).not.toContain('.navbar-spacer {');
+    expect(css).toContain(
+      '.wk-dashboard .playactions { display: flex; align-items: center; gap: 6px; margin-left: auto; }'
+    );
+
+    // The tightest tier states each declaration once: it carried two
+    // .move-counter paddings and two .navbar paddings, only the last of which
+    // did anything.
+    const tier = css.slice(
+      css.indexOf('@container boardcol (max-width: 700px) {'),
+      css.indexOf('/* ---------------- Sidebar (analysis) ---------------- */')
+    );
+    expect(tier).toContain('.wk-dashboard .navbar { gap: 1px; padding: 8px 4px 12px; }');
+    expect(tier).toContain('.wk-dashboard .move-counter { padding: 0 4px; }');
+    for (const selector of ['.wk-dashboard .navbar {', '.wk-dashboard .move-counter {']) {
+      expect(tier.split(selector), selector).toHaveLength(2);
+    }
+    // Nothing was paid for out of a control: the WCAG-floor sizes stand.
+    expect(tier).toContain('.wk-dashboard .navbtn { width: 28px; }');
+    expect(tier).toContain('.wk-dashboard .move-counter input { width: 30px; }');
+  });
+
+  it('draws Resign from the theme, like every other button on the rail', () => {
+    // It carried `borderColor: '#f0c4c4'` inline -- a pale pink picked against
+    // a light mock, brighter on the three dark themes than the --line-strong
+    // every neighbour uses, and a wash on the light one. The file already had
+    // the shape for this one rule above, on .pbtn.danger.
+    const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
+
+    expect(dashboardSource).toContain("<button type=\"button\" className=\"tbtn danger\" title={t('Resign')}");
+    expect(dashboardSource).not.toContain('#f0c4c4');
+    expect(css).toContain(
+      '.wk-dashboard .tbtn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--panel)); }'
+    );
+
+    // Colours may still be set from a style prop -- several are, all reading
+    // var(--muted), var(--faint), var(--ink). What may not is a literal. The
+    // hexes left in the stylesheet are stones and goban wood, which are not
+    // theme colours in the first place.
+    expect(dashboardSource).not.toMatch(/style=\{\{[^}]*:\s*'#[0-9a-fA-F]{3,8}'/);
+    expect(dashboardSource).not.toMatch(/style=\{\{[^}]*:\s*'rgba?\(/);
+  });
+
   it('keeps the board-first Library affordance visibly discoverable', () => {
     const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
     const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
@@ -252,10 +309,13 @@ describe('desktop dashboard layout', () => {
     // too — otherwise a straight-line game showed an empty 30px band with a
     // rule under it above the tree.
     expect(gameTreeBlock).toContain('{branchInfo.hasBranches && (\n                  <div className="panel-toolbar">');
-    expect(gameTreeBlock).toContain('branchInfo.currentIndex > 1 ? (');
+    expect(gameTreeBlock).toContain('!isOnMainLine(currentNode) ? (');
     expect(gameTreeBlock).not.toContain("className={branchInfo.hasBranches ? 'pbtn pico' : 'hidden'}");
-    expect(analysisBlock).toContain("aria-label={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}");
-    expect(analysisBlock).toContain("aria-label={legend.score ? t('Hide score graph') : t('Show score graph')}");
+    // Graph toggles are named by their visible text ("Win rate", "Score") and
+    // carry their state in aria-pressed; a "Hide …" name said it twice.
+    expect(analysisBlock).toContain('aria-pressed={legend.winrate}');
+    expect(analysisBlock).toContain('aria-pressed={legend.score}');
+    expect(analysisBlock).not.toContain("aria-label={legend.winrate ?");
     expect(analysisBlock).toContain("aria-label={legendOpen ? t('Hide move-quality legend') : t('Show move-quality legend')}");
     // Gated on legendOpen: the legend only renders while open, so an
     // unconditional aria-controls left a dangling IDREF when it was closed.
@@ -310,7 +370,7 @@ describe('desktop dashboard layout', () => {
   it('gates the side panel on the real desktop shell, not viewport width alone', () => {
     const panel = readFileSync('src/components/layout/RightPanel.tsx', 'utf8');
     const css = readFileSync('src/index.css', 'utf8');
-    const responsive = readFileSync('src/utils/responsiveLayout.ts', 'utf8');
+    const breakpoints = readFileSync('src/utils/layoutBreakpoints.ts', 'utf8');
 
     // Tailwind's `lg:` is width-only. The app enters its desktop shell only
     // when the viewport is wide AND tall enough, so at 1280x460 the mobile
@@ -326,9 +386,19 @@ describe('desktop dashboard layout', () => {
     // without it the variant still parses, emits no CSS at all, and every
     // `desktop-shell:` class across the app silently does nothing — which is
     // how ~50 usages in 16 files sat inert while this assertion passed.
-    expect(css).toContain('@custom-variant desktop-shell (@media (min-width: 1024px) and (min-height: 500px));');
-    expect(responsive).toContain('DESKTOP_LAYOUT_MIN_WIDTH = 1024');
-    expect(responsive).toContain('DESKTOP_LAYOUT_MIN_HEIGHT = 500');
+    //
+    // The numbers are read out of layoutBreakpoints.ts rather than written
+    // here as well: the point is that the stylesheet and the shell logic
+    // agree, not that they are forever 1024x500. Pinning the literals in the
+    // test only meant a deliberate breakpoint change had to be made in three
+    // places instead of two, with the test failing for the wrong reason.
+    const minWidth = /DESKTOP_LAYOUT_MIN_WIDTH = (\d+)/.exec(breakpoints)?.[1];
+    const minHeight = /DESKTOP_LAYOUT_MIN_HEIGHT = (\d+)/.exec(breakpoints)?.[1];
+    expect(minWidth, 'DESKTOP_LAYOUT_MIN_WIDTH not found in layoutBreakpoints.ts').toBeDefined();
+    expect(minHeight, 'DESKTOP_LAYOUT_MIN_HEIGHT not found in layoutBreakpoints.ts').toBeDefined();
+    expect(css).toContain(
+      `@custom-variant desktop-shell (@media (min-width: ${minWidth}px) and (min-height: ${minHeight}px));`
+    );
   });
 
 
@@ -366,5 +436,24 @@ describe('desktop dashboard layout', () => {
 
     expect(source).toContain('aria-pressed={isSelectingRegionOfInterest}');
     expect(source).toContain('aria-pressed={isInsertMode}');
+  });
+});
+
+describe('colour swatches do not speak', () => {
+  /**
+   * Every colour in this dashboard has its meaning in adjacent text -- the
+   * quality dot sits before the points-lost figure, the legend swatches before
+   * their labels -- so the swatches themselves are decoration and should be
+   * skipped rather than announced as empty elements mid-label. The candidate
+   * list already marks its `cl-dot` that way, and the `lg-check` icon
+   * immediately beside these swatches does too; they were the exception.
+   */
+  it('marks the decorative colour spans aria-hidden', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+    const swatches = [...source.matchAll(/<span className="(cb-quality-dot|sw|qd)"[^>]*>/g)];
+    expect(swatches.length, 'the dashboard swatches moved').toBeGreaterThanOrEqual(5);
+    for (const [tag, name] of swatches) {
+      expect(tag, `${name} swatch is announced`).toContain('aria-hidden="true"');
+    }
   });
 });

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { libraryNameRepeatsPlayers } from '../src/utils/library';
+import { tagsFromResult } from '../src/utils/narrativeTags';
 
 describe('libraryNameRepeatsPlayers', () => {
   it('spots the pair an imported record leads with', () => {
@@ -34,19 +35,73 @@ describe('library file row layout', () => {
     expect(styles).toContain(
       ".library-tree-node[data-library-row='file'] {\n    display: grid;\n    grid-template-columns: auto 16px minmax(0, 1fr) auto auto;\n    grid-template-rows: auto auto;"
     );
+    // The name spans to the row's end: sharing a column track with the hover
+    // actions cut it to two letters on the row being pointed at.
     expect(styles).toMatch(
-      /\.library-tree-node\[data-library-row='file'\] \.library-tree-node-name \{\s*grid-column: 3;\s*grid-row: 1;/
+      /\.library-tree-node\[data-library-row='file'\] \.library-tree-node-name \{\s*grid-column: 3 \/ -1;\s*grid-row: 1;/
     );
     expect(styles).toMatch(
       /\.library-tree-node\[data-library-row='file'\] \.library-tree-node-meta \{\s*grid-column: 3;\s*grid-row: 2;[^}]*text-overflow: ellipsis;/
     );
-    // The hover actions and the unsaved badge keep their own columns rather
-    // than wrapping onto the meta line.
+    // The hover actions and the unsaved badge take their own columns on the
+    // meta line, which truncates to make room for them.
     expect(styles).toMatch(
-      /\.library-tree-node\[data-library-row='file'\] \.library-dirty-indicator \{\s*grid-column: 4;\s*grid-row: 1 \/ 3;/
+      /\.library-tree-node\[data-library-row='file'\] \.library-dirty-indicator \{\s*grid-column: 4;\s*grid-row: 2;/
     );
     expect(styles).toMatch(
-      /\.library-tree-node\[data-library-row='file'\] \.library-tree-node-actions \{\s*grid-column: 5;\s*grid-row: 1 \/ 3;/
+      /\.library-tree-node\[data-library-row='file'\] \.library-tree-node-actions \{\s*grid-column: 5;\s*grid-row: 2;/
     );
+  });
+});
+
+describe('the result in a library row', () => {
+  const panel = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
+
+  it('prints the result, which the row stored and never showed', () => {
+    // `extractLibraryMetadata` has always read RE into `metadata.result`, and
+    // the row only ever fed it to `tagsFromResult`. Measured on a saved game:
+    // "Game 8 - 2026-09-03 - 10 moves - 0.2 KB", with no sign of who won.
+    // The line is built once now and used for both the text and its title, so
+    // the result has to be one of the parts that string is joined from.
+    const start = panel.indexOf('const metaText = [');
+    const meta = start < 0 ? '' : panel.slice(start, panel.indexOf(".join(' · ')", start));
+    expect(meta, 'metaText not found in LibraryPanel').not.toBe('');
+    expect(meta).toContain("item.metadata.result ?? ''");
+  });
+
+  it('drops only the tags that restate the result', () => {
+    // A plain margin produces no tag at all, which is why an ordinary game
+    // showed nothing: the row depended entirely on the narrative chips.
+    expect(tagsFromResult('W+7.0')).toEqual([]);
+    // These three say what the result string already says.
+    expect(tagsFromResult('W+R').map((tag) => tag.id)).toEqual(['resign']);
+    expect(tagsFromResult('W+T').map((tag) => tag.id)).toEqual(['time']);
+    expect(tagsFromResult('0').map((tag) => tag.id)).toEqual(['draw']);
+    expect(panel).toContain("const RESULT_RESTATING_TAGS = new Set(['resign', 'time', 'draw'])");
+    expect(panel).toContain('RESULT_RESTATING_TAGS.has(tag.id)');
+  });
+
+  it('keeps the tags that add something the result does not say', () => {
+    const wide = tagsFromResult('B+40.5').map((tag) => tag.id);
+    expect(wide).toContain('blowout');
+    // and the filter must not reach them
+    for (const id of wide) expect(['resign', 'time', 'draw']).not.toContain(id);
+  });
+});
+
+describe('a truncated row name stays readable', () => {
+  const panel = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
+
+  it('labels both kinds of row for a mouse, not only for a screen reader', () => {
+    // Measured in the browser at the panel's default width: the name box is
+    // 191px and a tournament title lays out at 411-462px, so more than half of
+    // it is off the end with no way to read the rest. The row's aria-label
+    // always carried the full name; hovering it gave nothing.
+    const named = [...panel.matchAll(/<div className="library-tree-node-name"([^>]*)>/g)];
+
+    expect(named.length, 'expected a file row and a folder row').toBe(2);
+    for (const [, attributes] of named) {
+      expect(attributes, 'a row name with no title truncates unreadably').toContain('title={item.name}');
+    }
   });
 });

@@ -90,6 +90,9 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
 
   const handleGuess = (x: number, y: number) => {
     if (!current || phase !== 'guess') return;
+    // Every point is a click target; a tap on a stone is a slip, not a guess,
+    // and used to be graded "Off the mark" and counted.
+    if (current.board[y]?.[x]) return;
     const result = scoreGuess(current.expected, x, y);
     setGuess({ x, y });
     setOutcome(result);
@@ -280,7 +283,7 @@ export const GuessMoveModal: React.FC<GuessMoveModalProps> = ({ onClose, onBrows
                 onClick={handleNext}
                 disabled={isLast}
                 aria-label={isLast ? t('End of game') : t('Next move')}
-                className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-60"
+                className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] not-disabled:hover:bg-[var(--ui-surface-2)] disabled:opacity-60"
                 data-guess-move-next="true"
               >
                 <span className="inline-flex items-center gap-2">

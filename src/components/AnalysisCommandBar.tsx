@@ -3,6 +3,7 @@ import { useT } from '../i18n';
 import type { AnalysisExperience } from '../types';
 import {
   FaChartBar,
+  FaExchangeAlt,
   FaFileAlt,
   FaLayerGroup,
   FaMap,
@@ -24,7 +25,7 @@ import {
   nextTopMoveMetric,
 } from '../utils/topMoveMetric';
 import { getCurrentNodeBestMoveSummary } from '../utils/bestMoveSummary';
-import { isDrillHidingAnswer } from '../utils/mistakeDrill';
+import { isAnswerHidden } from '../utils/mistakeDrill';
 import { summarizeGameAnalysisProgress } from '../utils/gameAnalysisProgress';
 import { getEngineStatusSummary } from '../utils/engineStatusSummary';
 import {
@@ -47,7 +48,7 @@ import { copyTextToClipboard } from '../utils/clipboard';
 import { formatEngineErrorReport } from '../utils/engineDiagnostics';
 import { setTimedNotification } from '../utils/timedNotification';
 import { getCurrentLineNodes } from '../utils/branchNavigation';
-import { summarizeAnalysisCoverage } from '../utils/analysisCoverage';
+import { isReportReadyAnalysis, summarizeAnalysisCoverage } from '../utils/analysisCoverage';
 import { getFastReviewButtonState } from '../utils/fastReviewButtonState';
 
 interface AnalysisCommandBarProps {
@@ -176,12 +177,13 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
   const isPro = (analysisExperienceOverride ?? analysisExperience) === 'pro';
   const showAnalysisBar = useGameStore((state) => state.settings.showAnalysisBar);
   const currentNode = useGameStore((state) => state.currentNode);
-  const drillHidesAnswer = useGameStore((state) => isDrillHidingAnswer(state.mistakeDrill, state.currentNode.id));
+  const drillHidesAnswer = useGameStore((state) => isAnswerHidden(state, state.currentNode.id));
   const treeVersion = useGameStore((state) => state.treeVersion);
   const activeBranchChildIds = useGameStore((state) => state.activeBranchChildIds);
   const updateSettings = useGameStore((state) => state.updateSettings);
   const depthButtonRef = React.useRef<HTMLButtonElement>(null);
   const depthPopoverRef = React.useRef<HTMLDivElement>(null);
+  const depthInputRef = React.useRef<HTMLInputElement>(null);
   const depthCloseButtonRef = React.useRef<HTMLButtonElement>(null);
   const depthPopoverId = React.useId();
   const depthPopoverTitleId = React.useId();
@@ -189,6 +191,11 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
   const [depthDraft, setDepthDraft] = React.useState('');
   const [depthHintVisits, setDepthHintVisits] = React.useState<number | null>(null);
   const [reviewStartedAt, setReviewStartedAt] = React.useState<number | null>(null);
+  // A new run can replace a running one without the running flag ever going
+  // false, so the start time also resets when the kind of run changes or its
+  // count goes backwards. Otherwise the new run's rate took in the old run's
+  // elapsed time: 13 of 121 after 2s read "ETA 1m 27s" for a 19s job.
+  const reviewRunRef = React.useRef<{ type: unknown; done: number } | null>(null);
   const [reviewNow, setReviewNow] = React.useState(0);
   const [engineErrorCopied, setEngineErrorCopied] = React.useState(false);
   const shouldShow =
@@ -210,7 +217,12 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
         nowMs: reviewNow,
       })
     : null;
-  const analysisCoverage = summarizeAnalysisCoverage(getCurrentLineNodes(currentNode, activeBranchChildIds));
+  // Counted the way the panel's button counts it: a Quick graph leaves an
+  // analysis on every node but no candidates, and read as "Reviewed" here,
+  // disabling the one Fast review entry point on tablets and phones.
+  const analysisCoverage = summarizeAnalysisCoverage(getCurrentLineNodes(currentNode, activeBranchChildIds), {
+    isAnalyzed: (node) => isReportReadyAnalysis(node.analysis),
+  });
   const fastReviewButton = getFastReviewButtonState({
     isGameAnalysisRunning,
     gameProgress,
@@ -283,6 +295,9 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
   const heatmapToggleLabel = analysisControls.analysisShowPolicy ? t('Hide move heatmap') : t('Show move heatmap');
   const policyHeatmapMetricAriaLabel = t('Map: {metric} — cycle move heatmap metric', { metric: policyHeatmapMetricLabel });
   const territoryToggleLabel = analysisControls.analysisShowOwnership ? t('Hide territory ownership') : t('Show territory ownership');
+  const swingToggleLabel = analysisControls.analysisShowSwing
+    ? t('Hide what this move changed')
+    : t('Show what this move changed, in place of the territory wash');
   const gameReportLabel = t('Open the full game report');
   const playedMoveQuality = React.useMemo(
     () => getPlayedMoveQuality(currentNode, pointsLost),
@@ -370,14 +385,38 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
 
   React.useEffect(() => {
     if (!isGameAnalysisRunning) {
+      reviewRunRef.current = null;
       setReviewStartedAt(null);
       setReviewNow(0);
       return;
     }
     const now = Date.now();
-    setReviewStartedAt((startedAt) => startedAt ?? now);
+    const previousRun = reviewRunRef.current;
+    const isNewRun = !previousRun || previousRun.type !== gameAnalysisType || gameAnalysisDone < previousRun.done;
+    reviewRunRef.current = { type: gameAnalysisType, done: gameAnalysisDone };
+    setReviewStartedAt((startedAt) => (isNewRun || startedAt === null ? now : startedAt));
     setReviewNow(now);
   }, [isGameAnalysisRunning, gameAnalysisType, gameAnalysisDone, gameAnalysisTotal]);
+
+  React.useLayoutEffect(() => {
+    if (!depthPopoverOpen) return;
+    const popover = depthPopoverRef.current;
+    const dock = document.querySelector<HTMLElement>('.mobile-bottom-dock');
+    if (!popover || !dock) return;
+    // Enlarged text can make the dock taller than its CSS minimum heights.
+    const updateInset = () => {
+      const inset = Math.max(0, window.innerHeight - dock.getBoundingClientRect().top);
+      popover.style.setProperty('--depth-popover-bottom', `calc(${inset}px + 0.75rem)`);
+    };
+    updateInset();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateInset);
+    observer?.observe(dock);
+    window.addEventListener('resize', updateInset);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateInset);
+    };
+  }, [depthPopoverOpen]);
 
   React.useEffect(() => {
     if (!depthPopoverOpen) return;
@@ -388,6 +427,9 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
       if (!target) return;
       if (depthPopoverRef.current?.contains(target)) return;
       if (depthButtonRef.current?.contains(target)) return;
+      // Pointer dismissal unmounts the editor before native focus can blur it.
+      // Finish its normal commit while it is still mounted; Escape cancels.
+      depthInputRef.current?.blur();
       closeDepthPopover();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -473,6 +515,7 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
           onChange={(event) => applyLiveVisits(sliderValueToVisitCount(Number.parseFloat(event.currentTarget.value)))}
         />
         <input
+          ref={depthInputRef}
           type="number"
           min={ANALYSIS_MIN_VISITS}
           max={ENGINE_MAX_VISITS}
@@ -729,6 +772,17 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
         >
           <FaMap size={12} aria-hidden="true" />
           <span>{t('Territory')}</span>
+        </button>
+        <button
+          type="button"
+          className={['analysis-command-bar__button', analysisControls.analysisShowSwing ? 'active' : ''].join(' ')}
+          onClick={() => toggleOverlay('analysisShowSwing')}
+          aria-pressed={analysisControls.analysisShowSwing}
+          title={swingToggleLabel}
+          data-analysis-swing-toggle="true"
+        >
+          <FaExchangeAlt size={12} aria-hidden="true" />
+          <span>{t('Swing')}</span>
         </button>
         <button
           type="button"

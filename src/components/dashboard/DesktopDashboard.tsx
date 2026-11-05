@@ -1,8 +1,9 @@
+import type { InsertProgress } from '../../utils/insertMode';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './dashboard.css';
 import { Icon, type IconName } from './icons';
 import type { CandidateMove, GameNode, GameRules, GameSettings, Player } from '../../types';
-import type { BranchInfo } from '../../utils/branchNavigation';
+import { isOnMainLine, type BranchInfo } from '../../utils/branchNavigation';
 import type { AnalysisControlsState } from '../layout/types';
 import { formatMoveLabel } from '../layout/ui-utils';
 import { MoveTree } from '../MoveTree';
@@ -12,19 +13,24 @@ import { CandidateMoveList } from '../CandidateMoveList';
 import { AnalysisExperienceToggle } from '../AnalysisExperienceToggle';
 import { NotesPanel } from '../NotesPanel';
 import { Timer } from '../Timer';
-import { GameInfoPanel } from '../GameInfoPanel';
 import { LanguageSwitcher } from '../layout/LanguageSwitcher';
 import { getDashboardLayoutMode, type DashboardLayoutMode } from '../../utils/dashboardLayout';
+import { computeTerritorySwing, describeTerritorySwing, resolveSwingBaseline } from '../../utils/territorySwing';
 import { LIBRARY_OPEN_STORAGE_KEY } from '../../utils/layoutPreferences';
-import { readLocalStorage, writeLocalStorage } from '../../utils/storage';
 import { APP_BUILD_LABEL, APP_COMMIT_URL, APP_ISSUE_REPORT_URL } from '../../utils/appInfo';
 import { formatEngineBackendLabel, getEngineModelSource } from '../../utils/engineStatusSummary';
+import { AnalysisModelNotice } from '../AnalysisModelNotice';
+import { saveSettingsActiveTab } from '../../utils/settingsTabs';
 import { DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from '../../utils/nodeAnalysis';
 import { evalColorToCss, getKaTrainEvalColors } from '../../utils/katrainTheme';
 import { ANALYSIS_VISIT_PRESETS, clampAnalysisVisits, visitPresetLabel } from '../../utils/visitPresets';
 import { formatRulesLabel } from '../../utils/gameInfoDisplay';
+import { GameInfoPanel } from '../GameInfoPanel';
 import { formatReadableScoreLead, formatWinRateFavorLabel, POINTS_LOST_EXPLANATION } from '../../utils/analysisSummary';
 import { useT } from '../../i18n';
+import { readLocalStorage, removeLocalStorage, writeLocalStorage } from '../../utils/storage';
+import { getResizeObserverConstructor } from '../../utils/resizeObserver';
+import { useDocumentFlag } from '../../hooks/useDocumentFlag';
 
 type EngineState = 'ready' | 'running' | 'loading' | 'error';
 
@@ -51,6 +57,8 @@ export interface DesktopDashboardProps {
   loadedFileName: string | null;
   dirty: boolean;
   currentNode: GameNode;
+  /** Bumps when the tree changes in place, analysis landing on a node included. */
+  treeVersion: number;
   /** True while a mistake drill is asking about this position; see `mistakeDrill`. */
   drillHidesAnswer: boolean;
   /** `${x},${y}` of the candidate whose variation is on the board, or null. */
@@ -68,7 +76,11 @@ export interface DesktopDashboardProps {
   // ---- engine ----
   engineState: EngineState;
   enginePillLabel: string;
-  engineMeta: string;
+  /* No `engineMeta`: the pill shows `enginePillLabel` and puts the long form on
+     its own title, so the compact label the phone renders has nothing to do
+     here. It was declared and threaded in for nothing -- the one prop of 106
+     this component never read. `dashboardPropsAreUsed` in
+     test/desktopDashboard.test.tsx keeps it that way. */
   engineMetaTitle: string;
   engineBackend: string;
   engineModelLabel: string;
@@ -83,6 +95,7 @@ export interface DesktopDashboardProps {
   updateControls: (partial: Partial<AnalysisControlsState>) => void;
   updateSettings: (partial: Partial<GameSettings>) => void;
   isInsertMode: boolean;
+  insertProgress: InsertProgress;
   toggleInsertMode: () => void;
   isSelectingRegionOfInterest: boolean;
   startSelectRegionOfInterest: () => void;
@@ -131,11 +144,24 @@ export interface DesktopDashboardProps {
   onAiMove: () => void;
   onResign: () => void;
   onPlayBest: () => void;
+  /** The colour the engine is currently playing, or null when it is not. */
+  engineOpponent: Player | null;
+  /** KaTrain's teach mode: prompt an undo after a move that cost too much. */
+  isTeachMode: boolean;
+  onToggleTeachMode: () => void;
+  /** Hand the position on screen to the engine, or take it back. */
+  onPlayFromHere: () => void;
 
   // ---- file / header actions ----
   onNewGame: () => void;
+  onLessons?: () => void;
   onSaveSgf: () => void;
   onCopySgf: () => void;
+  onCopyBoardText: () => void;
+  onCopyShareLink: () => void;
+  onCopyBoardImage: () => void;
+  onExportBoardImage: () => void;
+  onPrintKifu: () => void;
   onSaveToLibrary: (returnFocus?: HTMLElement | null) => void;
   onLoadSgf: () => void;
   onPasteSgf: (returnFocus?: HTMLElement | null) => void;
@@ -143,8 +169,10 @@ export interface DesktopDashboardProps {
   onScanBoard: (returnFocus?: HTMLElement | null) => void;
   onBlindfold: () => void;
   onSettings: () => void;
+  onChooseModel?: () => void;
   onCommandPalette: () => void;
   onKeyboardHelp: (returnFocus?: HTMLElement | null) => void;
+  onFindNotes?: (returnFocus?: HTMLElement | null) => void;
   onAbout: (returnFocus?: HTMLElement | null) => void;
 
   toast: (message: string, type?: 'info' | 'error' | 'success') => void;
@@ -192,10 +220,25 @@ function formatVisitCount(n: number): string {
 type PopoverId = 'engine' | 'view' | 'file' | 'help' | null;
 type PopoverInputMode = 'pointer' | 'keyboard';
 
-const HERO_DISMISSED_KEY = 'wk-getting-started-dismissed';
+/**
+ * Namespaced and versioned like every other key this app stores.
+ *
+ * It was `wk-getting-started-dismissed`: outside the `web-katrain:` prefix, so
+ * nothing that clears this app's storage would clear it, and unversioned, so a
+ * change of meaning would have had nowhere to go. The site is served from a
+ * github.io user domain, where localStorage is shared with every other project
+ * on it, which is what the prefix is for.
+ */
+const HERO_DISMISSED_KEY = 'web-katrain:hero_dismissed:v1';
+const LEGACY_HERO_DISMISSED_KEY = 'wk-getting-started-dismissed';
 type DashboardOverlayKey = keyof Pick<
   GameSettings,
-  'analysisShowChildren' | 'analysisShowEval' | 'analysisShowHints' | 'analysisShowPolicy' | 'analysisShowOwnership'
+  | 'analysisShowChildren'
+  | 'analysisShowEval'
+  | 'analysisShowHints'
+  | 'analysisShowPolicy'
+  | 'analysisShowOwnership'
+  | 'analysisShowSwing'
 >;
 
 const DASHBOARD_OVERLAY_NAMES: Record<DashboardOverlayKey, string> = {
@@ -204,6 +247,7 @@ const DASHBOARD_OVERLAY_NAMES: Record<DashboardOverlayKey, string> = {
   analysisShowHints: 'top move hints',
   analysisShowPolicy: 'move heatmap',
   analysisShowOwnership: 'territory ownership',
+  analysisShowSwing: 'what this move changed',
 };
 
 export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
@@ -212,28 +256,39 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     boardControls,
     blackName, whiteName, blackRank, whiteRank,
     capturedBlack, capturedWhite, komi, boardSize, handicap, rules, result,
-    currentPlayer, moveCount, totalMoves, loadedFileName, dirty, currentNode, drillHidesAnswer,
+    currentPlayer, moveCount, totalMoves, loadedFileName, dirty, currentNode, treeVersion, drillHidesAnswer,
     hoveredCandidateKey, onHoverCandidate, branchInfo,
     showAnalysis, winRate, scoreLead, pointsLost, pointsLostLabel,
     engineState, enginePillLabel, engineMetaTitle, engineBackend, engineModelLabel, analysisCacheSize,
     mode, setMode, isContinuousAnalysis, toggleContinuousAnalysis,
     settings, updateControls, updateSettings,
-    isInsertMode, toggleInsertMode, isSelectingRegionOfInterest, startSelectRegionOfInterest,
+    isInsertMode, insertProgress, toggleInsertMode, isSelectingRegionOfInterest, startSelectRegionOfInterest,
     hasMoveTimes = false,
     libraryOpen, setLibraryOpen, libraryPanel, libraryWidth, sidebarOpen, setSidebarOpen, focusMode = false,
     isGameAnalysisRunning, gameAnalysisType, gameAnalysisDone, gameAnalysisTotal,
     startQuickGameAnalysis, startFastGameAnalysis, stopGameAnalysis, onClearAnalysisCache, onOpenGameReport,
     navigateBack, navigateForward, canNavigateBack, canNavigateForward, navigateStart, navigateEnd, navigateToMove,
     jumpBack, jumpForward, findMistake, canFindPreviousMistake, canFindNextMistake, rotateBoard, switchBranch, undoToBranchPoint, makeCurrentNodeMainBranch,
-    passTurn, onUndo, onAiMove, onResign, onPlayBest,
-    onNewGame, onSaveSgf, onCopySgf, onSaveToLibrary, onLoadSgf, onPasteSgf, onFoxImport, onScanBoard,
-    onBlindfold, onSettings, onCommandPalette, onKeyboardHelp, onAbout,
+    passTurn, onUndo, onAiMove, onResign, onPlayBest, engineOpponent, onPlayFromHere,
+    isTeachMode, onToggleTeachMode,
+    onNewGame, onLessons, onSaveSgf, onCopySgf, onCopyBoardText, onCopyShareLink, onCopyBoardImage,
+    onExportBoardImage, onPrintKifu, onSaveToLibrary, onLoadSgf, onPasteSgf, onFoxImport, onScanBoard,
+    onBlindfold, onSettings, onCommandPalette, onKeyboardHelp, onFindNotes, onAbout,
     toast, headerNotification,
   } = props;
   const t = useT();
   const rulesLabel = formatRulesLabel(rules);
 
-  const [sections, setSections] = useState({ info: true, tree: true, analysis: true, candidates: true, notes: true });
+  // Game info starts closed: the gamestrip already carries the summary, so this
+  // section is here for the fields it does not show and for editing them, and
+  // opening it by default would push the game tree down for everyone.
+  const [sections, setSections] = useState({
+    gameinfo: false,
+    tree: true,
+    analysis: true,
+    candidates: true,
+    notes: true,
+  });
   // Top game-info strip and bottom metrics bar collapse like the side panels so
   // the board can take the full column; reopen handles mirror the edge toggles.
   const [gamestripOpen, setGamestripOpen] = useState(() => {
@@ -285,24 +340,23 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
   // ---- first-run hero ----
   const [heroDismissed, setHeroDismissed] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      return window.localStorage.getItem(HERO_DISMISSED_KEY) === 'true';
-    } catch {
+    if (readLocalStorage(HERO_DISMISSED_KEY) === 'true') return true;
+    // Anyone who dismissed this before the rename should not meet it again.
+    if (readLocalStorage(LEGACY_HERO_DISMISSED_KEY) === 'true') {
+      writeLocalStorage(HERO_DISMISSED_KEY, 'true');
+      removeLocalStorage(LEGACY_HERO_DISMISSED_KEY);
       return true;
     }
+    return false;
   });
   const dismissHero = useCallback(() => {
     setHeroDismissed(true);
-    try {
-      window.localStorage.setItem(HERO_DISMISSED_KEY, 'true');
-    } catch {
-      // ignore storage failures
-    }
+    writeLocalStorage(HERO_DISMISSED_KEY, 'true');
   }, []);
   // Only on a fresh, untouched game: the board stays playable underneath, and
   // the card hides itself as soon as a move exists or the game has edits.
   const showHero = !heroDismissed && totalMoves === 0 && !dirty;
+
 
   useEffect(() => {
     libraryOpenRef.current = libraryOpen;
@@ -363,6 +417,11 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     setPop({ id, rect, inputMode: e.detail === 0 ? 'keyboard' : 'pointer' });
   };
   const closePop = useCallback(() => setPop(null), []);
+  const chooseModel = () => {
+    closePop();
+    saveSettingsActiveTab('ai');
+    (props.onChooseModel ?? onSettings)();
+  };
   const closePopWithFocus = useCallback(() => {
     setPop(null);
     window.setTimeout(() => popTriggerRef.current?.focus({ preventScroll: true }), 0);
@@ -431,19 +490,48 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   );
 
   // ---- overlay toggle helper ----
+  /**
+   * What the move that reached this position changed, for the Swing chip's
+   * tooltip. Counted in intersections rather than points on purpose -- see
+   * `territorySwing.ts` on why an ownership total must not be quoted as a score.
+   */
+  // Analysis is written onto nodes in place, so the node keeps its identity
+  // when this position (or the one before) is analysed; the tooltip went on
+  // saying "needs this move and the one before it analyzed" until a move away
+  // and back.
+  const swingSummary = useMemo(() => {
+    void treeVersion;
+    const after = currentNode.analysis?.territory;
+    const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
+      formatMoveLabel(x, y, boardSize)
+    );
+    // Say why there is nothing rather than nothing at all: turning the chip on
+    // and seeing the board unchanged reads as a broken toggle, and each reason
+    // wants something different from the reader -- wait, play a move, or "that
+    // is the answer".
+    if (baseline.kind === 'unavailable') return baseline.reason;
+    if (!after) return 'needs this move analyzed';
+    const against = baseline.kind === 'best' ? `vs ${baseline.label}` : 'vs the move before';
+    const summary = describeTerritorySwing(computeTerritorySwing(baseline.territory, after));
+    return summary ? `${against}: ${summary}` : `${against}: nothing moved`;
+  }, [boardSize, currentNode, settings.analysisSwingCompare, treeVersion]);
+
   const overlayBtn = (
     keyName: DashboardOverlayKey,
     label: string,
     iconName: IconName,
-    disabled?: boolean
+    disabled?: boolean,
+    detail?: string | null
   ) => {
     const on = !!settings[keyName];
     const overlayName = t(DASHBOARD_OVERLAY_NAMES[keyName]);
     const overlayActionLabel = on ? t('Hide {overlay}', { overlay: overlayName }) : t('Show {overlay}', { overlay: overlayName });
     const topMovesHiddenByPolicy = keyName === 'analysisShowHints' && disabled;
     const overlayTitle = topMovesHiddenByPolicy
-      ? t('Move heatmap is showing; top move hints are hidden')
-      : overlayActionLabel;
+      ? 'Move heatmap is showing; top move hints are hidden'
+      : detail
+        ? `${overlayActionLabel} — ${detail}`
+        : overlayActionLabel;
     // No aria-label: the accessible name is the visible chip text, so voice
     // control can act on the word the user reads, and aria-pressed carries the
     // on/off state on its own. A "Hide …"/"Show …" name states it a second
@@ -463,14 +551,46 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   };
 
   const showCompactStartStrip = showHero && layoutMode === 'compact' && gamestripOpen;
+  // Page-level styles that depend on the dashboard's panels (index.css):
+  // where the install card and the error toast may sit.
+  useDocumentFlag('dashboard-sidebar', sidebarOpen ? 'open' : null);
+  useDocumentFlag('dashboard-gamestrip', gamestripOpen ? 'open' : null);
+  useDocumentFlag('dashboard-hero', showHero && !showCompactStartStrip ? 'shown' : null);
+  // The install card is fixed above the bottom edge by the shell's bar heights,
+  // and here that sum (two 56px bars) is not what sits below the board: the
+  // navbar is one row, 50px. The card floated 62px above the reserve the board
+  // stage keeps for it, onto the start rail, where it covered Paste SGF and
+  // From photo on every first visit. Publish the navbar's real height instead.
+  const navbarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const navbar = navbarRef.current;
+    const update = () => {
+      const height = navbar?.getBoundingClientRect().height ?? 0;
+      root.style.setProperty('--dashboard-navbar-height', `${Math.ceil(height)}px`);
+    };
+    update();
+    const ResizeObserverConstructor = getResizeObserverConstructor();
+    const observer = ResizeObserverConstructor && navbar ? new ResizeObserverConstructor(update) : null;
+    if (observer && navbar) observer.observe(navbar);
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+      root.style.removeProperty('--dashboard-navbar-height');
+    };
+  }, []);
   const renderStartActions = () => (
     <>
+      {onLessons && (
+        <button type="button" className="tbtn" onClick={onLessons} title={t('Learn Go with interactive lessons on captures, life and openings')}>
+          <Icon name="book" size={14} /> {t('Learn Go')}</button>
+      )}
       <button type="button" className="tbtn primary" onClick={() => { dismissHero(); onNewGame(); }}>
         <Icon name="plus" size={14} /> {t('New game')}
       </button>
       <button type="button" className="tbtn" onClick={() => { dismissHero(); onLoadSgf(); }}>
-        <Icon name="folder" size={14} /> {t('Open SGF')}
-      </button>
+        <Icon name="folder" size={14} /> {t('Open game')}</button>
       <button type="button" className="tbtn" onClick={() => { dismissHero(); onPasteSgf(); }}>
         <Icon name="clipboard" size={14} /> {t('Paste SGF / OGS')}
       </button>
@@ -499,12 +619,12 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               no h1 at all, so heading-based navigation had nothing to land on.
               .brand-name sets font-size/weight explicitly and Preflight zeroes
               heading margins, so this renders identically. */}
-          <h1 className="brand-name">Web <b>KaTrain</b></h1>
+          <h1 className="brand-name">{t('Web')} <b>{t('KaTrain')}</b></h1>
         </div>
         <div className="header-divider" />
         <div className="iconcluster" id="wk-file-actions">
           <button type="button" className="iconbtn" title={t('New game')} aria-label={t('New game')} onClick={onNewGame}><Icon name="plus" /></button>
-          <button type="button" className="iconbtn" title={t('Open SGF / photo / weights')} aria-label={t('Load SGF, board photo, or model weights')} onClick={onLoadSgf}><Icon name="folder" /></button>
+          <button type="button" className="iconbtn" title={t('Open game, board photo, or model weights')} aria-label={t('Open game, board photo, or model weights')} onClick={onLoadSgf}><Icon name="folder" /></button>
           <button type="button" className="iconbtn" title={t('Save SGF')} aria-label={t('Save SGF')} onClick={onSaveSgf}><Icon name="save" /></button>
           <button type="button" className="iconbtn" title={t('Blindfold training')} aria-label={t('Blindfold training')} onClick={onBlindfold}><Icon name="ear" /></button>
           <button
@@ -616,7 +736,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <div className={`gamestrip${showCompactStartStrip ? ' start-strip' : ''}`}>
             {showCompactStartStrip ? (
               <div className="compact-start" role="region" aria-label={t('Get started')} data-dashboard-compact-start="true">
-                <span className="compact-start-title">{t('Start')}</span>
+                {!onLessons && <span className="compact-start-title">{t('Start')}</span>}
                 <div className="compact-start-actions">{renderStartActions()}</div>
                 <button
                   type="button"
@@ -674,13 +794,17 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           </div>
           )}
 
-          <div className="board-stage">
+          <div className="board-stage" data-board-tooltip-boundary="true">
+            {/* Panel toggles: named for the panel, as their label reads, with
+                aria-expanded for open or closed. A "Hide …"/"Show …" name that
+                was also aria-pressed said the state twice, and contradicted
+                itself -- "Hide analysis, pressed". */}
             <button
               type="button"
               className={`edge-toggle left${libraryOpen ? ' open' : ''}`}
               title={libraryOpen ? t('Hide library') : t('Show library')}
-              aria-label={libraryOpen ? t('Hide library') : t('Show library')}
-              aria-pressed={libraryOpen}
+              aria-label={t('Library')}
+              aria-expanded={libraryOpen}
               onClick={toggleLibrary}
             >
               <Icon name={libraryOpen ? 'chevL' : 'chevR'} size={13} />
@@ -690,8 +814,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               type="button"
               className={`edge-toggle top${gamestripOpen ? ' open' : ''}`}
               title={gamestripOpen ? t('Hide game info') : t('Show game info')}
-              aria-label={gamestripOpen ? t('Hide game info') : t('Show game info')}
-              aria-pressed={gamestripOpen}
+              aria-label={t('Game info')}
+              aria-expanded={gamestripOpen}
               onClick={() => setGamestripOpen((v) => !v)}
             >
               <Icon name={gamestripOpen ? 'chevU' : 'chevD'} size={13} />
@@ -701,7 +825,12 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               <div className="goban-frame">{board}</div>
             </div>
             {showHero && !showCompactStartStrip && (
-              <div className="hero-card" data-dashboard-hero="true" role="region" aria-label={t('Get started')}>
+              <div
+                className="hero-card"
+                data-dashboard-hero="true"
+                role="region"
+                aria-label={t('Get started')}
+              >
                 <button
                   type="button"
                   className="iconbtn hero-close"
@@ -711,7 +840,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 >
                   <Icon name="x" size={13} />
                 </button>
-                <div className="hero-title">{t('Start here')}</div>
+                {!onLessons && <div className="hero-title">{t('Start here')}</div>}
                 <div className="hero-actions">{renderStartActions()}</div>
               </div>
             )}
@@ -719,8 +848,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               type="button"
               className={`edge-toggle right${sidebarOpen ? ' open' : ''}`}
               title={sidebarOpen ? t('Hide analysis') : t('Show analysis')}
-              aria-label={sidebarOpen ? t('Hide analysis') : t('Show analysis')}
-              aria-pressed={sidebarOpen}
+              aria-label={t('Analysis')}
+              aria-expanded={sidebarOpen}
               onClick={toggleSidebar}
             >
               <Icon name={sidebarOpen ? 'chevR' : 'chevL'} size={13} />
@@ -731,8 +860,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 type="button"
                 className={`edge-toggle bottom${commandbarOpen ? ' open' : ''}`}
                 title={commandbarOpen ? t('Hide metrics') : t('Show metrics')}
-                aria-label={commandbarOpen ? t('Hide metrics') : t('Show metrics')}
-                aria-pressed={commandbarOpen}
+                aria-label={t('Metrics')}
+                aria-expanded={commandbarOpen}
                 onClick={() => setCommandbarOpen((v) => !v)}
               >
                 <Icon name={commandbarOpen ? 'chevD' : 'chevU'} size={13} />
@@ -767,7 +896,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     <div className="k">{t('Played')}</div>
                     <div className="v">
                       {pointsLost != null ? (
-                        <><span className="cb-quality-dot" style={{ background: evalColorForPointsLost(pointsLost, settings.trainerEvalThresholds, settings.trainerTheme) }} />{pointsLostLabel}</>
+                        <><span className="cb-quality-dot" aria-hidden="true" style={{ background: evalColorForPointsLost(pointsLost, settings.trainerEvalThresholds, settings.trainerTheme) }} />{pointsLostLabel}</>
                       ) : '—'}
                     </div>
                     <div className={`sub ${pointsLost != null && pointsLost > 1.5 ? 'delta-bad' : 'delta-good'}`}>
@@ -787,7 +916,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           )}
 
           {/* Nav bar */}
-          <div className="navbar">
+          <div className="navbar" ref={navbarRef}>
             <button type="button" className="pass-btn" title={t('Pass (P)')} onClick={passTurn}>{t('Pass')}</button>
             <div className="navgroup">
               <button type="button" className="navbtn navbtn-pair" title={canFindPreviousMistake ? t('Previous mistake') : t('No previous analyzed mistake')} aria-label={t('Previous mistake')} onClick={() => findMistake(-1)} disabled={!canFindPreviousMistake}><Icon name="chevL" size={11} /><span className="mistake-dot" /></button>
@@ -853,29 +982,81 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               >
                 <Icon name="target" size={13} /><span className="bc-label">{t('Region')}</span>
               </button>
+              {/* While inserting, this carries the count and warns on an odd
+                  one: the continuation can only follow an even number of
+                  inserted moves, and the store only said so on the way out,
+                  when nothing could be done about it. The classic shell's own
+                  status chip carries the same wording. */}
               <button
                 type="button"
                 className={`board-chip${isInsertMode ? ' on' : ''}`}
                 aria-pressed={isInsertMode}
-                title={t('Insert moves into the game record')}
+                title={isInsertMode ? insertProgress.title : t('Insert moves into the game record')}
+                aria-label={isInsertMode ? insertProgress.title : undefined}
+                data-insert-progress={isInsertMode ? (insertProgress.warn ? 'odd' : 'even') : undefined}
+                style={isInsertMode && insertProgress.warn
+                  ? { borderColor: 'var(--ui-warning)', color: 'var(--ui-warning)' }
+                  : undefined}
                 onClick={toggleInsertMode}
               >
-                <Icon name="layers" size={13} /><span className="bc-label">{t('Insert')}</span>
+                <Icon name="layers" size={13} />
+                <span className="bc-label">{isInsertMode ? insertProgress.label : t('Insert')}</span>
+              </button>
+              {/* Teach mode had exactly one control in the whole app, in the
+                  mobile tools sheet, so on this shell it could be configured in
+                  Settings and never switched on. It is a board interaction mode
+                  like its neighbours here. */}
+              <button
+                type="button"
+                className={`board-chip${isTeachMode ? ' on' : ''}`}
+                aria-pressed={isTeachMode}
+                title={isTeachMode
+                  ? t('Stop offering to take back costly moves')
+                  : t('Teach mode: offer to take back a move that costs too much')}
+                onClick={onToggleTeachMode}
+              >
+                <Icon name="levelUp" size={13} /><span className="bc-label">{t('Teach')}</span>
               </button>
               {boardControls ? <div className="board-extra-tools">{boardControls}</div> : null}
             </div>
-            <span className="navbar-spacer" />
             <div className="playactions">
               {mode === 'play' ? (
                 <>
                   <button type="button" className="tbtn" title={canNavigateBack ? t('Undo') : t('No move to undo')} onClick={onUndo} disabled={!canNavigateBack}><Icon name="undo" size={14} /><span className="tbtn-label">{t('Undo')}</span></button>
                   <button type="button" className="tbtn" title={t('AI move')} onClick={onAiMove}><Icon name="bot" size={14} /><span className="tbtn-label">{t('AI move')}</span></button>
-                  <button type="button" className="tbtn" style={{ color: 'var(--red)', borderColor: '#f0c4c4' }} title={t('Resign')} onClick={onResign}><Icon name="flag" size={14} /><span className="tbtn-label">{t('Resign')}</span></button>
+                  <button type="button" className="tbtn danger" title={t('Resign')} onClick={onResign}><Icon name="flag" size={14} /><span className="tbtn-label">{t('Resign')}</span></button>
                 </>
               ) : (
                 <>
                   <button type="button" className="tbtn" title={t('AI move')} onClick={onAiMove}><Icon name="bot" size={14} /><span className="tbtn-label">{t('AI move')}</span></button>
-                  <button type="button" className="tbtn primary" title={t('Play best')} onClick={onPlayBest}><Icon name="play" size={14} /><span className="tbtn-label">{t('Play best')}</span></button>
+                  {/* Review is where this is wanted: you are reading a game,
+                      you reach the move you regret, and you want to try the
+                      other one against something that answers back. */}
+                  <button
+                    type="button"
+                    className={`tbtn${engineOpponent ? ' on' : ''}`}
+                    aria-pressed={!!engineOpponent}
+                    title={engineOpponent
+                      ? t('Stop the engine playing {value1}', { value1: engineOpponent === 'black' ? 'Black' : 'White' })
+                      : t('Play on from here against the engine. Your moves branch off the game.')}
+                    onClick={onPlayFromHere}
+                  >
+                    <Icon name="levelUp" size={14} /><span className="tbtn-label">{t('Play on')}</span>
+                  </button>
+                  {/* Named and disabled from the same reading the command bar
+                      shows, so the button cannot promise a move the analysis
+                      has not produced. */}
+                  <button
+                    type="button"
+                    className="tbtn primary"
+                    disabled={!bestMove}
+                    title={bestMove
+                      ? t('Play {value1}, the move the engine ranked first', { value1: formatMoveLabel(bestMove.x, bestMove.y, boardSize) })
+                      : t('Analyze this position first, so there is a best move to play')}
+                    onClick={onPlayBest}
+                  >
+                    <Icon name="play" size={14} /><span className="tbtn-label">{t('Play best')}</span>
+                  </button>
                 </>
               )}
             </div>
@@ -897,6 +1078,20 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <button type="button" className="iconbtn drawer-close" title={t('Close')} style={{ margin: '6px 6px 6px 0' }} onClick={() => setSidebarOpen(false)}><Icon name="x" size={14} /></button>
           </div>
           <div className="sidebar-scroll">
+            {/* The gamestrip above the board is not the whole of this, which is
+                what the sidebar used to say it was: it shows the title, size,
+                rules, players, komi, captures, handicap, result and save state,
+                and it shows all of them read-only. Event, round, date, place and
+                the time settings appear nowhere on desktop, and nothing here
+                could edit any of it -- a game's own provenance was legible only
+                on a phone. */}
+            <div className={`section${sections.gameinfo ? ' open' : ''}`}>
+              {sectionHead('gameinfo', t('Game info'), 'info')}
+              <div className="section-body">
+                <GameInfoPanel />
+              </div>
+            </div>
+
             {/* Game tree */}
             <div className={`section${sections.tree ? ' open' : ''}`}>
               {sectionHead('tree', t('Game tree'), 'sitemap')}
@@ -905,13 +1100,39 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                   <div className="panel-toolbar">
                     <button type="button" className="pbtn pico" title={t('Previous branch')} aria-label={t('Previous branch')} onClick={() => switchBranch(-1)}><Icon name="chevD" size={12} /></button>
                     <button type="button" className="pbtn pico" title={t('Next branch')} aria-label={t('Next branch')} onClick={() => switchBranch(1)}><Icon name="chevR" size={12} /></button>
-                    <span className="pbtn" style={{ pointerEvents: 'none' }}>
-                      <span style={{ color: 'var(--faint)' }}>{t('Branch')}</span>{' '}
-                      <span className="mono" style={{ color: 'var(--ink)' }}>{branchInfo.currentIndex}/{branchInfo.totalBranches}</span>
+                    {/* How far past the fork you are, which the chip used to
+                        leave out: it read "Branch 1/3" identically at the fork
+                        and six moves down the variation, so it could not say
+                        whether "Back to branch point" had anywhere to go. The
+                        phone's tree toolbar has shown this all along and the
+                        number was already on `branchInfo` here.
+
+                        The title lives on a wrapper because `.pbtn:hover`
+                        repaints, and this chip is not a button -- the inner
+                        span keeps `pointerEvents: 'none'` so hovering explains
+                        it without making it look clickable. */}
+                    <span
+                      title={
+                        branchInfo.isAtFork
+                          ? t('Branch {value1} of {value2}, at the branch point', { value1: branchInfo.currentIndex, value2: branchInfo.totalBranches })
+                          : t('Branch {value1} of {value2}, {value3} move{value4} into this variation', { value1: branchInfo.currentIndex, value2: branchInfo.totalBranches, value3: branchInfo.depthFromBranchRoot, value4: branchInfo.depthFromBranchRoot === 1 ? '' : 's' })
+                      }
+                      style={{ display: 'inline-flex', cursor: 'default' }}
+                    >
+                      <span className="pbtn" style={{ pointerEvents: 'none' }}>
+                        <span style={{ color: 'var(--faint)' }}>{t('Branch')}</span>{' '}
+                        <span className="mono" style={{ color: 'var(--ink)' }}>{branchInfo.currentIndex}/{branchInfo.totalBranches}</span>
+                        {!branchInfo.isAtFork && (
+                          <>
+                            {' '}
+                            <span className="mono" style={{ color: 'var(--ui-accent)' }}>+{branchInfo.depthFromBranchRoot}</span>
+                          </>
+                        )}
+                      </span>
                     </span>
                     <button type="button" className="pbtn pico" title={t('Back to branch point')} aria-label={t('Back to branch point')} onClick={undoToBranchPoint}><Icon name="levelUp" size={12} /></button>
-                    {branchInfo.currentIndex > 1 ? (
-                      <button type="button" className="pbtn pico" title={t('Make main branch')} aria-label={t('Make current move the main branch')} onClick={() => { makeCurrentNodeMainBranch(); toast(t('Set as main branch'), 'success'); }}><Icon name="star" size={12} /></button>
+                    {!isOnMainLine(currentNode) ? (
+                      <button type="button" className="pbtn pico" title={t('Make main branch')} aria-label={t('Make current move the main branch')} onClick={() => { makeCurrentNodeMainBranch(); if (!isInsertMode) toast('Set as main branch.', 'success'); }}><Icon name="star" size={12} /></button>
                     ) : null}
                   </div>
                 )}
@@ -938,9 +1159,33 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 </div>
               ))}
               <div className="section-body flush">
+                {showAnalysis && (
+                  <div className="mx-3 my-2">
+                    <AnalysisModelNotice modelUrl={settings.katagoModelUrl} modelName={engineModelLabel} onChooseModel={chooseModel} />
+                  </div>
+                )}
+                {/* Mounted whether or not a review runs, so the live region is
+                    in place before its text changes. Quarter steps rather than
+                    every position: a 300-move review would otherwise read out
+                    300 times. */}
+                <div className="sr-only" role="status" aria-live="polite">
+                  {isGameAnalysisRunning && gameAnalysisTotal > 0
+                    ? t('Reviewing the game: {value1}% done', { value1: Math.floor((gameAnalysisDone / gameAnalysisTotal) * 4) * 25 })
+                    : !isGameAnalysisRunning && gameAnalysisTotal > 0 && gameAnalysisDone >= gameAnalysisTotal
+                      ? t('Game review finished')
+                      : ''}
+                </div>
                 {isGameAnalysisRunning && (
                   <div className="progress-wrap" style={{ paddingTop: 12 }}>
-                    <div className="progress-track">
+                    <div
+                      className="progress-track"
+                      role="progressbar"
+                      aria-label={t('Game review')}
+                      aria-valuemin={0}
+                      aria-valuemax={gameAnalysisTotal}
+                      aria-valuenow={gameAnalysisDone}
+                      aria-valuetext={`${gameAnalysisDone} of ${gameAnalysisTotal} positions`}
+                    >
                       <div className="progress-fill" style={{ width: `${gameAnalysisTotal ? Math.round((gameAnalysisDone / gameAnalysisTotal) * 100) : 0}%` }} />
                     </div>
                     <div className="progress-label">{t('{done}/{total} positions · {type}', { done: gameAnalysisDone, total: gameAnalysisTotal, type: t(gameAnalysisType ?? 'analysis') })}</div>
@@ -958,35 +1203,32 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     type="button"
                     className={`lg${legend.winrate ? ' on' : ''}`}
                     aria-pressed={legend.winrate}
-                    aria-label={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}
-                    title={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}
+                                        title={legend.winrate ? t('Hide win rate graph') : t('Show win rate graph')}
                     onClick={() => setLegend((l) => ({ ...l, winrate: !l.winrate }))}
                   >
                     <span className="lg-check" aria-hidden="true"><Icon name="check" size={10} /></span>
-                    <span className="sw" style={{ background: 'var(--green)' }} />{t('Win rate')}
+                    <span className="sw" aria-hidden="true" style={{ background: 'var(--green)' }} />{t('Win rate')}
                   </button>
                   <button
                     type="button"
                     className={`lg${legend.score ? ' on' : ''}`}
                     aria-pressed={legend.score}
-                    aria-label={legend.score ? t('Hide score graph') : t('Show score graph')}
-                    title={legend.score ? t('Hide score graph') : t('Show score graph')}
+                                        title={legend.score ? t('Hide score graph') : t('Show score graph')}
                     onClick={() => setLegend((l) => ({ ...l, score: !l.score }))}
                   >
                     <span className="lg-check" aria-hidden="true"><Icon name="check" size={10} /></span>
-                    <span className="sw" style={{ background: 'var(--amber)' }} />{t('Score')}
+                    <span className="sw" aria-hidden="true" style={{ background: 'var(--amber)' }} />{t('Score')}
                   </button>
                   {hasMoveTimes && (
                     <button
                       type="button"
                       className={`lg${legend.time ? ' on' : ''}`}
                       aria-pressed={legend.time}
-                      aria-label={legend.time ? t('Hide time graph') : t('Show time graph')}
-                      title={legend.time ? t('Hide time graph') : t('Show time graph')}
+                                            title={legend.time ? t('Hide time graph') : t('Show time graph')}
                       onClick={() => setLegend((l) => ({ ...l, time: !l.time }))}
                     >
                       <span className="lg-check" aria-hidden="true"><Icon name="check" size={10} /></span>
-                      <span className="sw" style={{ background: 'var(--amber)', opacity: 0.55 }} />{t('Time')}
+                      <span className="sw" aria-hidden="true" style={{ background: 'var(--amber)', opacity: 0.55 }} />{t('Time')}
                     </button>
                   )}
                 </div>
@@ -999,6 +1241,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                   {overlayBtn('analysisShowHints', t('Top moves'), 'layers', settings.analysisShowPolicy)}
                   {overlayBtn('analysisShowPolicy', t('Heatmap'), 'grid')}
                   {overlayBtn('analysisShowOwnership', t('Territory'), 'map')}
+                  {overlayBtn('analysisShowSwing', t('Swing'), 'chart', false, swingSummary)}
                 </div>
                 )}
                 {legendOpen && (
@@ -1008,7 +1251,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                     <div className="qgrid">
                       {evalLegendRows(settings.trainerEvalThresholds, settings.trainerTheme, t).map(([label, color, range]) => (
                         <div className="qi" key={label}>
-                          <span className="qd" style={{ background: color }} />
+                          <span className="qd" aria-hidden="true" style={{ background: color }} />
                           <span className="ql">{label}</span>
                           <span className="qr">{range}</span>
                         </div>
@@ -1047,7 +1290,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                   </button>
                 </div>
                 )}
-                {mode === 'analyze' && <TenukiRow />}
+                {mode === 'analyze' && <TenukiRow className="tenuki-row" />}
                 {!showAnalysis && (
                   <div className="coach-card">
                     <div className="cc-head">
@@ -1081,7 +1324,11 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
 
             {/* Comment / notes */}
             <div className={`section${sections.notes ? ' open' : ''}`}>
-              {sectionHead('notes', t('Comment'), 'comment')}
+              {sectionHead('notes', t('Comment'), 'comment', onFindNotes && (
+                <button type="button" className="pbtn pico" aria-label={t('Find notes')} title={t('Find notes in this game')} onClick={(event) => onFindNotes(event.currentTarget)}>
+                  <Icon name="search" size={13} />
+                </button>
+              ))}
               <div className="section-body flush">
                 {/* "Lock AI details (Play mode)" is a teacher's setting; the
                     other shell honours it, this one used to show the PV and
@@ -1095,13 +1342,6 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               </div>
             </div>
 
-            {/* Game info */}
-            <div className={`section${sections.info ? ' open' : ''}`}>
-              {sectionHead('info', t('Game info'), 'info')}
-              <div className="section-body">
-                <GameInfoPanel />
-              </div>
-            </div>
           </div>
         </aside>
 
@@ -1121,6 +1361,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           model={engineModelLabel}
           modelSource={isRemoteEngine ? t('Remote') : getEngineModelSource(settings.katagoModelUrl)}
           isRemote={isRemoteEngine}
+          modelUrl={settings.katagoModelUrl}
+          onChooseModel={chooseModel}
           cacheSize={analysisCacheSize}
           visits={settings.katagoVisits}
           visitsDisabled={isGameAnalysisRunning}
@@ -1139,9 +1381,27 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           tabIndex={-1}
           data-dashboard-popover="true"
         >
+          {/* The section said Export and offered two of the six ways this app
+              can hand out a position; the other four were reachable only from
+              the command palette, which is not where someone looks for them. */}
           <div className="menu-section-label">{t('Export')}</div>
           <button type="button" className="menu-item" onClick={() => { closePop(); onCopySgf(); }}>
             <Icon name="copy" size={14} /><span className="mi-label">{t('Copy SGF')}</span>
+          </button>
+          <button type="button" className="menu-item" onClick={() => { closePop(); onCopyBoardText(); }}>
+            <Icon name="copy" size={14} /><span className="mi-label">{t('Copy position as text')}</span>
+          </button>
+          <button type="button" className="menu-item" onClick={() => { closePop(); onCopyShareLink(); }}>
+            <Icon name="link" size={14} /><span className="mi-label">{t('Copy share link')}</span>
+          </button>
+          <button type="button" className="menu-item" onClick={() => { closePop(); onCopyBoardImage(); }}>
+            <Icon name="image" size={14} /><span className="mi-label">{t('Copy board image')}</span>
+          </button>
+          <button type="button" className="menu-item" onClick={() => { closePop(); onExportBoardImage(); }}>
+            <Icon name="download" size={14} /><span className="mi-label">{t('Export board image (PNG)')}</span>
+          </button>
+          <button type="button" className="menu-item" onClick={() => { closePop(); onPrintKifu(); }}>
+            <Icon name="file" size={14} /><span className="mi-label">{t('Print kifu (PDF)')}</span>
           </button>
           <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onSaveToLibrary(trigger); }}>
             <Icon name="book" size={14} /><span className="mi-label">{t('Save to library')}</span>
@@ -1151,7 +1411,11 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onPasteSgf(trigger); }}>
             <Icon name="clipboard" size={14} /><span className="mi-label">{t('Paste SGF / OGS')}</span>
           </button>
-          <button type="button" className="menu-item" aria-label={t('Photo Board')} onClick={() => { const trigger = popTriggerRef.current; closePop(); onScanBoard(trigger); }}>
+          {/* No aria-label: the visible "Board from photo" is the name, the way
+              the Paste item above it works. The label it used to carry said
+              "Photo Board", so the item answered to a name that is nowhere on
+              screen. */}
+          <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onScanBoard(trigger); }}>
             <Icon name="camera" size={14} /><span className="mi-label">{t('Board from photo')}</span>
           </button>
           {onFoxImport && <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onFoxImport(trigger); }}>
@@ -1223,12 +1487,14 @@ const EnginePopover: React.FC<{
   modelSource: string;
   /** Analysis runs on a remote WebSocket server, not the in-browser backend. */
   isRemote: boolean;
+  modelUrl: string;
+  onChooseModel: () => void;
   cacheSize: number;
   visits: number;
   visitsDisabled: boolean;
   onVisitsChange: (visits: number) => void;
   onClearCache: () => void;
-}> = ({ rect, engineState, backend, model, modelSource, isRemote, cacheSize, visits, visitsDisabled, onVisitsChange, onClearCache }) => {
+}> = ({ rect, engineState, backend, model, modelSource, isRemote, modelUrl, onChooseModel, cacheSize, visits, visitsDisabled, onVisitsChange, onClearCache }) => {
   const t = useT();
   const states: Record<EngineState, [string, string]> = {
     ready: [t('Ready'), 'var(--green)'],
@@ -1241,7 +1507,7 @@ const EnginePopover: React.FC<{
   return (
     <div
       className="popover"
-      style={{ left, top: rect.bottom + 6 }}
+      style={{ left, top: rect.bottom + 6, maxHeight: `calc(100dvh - ${rect.bottom + 14}px)`, overflowY: 'auto' }}
       onClick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="false"
@@ -1251,6 +1517,7 @@ const EnginePopover: React.FC<{
     >
       <div className="pop-head"><div className="pop-eyebrow">{t('Engine')}</div><div className="pop-title">{t(isRemote ? 'KataGo · remote' : 'KataGo · in-browser')}</div></div>
       <div className="engine-detail">
+        <AnalysisModelNotice modelUrl={modelUrl} modelName={model} onChooseModel={onChooseModel} />
         <dl className="ed-grid">
           <div><dt>{t('State')}</dt><dd style={{ color }}>{label}</dd></div>
           <div><dt>{t('Backend')}</dt><dd>{isRemote ? t('Remote') : formatEngineBackendLabel(backend)}</dd></div>
@@ -1282,7 +1549,16 @@ const EnginePopover: React.FC<{
         </div>
         <div className="ed-row">
           <span style={{ color: 'var(--faint)', fontSize: 12 }}>{t('Cached positions')}</span>
-          <button type="button" className="pbtn" onClick={onClearCache}><Icon name="trash" size={12} /> {cacheSize}</button>
+          {/* The count is the only text here, so without a label the button
+              announced as just a number -- and it throws away every cached
+              evaluation. */}
+          <button
+            type="button"
+            className="pbtn"
+            onClick={onClearCache}
+            aria-label={t('Clear {value1} cached position{value2}', { value1: cacheSize, value2: cacheSize === 1 ? '' : 's' })}
+            title={t('Clear cached positions')}
+          ><Icon name="trash" size={12} /> {cacheSize}</button>
         </div>
       </div>
     </div>

@@ -5,7 +5,10 @@ import {
   FaSave,
   FaFolderOpen,
   FaCog,
+  FaAlignLeft,
   FaCopy,
+  FaImage,
+  FaLink,
   FaPaste,
   FaKeyboard,
   FaHome,
@@ -24,7 +27,8 @@ import {
 import { APP_BUILD_LABEL, APP_COMMIT_URL } from '../../utils/appInfo';
 import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 import { useShortcutLabels } from '../../hooks/useShortcutLabels';
-import { formatLibrarySize, formatLibraryTimestamp, type LibraryFile } from '../../utils/library';
+import { formatRecentLibraryFileDetail, type LibraryFile } from '../../utils/library';
+import { getQuickNewGameWarning } from '../../utils/quickNewGame';
 import { APP_LOCALE_OPTIONS, getAppLocaleOption } from '../../utils/locales';
 import type { AppLocaleId, BoardSize } from '../../types';
 import { useT } from '../../i18n';
@@ -55,6 +59,9 @@ interface MenuDrawerProps {
   onDrillMistakes?: () => void;
   onProblem?: () => void;
   onCopy: () => void;
+  onCopyText: () => void;
+  onCopyShareLink: () => void;
+  onCopyBoardImage: () => void;
   onPaste: () => void;
   onSettings: () => void;
   onCommandPalette: () => void;
@@ -63,7 +70,10 @@ interface MenuDrawerProps {
   appLocale?: AppLocaleId;
   onLocaleChange?: (locale: AppLocaleId) => void;
   quickNewGameBoardSize?: BoardSize;
+  quickNewGameHandicap?: number;
   recentItems?: LibraryFile[];
+  /** 'featured' when the list is the bundled games, not the player's own. */
+  recentKind?: 'recent' | 'featured';
   onOpenRecent?: (item: LibraryFile) => void;
 }
 
@@ -88,6 +98,9 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   onDrillMistakes,
   onProblem,
   onCopy,
+  onCopyText,
+  onCopyShareLink,
+  onCopyBoardImage,
   onPaste,
   onSettings,
   onCommandPalette,
@@ -96,12 +109,14 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
   appLocale = 'en',
   onLocaleChange,
   quickNewGameBoardSize = 19,
+  quickNewGameHandicap = 0,
   recentItems = [],
+  recentKind = 'recent',
   onOpenRecent,
 }) => {
   const t = useT();
   const shortcutLabels = useShortcutLabels(MENU_DRAWER_SHORTCUT_IDS);
-  const quickNewGameWarning = t('Quick new game ({size}×{size}): uses your saved defaults and replaces the current game after the unsaved-changes check.', { size: quickNewGameBoardSize });
+  const quickNewGameWarning = getQuickNewGameWarning(quickNewGameBoardSize, quickNewGameHandicap);
   const activeLocale = getAppLocaleOption(appLocale);
   const drawerRef = React.useRef<HTMLDivElement>(null);
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
@@ -197,11 +212,19 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
       <div className="absolute inset-0 bg-black/60" onClick={onClose} aria-hidden="true" />
       <div
         ref={drawerRef}
-        className="absolute left-0 top-0 h-full w-[90vw] max-w-sm ui-panel border-r shadow-xl p-3 overflow-y-auto overscroll-contain mobile-safe-inset mobile-safe-area-bottom"
+        className="absolute left-0 top-0 h-full w-[90vw] max-w-sm ui-panel border-r shadow-xl px-3 pt-0 pb-3 overflow-y-auto overscroll-contain mobile-safe-inset mobile-safe-area-bottom"
         data-menu-drawer-panel="true"
         onScroll={updateScrollHint}
       >
-        <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-3 flex items-start justify-between gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 py-3" data-menu-header="true">
+        {/* A sticky header sticks inside its scroller's padding, so with the
+            panel's 12px top padding it rode 12px down with the menu scrolling
+            through the gap above it. The panel has no top padding; the header
+            carries it, with the notch inset the panel's padding used to drop. */}
+        <div
+          className="sticky top-0 z-10 -mx-3 mb-3 flex items-start justify-between gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-panel)] px-3 pb-3"
+          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
+          data-menu-header="true"
+        >
           <div className="min-w-0">
             <h2 className="text-lg font-semibold" id="menu-title">
               {t('Menu')}
@@ -376,6 +399,46 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                   <FaPaste aria-hidden="true" /> {t('Paste SGF / OGS')}
                 </span>
                 <kbd className="mobile-shortcut-hint text-xs ui-text-faint">{shortcutLabels['paste-sgf']}</kbd>
+              </button>
+              {/* A phone had no way to send anyone a position at all: the
+                  share link and the board image were in the command palette
+                  and nowhere else, and pasting a board into a message is more
+                  of a phone job than a desktop one. */}
+              <button
+                type="button"
+                className={menuAction}
+                onClick={() => {
+                  onCopyShareLink();
+                  onClose();
+                }}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <FaLink className="shrink-0" aria-hidden="true" /> {t('Copy share link')}</span>
+              </button>
+              <button
+                type="button"
+                className={menuAction}
+                onClick={() => {
+                  onCopyBoardImage();
+                  onClose();
+                }}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <FaImage className="shrink-0" aria-hidden="true" /> {t('Copy board image')}</span>
+              </button>
+              {/* Spans the row: the label is longer than any above it, and a
+                  fifth item in a two-column grid would otherwise sit beside a
+                  gap. */}
+              <button
+                type="button"
+                className={`${menuAction} col-span-2`}
+                onClick={() => {
+                  onCopyText();
+                  onClose();
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <FaAlignLeft aria-hidden="true" /> {t('Copy position as text')}</span>
               </button>
             </div>
           </div>
@@ -555,7 +618,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
 
         {recentItems.length > 0 && onOpenRecent && (
           <div className="mt-2 border-t border-[var(--ui-border)] pt-2 space-y-2" data-menu-recent="true">
-            <div className="text-xs ui-text-faint px-3 uppercase tracking-wide">{t('Recent')}</div>
+            <div className="text-xs ui-text-faint px-3 uppercase tracking-wide">{recentKind === 'featured' ? t('Famous games') : t('Recent')}</div>
             <div className="space-y-1">
               {recentItems.slice(0, 3).map((item) => (
                 <button
@@ -569,7 +632,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                 >
                   <div className="truncate">{item.name}</div>
                   <div className="text-[0.6875rem] ui-text-faint">
-                    {t('{count} moves', { count: item.moveCount })} · {formatLibrarySize(item.size)} · {formatLibraryTimestamp(item.updatedAt)}
+                    {formatRecentLibraryFileDetail(item, recentKind)}
                   </div>
                 </button>
               ))}

@@ -1,4 +1,7 @@
-import { fetchOgsResource } from './ogsQueue';
+import { fetchOgsResource, readBoundedResponseText, type OgsRequestCancellation } from './ogsQueue';
+import { MAX_SGF_IMPORT_BYTES } from './sgfImportLimits';
+import { sgfFromBoardTextDiagram } from './boardTextDiagram';
+import { decodeSgfFromShareUrl } from './shareLink';
 import { t } from '../i18n';
 
 const OGS_HOSTS = new Set(['online-go.com', 'www.online-go.com']);
@@ -67,14 +70,14 @@ export const isOgsUrl = (text: string): boolean => extractOgsGameId(text) !== nu
 
 export const downloadOgsSgf = async (
   gameId: string,
-  options: { isCancelled?: () => boolean } = {}
+  options: OgsRequestCancellation = {}
 ): Promise<string> => {
   const apiUrl = `https://online-go.com/api/v1/games/${gameId}/sgf`;
-  const response = await fetchOgsResource(apiUrl, { method: 'GET' }, options);
+  const response = await fetchOgsResource(apiUrl, { method: 'GET', signal: options.signal }, options);
   if (!response.ok) {
     throw new Error(t('Failed to download OGS game {gameId}: {status}', { gameId, status: response.statusText }));
   }
-  const sgf = await response.text();
+  const sgf = await readBoundedResponseText(response, MAX_SGF_IMPORT_BYTES);
   if (!sgf || sgf.trim().length === 0) {
     throw new Error(t('Empty SGF content received from OGS game {gameId}', { gameId }));
   }
@@ -83,16 +86,25 @@ export const downloadOgsSgf = async (
 
 export const loadSgfOrOgs = async (
   content: string
-): Promise<{ sgf: string; source: 'direct' | 'ogs'; gameId?: string }> => {
+): Promise<{ sgf: string; source: 'direct' | 'ogs' | 'diagram'; gameId?: string }> => {
   const trimmed = content.trim();
   if (!trimmed) return { sgf: '', source: 'direct' };
   if (trimmed.startsWith('(')) {
     return { sgf: trimmed, source: 'direct' };
   }
+  // This app's own share link, pasted or handed over by the share sheet: it
+  // went to the SGF parser as text and failed ("missing game tree").
+  const shared = decodeSgfFromShareUrl(trimmed);
+  if (shared) return { sgf: shared, source: 'direct' };
   const gameId = extractOgsGameId(trimmed);
   if (gameId) {
     const sgf = await downloadOgsSgf(gameId);
     return { sgf, source: 'ogs', gameId };
   }
+  // Last, because it is the only branch that guesses. Anything that is really
+  // SGF or an OGS link has already been claimed above, so this only ever sees
+  // text that would otherwise have failed to parse.
+  const diagram = sgfFromBoardTextDiagram(trimmed);
+  if (diagram) return { sgf: diagram, source: 'diagram' };
   return { sgf: trimmed, source: 'direct' };
 };

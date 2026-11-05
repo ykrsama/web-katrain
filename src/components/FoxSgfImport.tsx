@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { useT, type TranslationVars } from '../i18n';
+import { useBackGestureToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { parseSgf } from '../utils/sgf';
 import { FoxImportError, resolveFoxKomi, assertFoxMoveNodes } from '../utils/foxImport';
@@ -27,6 +28,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   const [error, setError] = useState<Notice | null>(null);
   const controller = useRef<AbortController | null>(null);
   const dialog = useInitialDialogFocus<HTMLDivElement>(open, { returnFocus });
+  useBackGestureToClose(() => { controller.current?.abort(); setBusy(false); onClose(); }, open);
   const page = pages[pageIndex];
 
   const close = () => { controller.current?.abort(); setBusy(false); onClose(); };
@@ -55,7 +57,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   function report(cause: unknown) {
     if (cause === null) return; // A structured HTTP error has already been recorded.
     if (cause instanceof FoxImportError) setError({ key: cause.message, vars: cause.vars });
-    else if (cause instanceof Error && cause.name === 'AbortError') setError({ key: 'Request cancelled or timed out. You can retry.' });
+    else if (cause instanceof Error && cause.name === 'AbortError') setError({ key: 'Request canceled or timed out. You can retry.' });
     else setError({ key: 'Could not load the Fox record.', detail: cause instanceof Error ? cause.message : String(cause) });
   }
   async function search() {

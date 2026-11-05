@@ -64,6 +64,16 @@ function indexNodes(root: GameNode): Map<string, GameNode> {
   return map;
 }
 
+/**
+ * Below this gap between moves, centring the tree jumps instead of gliding: a
+ * smooth scroll in Chrome runs for roughly 300ms, so anything faster only
+ * queues animations that interrupt each other.
+ */
+const RAPID_NAVIGATION_MS = 250;
+
+const nowMs = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+
 export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = ({ onSelectNode }) => {
   const {
     rootNode,
@@ -127,18 +137,39 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
   const t = useT();
   const withShortcut = (label: string, id: MoveTreeShortcutId) => `${label} (${shortcutLabels[id]})`;
 
-  // Strict ancestors of the current move: a collapsed branch we are standing
-  // inside stays open until we navigate out of it.
-  const revealAncestorIds = useMemo(() => {
+  const hasCollapsedBranches = useMemo(() => {
     void treeVersion;
-    const ids = new Set<string>();
-    let node = currentNode.parent ?? null;
+    return hasCollapsedMoveTreeBranches(rootNode);
+  }, [rootNode, treeVersion]);
+
+  /**
+   * Which collapsed branches the current move is standing inside, as a string.
+   *
+   * A collapsed branch opens while the player is inside it and folds shut again
+   * when they leave, so this genuinely changes the flattened tree -- but only
+   * ever for collapsed nodes, which is all `flattenMoveTree` consults the set
+   * for. Empty whenever nothing is collapsed, which is the ordinary case.
+   *
+   * It is a string so the value is stable: the set it replaces was rebuilt on
+   * every navigation, which made `flatTree` a new array every step and put the
+   * whole layout on the critical path of walking a game.
+   */
+  const revealKey = useMemo(() => {
+    void treeVersion;
+    if (!hasCollapsedBranches) return '';
+    const revealed: string[] = [];
+    let node: GameNode | null = currentNode.parent ?? null;
     while (node) {
-      ids.add(node.id);
+      if (node.collapsed === true) revealed.push(node.id);
       node = node.parent ?? null;
     }
-    return ids;
-  }, [currentNode, treeVersion]);
+    return revealed.join(',');
+  }, [currentNode, hasCollapsedBranches, treeVersion]);
+
+  const revealAncestorIds = useMemo(
+    () => new Set(revealKey === '' ? [] : revealKey.split(',')),
+    [revealKey]
+  );
 
   // treeVersion moves on every analysis result -- up to four times a second on
   // the current node while the engine runs -- and none of those change where a
@@ -156,11 +187,6 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
     return flattenMoveTree(rootNode, revealAncestorIds);
   }, [rootNode, structureKey, revealAncestorIds]);
 
-  const hasCollapsedBranches = useMemo(() => {
-    void treeVersion;
-    return hasCollapsedMoveTreeBranches(rootNode);
-  }, [rootNode, treeVersion]);
-
   const nodeById = useMemo(() => {
     void treeVersion;
     return indexNodes(rootNode);
@@ -168,7 +194,7 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
 
   const workerAvailable = getWorkerConstructor() !== null;
   const shouldUseWorker = workerAvailable && flatTree.length >= MOVE_TREE_LAYOUT_WORKER_THRESHOLD;
-  const layoutKey = `${rootNode.id}:${structureKey}:${layoutDirection}`;
+  const layoutKey = `${rootNode.id}:${structureKey}:${revealKey}:${layoutDirection}`;
   const syncLayout = useMemo(
     () => (shouldUseWorker ? null : computeMoveTreeLayout(flatTree, layoutDirection)),
     [flatTree, layoutDirection, shouldUseWorker]
@@ -188,15 +214,17 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
       : 'working'
     : 'sync';
 
-  const centerCurrentNode = useCallback((behavior: ScrollBehavior = preferredScrollBehavior()) => {
+  /** Scrolls the current move into the middle; false when it is not laid out yet. */
+  const centerCurrentNode = useCallback((behavior: ScrollBehavior = preferredScrollBehavior()): boolean => {
     const container = containerRef.current;
     const activeLayout = syncLayout ?? (shouldUseWorker ? reusableWorkerLayout : null);
-    if (!container || !activeLayout) return;
+    if (!container || !activeLayout) return false;
     const pos = activeLayout.nodes.find((node) => node.id === currentNode.id);
-    if (!pos) return;
+    if (!pos) return false;
     const targetLeft = Math.max(0, pos.x - container.clientWidth * 0.5);
     const targetTop = Math.max(0, pos.y - container.clientHeight * 0.5);
     container.scrollTo({ left: targetLeft, top: targetTop, behavior });
+    return true;
   }, [currentNode.id, reusableWorkerLayout, shouldUseWorker, syncLayout]);
 
   useEffect(() => {
@@ -304,7 +332,11 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
     const key = layoutKey;
     const applyFallback = () => {
       if (requestId !== requestIdRef.current) return;
-      setWorkerResult({ key, layout: computeMoveTreeLayout(flatTree, layoutDirection), status: 'fallback' });
+      setWorkerResult({
+        key,
+        layout: computeMoveTreeLayout(flatTree, layoutDirection),
+        status: 'fallback',
+      });
     };
     try {
       if (!workerRef.current) {
@@ -329,6 +361,13 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
     } catch {
       queueMicrotask(applyFallback);
     }
+    // Keyed on `layoutKey`, not on `flatTree`. The flat tree is rebuilt on every
+    // navigation -- `revealAncestorIds` is a new Set each time -- so listing it
+    // here sent a worker round trip per step instead of per change of shape,
+    // and 30 quick steps through a game were enough for React to report
+    // "Maximum update depth exceeded" from the setState below. `layoutKey`
+    // already carries everything the layout depends on: the tree's structure,
+    // which collapsed branches are revealed, and the direction.
   }, [flatTree, layoutDirection, layoutKey, shouldUseWorker, workerAvailable]);
 
   useEffect(() => {
@@ -379,12 +418,31 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
   // wherever the user had scrolled it.
   const hasLayout = layout !== null;
   const centeredRef = useRef<{ nodeId: string; container: HTMLDivElement | null } | null>(null);
+  const centeredAtRef = useRef(0);
   useEffect(() => {
     if (!hasLayout) return;
     const last = centeredRef.current;
     if (last && last.nodeId === currentNode.id && last.container === containerElement) return;
+    /**
+     * A smooth scroll is worth it for a deliberate step and costs nothing.
+     * Held down, it is a different thing: each step starts an animation the
+     * next one interrupts, and every frame of every one of them fires a scroll
+     * event that schedules a viewport update and re-renders the tree. In a
+     * profile of 60 steps those two -- the scroll and the update it drives --
+     * were the top two entries in app code.
+     *
+     * So: smooth when the last centre has had time to finish, instant when the
+     * moves are arriving faster than the animation can play.
+     */
+    const now = nowMs();
+    const rapid = now - centeredAtRef.current < RAPID_NAVIGATION_MS;
+    // Marked done only once it has happened. A large tree keeps its previous
+    // layout on screen while the worker computes the next, and a move that
+    // layout does not hold -- one just revealed from a folded branch -- could
+    // not be centred yet; marking it anyway meant the new layout never was.
+    if (!centerCurrentNode(last && !rapid ? preferredScrollBehavior() : 'auto')) return;
     centeredRef.current = { nodeId: currentNode.id, container: containerElement };
-    centerCurrentNode(last ? preferredScrollBehavior() : 'auto');
+    centeredAtRef.current = now;
   }, [centerCurrentNode, containerElement, currentNode.id, hasLayout]);
 
   const visible = useMemo(() => (layout ? getVisibleMoveTreeItems(layout, viewport) : null), [layout, viewport]);
@@ -543,9 +601,9 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
         {visible.edges.map((l) => (
           <polyline
             key={l.id}
+            className="move-tree-edge"
             points={l.points}
             fill="none"
-            stroke="#9CA3AF"
             strokeWidth="1"
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -564,7 +622,11 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
           // filled 'none' does not hit-test its interior, which left the root's
           // whole disc dead and only its 1px ring able to jump back to move 0.
           const fill = isRoot ? 'transparent' : isSetupNode ? '#64748B' : isBlack ? '#0B0B0B' : '#F9FAFB';
-          const stroke = isRoot ? '#9CA3AF' : isSetupNode ? '#F9FAFB' : isBlack ? '#F9FAFB' : '#0B0B0B';
+          // The two stone colours are stone colours: a black stone is black on
+          // every theme, and its outline is the white one. The root is not a
+          // stone -- it is a ring marking the start of the game, and drawn in
+          // the same grey as the connectors it sits on, so it follows them.
+          const stroke = isRoot ? 'var(--tree-edge)' : isSetupNode ? '#F9FAFB' : isBlack ? '#F9FAFB' : '#0B0B0B';
           const markers = getMoveTreeNodeMarkers(node, mistakeThreshold);
           const markerRadius = Math.max(2, Math.min(3.25, layout.radius * 0.22));
           const markerGap = markerRadius * 2.35;
@@ -644,14 +706,17 @@ export const MoveTree: React.FC<{ onSelectNode?: (node: GameNode) => void }> = (
                 />
               )}
               {isCurrent && (
-                <circle cx={layoutNode.x} cy={layoutNode.y} r={layout.radius + 7} fill="none" stroke="#FACC15" strokeWidth="2" />
+                <circle className="move-tree-node-ring-current" cx={layoutNode.x} cy={layoutNode.y} r={layout.radius + 7} />
               )}
               <circle
                 cx={layoutNode.x}
                 cy={layoutNode.y}
                 r={layout.radius}
                 fill={fill}
-                stroke={stroke}
+                // Through style, not the attribute: a presentation attribute
+                // takes a colour, not a var(). Nothing styles this circle from
+                // CSS, so the precedence is the same either way.
+                style={{ stroke }}
                 strokeWidth="1"
               >
                 <title>{markerTitle ? t('{label} - {markers}', { label: layoutNode.label, markers: markerTitle }) : layoutNode.label}</title>

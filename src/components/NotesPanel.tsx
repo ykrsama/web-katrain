@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { FaEdit, FaSave, FaStickyNote, FaTimes, FaMinus, FaPlus } from 'react-icons/fa';
+import { FaEdit, FaSave, FaStickyNote, FaTh, FaTimes, FaMinus, FaPlus } from 'react-icons/fa';
 import { shallow } from 'zustand/shallow';
 import { useT, t as translate } from '../i18n';
 import { useGameStore } from '../store/gameStore';
@@ -10,12 +10,17 @@ import { mediaQueryMatches } from '../utils/mediaQuery';
 import { getVisualKeyboardInset, getVisualViewport } from '../utils/visualViewport';
 import { getMoveInsight, getMoveInsightCoach } from '../utils/moveInsight';
 import { getNoteEditorKeyAction } from '../utils/noteEditorKeys';
-import { getNoteEditorSyncDecision } from '../utils/noteEditorState';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
+import { getNoteDraftRescue, getNoteEditorSyncDecision } from '../utils/noteEditorState';
+import { GAME_DRAFT_COMMITTED_EVENT } from '../utils/gameDrafts';
+import { useGameDraftLifecycle } from '../hooks/useGameDraftLifecycle';
 import { useShortcutLabels } from '../hooks/useShortcutLabels';
-import { appendShapeCoachNoteBlock, formatShapeCoachNoteBlock } from '../utils/shapeCoachNote';
+import { appendNoteBlock, formatShapeCoachNoteBlock } from '../utils/shapeCoachNote';
+import { formatBoardNoteBlock } from '../utils/boardTextDiagram';
 import { getCurrentLineMoveNumber, isGameNodeStep } from '../utils/branchNavigation';
 import { describeHumanProfile } from '../utils/humanProfileLabel';
 import { ENGINE_LOADING_LABEL } from '../utils/engineStatusSummary';
+import { formatBoardMoveLabel } from '../lib/gtp';
 
 /**
  * A device with no hover and only a coarse pointer has no keys to press, so
@@ -37,10 +42,7 @@ const clampNoteFontScale = (value: number): number => {
 
 function moveToLabel(move: Move | null, boardSize: number): string {
   if (!move) return translate('Root');
-  if (move.x < 0 || move.y < 0) return translate('Pass');
-  const col = String.fromCharCode(65 + (move.x >= 8 ? move.x + 1 : move.x));
-  const row = boardSize - move.y;
-  return `${col}${row}`;
+  return translate(formatBoardMoveLabel(move, boardSize));
 }
 
 function noMoveNodeLabel(currentNode: GameNode): string {
@@ -261,6 +263,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
     rootNode,
     currentNode,
     setCurrentNodeNote,
+    setNodeNote,
     treeVersion,
     gameRules,
     isAnalysisMode,
@@ -275,6 +278,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
       rootNode: state.rootNode,
       currentNode: state.currentNode,
       setCurrentNodeNote: state.setCurrentNodeNote,
+      setNodeNote: state.setNodeNote,
       treeVersion: state.treeVersion,
       gameRules: state.settings.gameRules,
       isAnalysisMode: state.isAnalysisMode,
@@ -348,12 +352,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   }, [boardSize, move, parentHumanPolicy, showProDetails]);
 
   const topMove = useMemo(() => bestMoveFromCandidates(parent?.analysis?.moves), [parent?.analysis?.moves]);
-  const topMoveLabel =
-    topMove?.x == null
-      ? null
-      : topMove.x < 0 || topMove.y < 0
-        ? t('Pass')
-        : `${String.fromCharCode(65 + (topMove.x >= 8 ? topMove.x + 1 : topMove.x))}${boardSize - topMove.y}`;
+  const topMoveLabel = topMove?.x == null ? null : t(formatBoardMoveLabel(topMove, boardSize));
 
   const showInfoBlock = showInfo || detailed;
   const showNotesBlock = showNotes;
@@ -369,8 +368,24 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   const noteTextareaRef = React.useRef<HTMLTextAreaElement>(null);
   const shouldFocusNoteRef = React.useRef(false);
   const previousNoteNodeIdRef = React.useRef(currentNode.id);
+  // The navigation effect reads the latest editor text without rerunning on
+  // every keystroke.
+  const noteDraftRef = React.useRef(currentNote);
+  const pendingNoteRef = React.useRef<{ nodeId: string; note: string } | null>(null);
+  const previousNoteTextRef = React.useRef(currentNote);
   const lastFocusRequestRef = React.useRef(0);
   const [keyboardInset, setKeyboardInset] = React.useState(0);
+
+  const preservePendingNote = React.useCallback(() => {
+    const pending = pendingNoteRef.current;
+    pendingNoteRef.current = null;
+    if (!pending) return false;
+    const before = useGameStore.getState().treeVersion;
+    setNodeNote(pending.nodeId, pending.note);
+    if (useGameStore.getState().treeVersion === before) return false;
+    window.dispatchEvent(new Event(GAME_DRAFT_COMMITTED_EVENT));
+    return true;
+  }, [setNodeNote]);
 
   const scrollNoteEditorIntoView = React.useCallback(() => {
     const editor = noteTextareaRef.current;
@@ -403,6 +418,33 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   }, [focusNoteEditor]);
 
   React.useEffect(() => {
+    noteDraftRef.current = noteDraft;
+  }, [noteDraft]);
+
+  React.useEffect(() => {
+    // A new node initially renders with the previous editor's draft. Wait for
+    // the sync below before assigning that text to the arriving node.
+    if (previousNoteNodeIdRef.current !== currentNode.id) return;
+    pendingNoteRef.current = isEditingNote && noteDraft !== currentNote
+      ? { nodeId: currentNode.id, note: noteDraft }
+      : null;
+  }, [currentNode.id, currentNote, isEditingNote, noteDraft]);
+
+  React.useEffect(() => {
+    // Keep what was typed before the sync below replaces it with the arriving
+    // node's note. It belongs to the node being left.
+    const rescue = getNoteDraftRescue({
+      previousNodeId: previousNoteNodeIdRef.current,
+      currentNodeId: currentNode.id,
+      isEditing: isEditingNote,
+      draft: noteDraftRef.current,
+      previousNote: previousNoteTextRef.current,
+    });
+    if (rescue) {
+      pendingNoteRef.current = null;
+      setNodeNote(rescue.nodeId, rescue.note);
+    }
+
     const sync = getNoteEditorSyncDecision({
       previousNodeId: previousNoteNodeIdRef.current,
       currentNodeId: currentNode.id,
@@ -410,10 +452,13 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
       isEditing: isEditingNote,
     });
     previousNoteNodeIdRef.current = currentNode.id;
+    previousNoteTextRef.current = currentNote;
     if (!sync) return;
     setNoteDraft(sync.draft);
     setIsEditingNote(sync.editing);
-  }, [currentNode.id, currentNote, isEditingNote]);
+  }, [currentNode.id, currentNote, isEditingNote, setNodeNote]);
+
+  useGameDraftLifecycle(preservePendingNote, () => setIsEditingNote(false));
 
   React.useEffect(() => {
     if (!isEditingNote || !shouldFocusNoteRef.current) return;
@@ -442,6 +487,8 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   }, [isEditingNote, scrollNoteEditorIntoView]);
 
   const startNoteEdit = React.useCallback(() => {
+    noteDraftRef.current = currentNote;
+    pendingNoteRef.current = null;
     setNoteDraft(currentNote);
     requestNoteEditorFocus();
     setIsEditingNote(true);
@@ -453,8 +500,16 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
     startNoteEdit();
   }, [focusRequest, showNotesBlock, startNoteEdit]);
 
+  const changeNoteDraft = (draft: string) => {
+    if (useGameStore.getState().currentNode.id !== currentNode.id) return;
+    // A page-hide event can arrive before a render's passive effects.
+    noteDraftRef.current = draft;
+    pendingNoteRef.current = draft !== currentNote ? { nodeId: currentNode.id, note: draft } : null;
+    setNoteDraft(draft);
+  };
+
   const saveNote = () => {
-    setCurrentNodeNote(noteDraft);
+    preservePendingNote();
     setIsEditingNote(false);
   };
 
@@ -464,16 +519,41 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
   const addShapeCoachToNote = () => {
     if (!shapeCoachNoteBlock || hasShapeCoachNoteBlock) return;
     if (isEditingNote) {
-      setNoteDraft((draft) => appendShapeCoachNoteBlock(draft, shapeCoachNoteBlock));
+      changeNoteDraft(appendNoteBlock(noteDraftRef.current, shapeCoachNoteBlock));
       requestNoteEditorFocus();
       return;
     }
 
-    setCurrentNodeNote(appendShapeCoachNoteBlock(currentNote, shapeCoachNoteBlock));
+    setCurrentNodeNote(appendNoteBlock(currentNote, shapeCoachNoteBlock));
     setIsEditingNote(false);
   };
 
+  /**
+   * The board as it stands, dropped into the note as a fenced diagram.
+   *
+   * A note is saved into the SGF comment, so this travels with the file: a
+   * variation can carry the position it is about rather than describing it.
+   */
+  const boardNoteBlock = React.useMemo(
+    () => formatBoardNoteBlock({
+      board: currentNode.gameState.board,
+      lastMove: currentNode.move,
+      toPlay: currentNode.gameState.currentPlayer,
+      moveNumber: depth,
+    }),
+    [currentNode, depth],
+  );
+  const hasBoardNoteBlock = noteDraft.includes(boardNoteBlock);
+
+  const addBoardToNote = () => {
+    if (hasBoardNoteBlock) return;
+    changeNoteDraft(appendNoteBlock(noteDraftRef.current, boardNoteBlock));
+    requestNoteEditorFocus();
+  };
+
   const cancelNoteEdit = () => {
+    pendingNoteRef.current = null;
+    noteDraftRef.current = currentNote;
     setNoteDraft(currentNote);
     setIsEditingNote(false);
   };
@@ -486,7 +566,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
       ctrlKey: event.ctrlKey,
       metaKey: event.metaKey,
       shiftKey: event.shiftKey,
-      isComposing: event.nativeEvent.isComposing,
+      isComposing: isComposingKeyEvent(event.nativeEvent),
     });
     if (action === 'cancel') {
       event.preventDefault();
@@ -668,7 +748,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
               <div className="flex items-center rounded border border-[var(--ui-border)] bg-[var(--ui-surface)]" role="group" aria-label={t('Note text size')}>
                 <button
                   type="button"
-                  className="grid h-11 w-11 place-items-center text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] disabled:opacity-40 desktop-shell:h-7 desktop-shell:w-7"
+                  className="grid h-11 w-11 place-items-center text-[var(--ui-text-muted)] not-disabled:hover:text-[var(--ui-text)] disabled:opacity-40 desktop-shell:h-7 desktop-shell:w-7"
                   onClick={() => adjustNoteFontScale(-NOTE_FONT_SCALE_STEP)}
                   disabled={fontScale <= NOTE_FONT_SCALE_MIN + 0.001}
                   title={t('Smaller note text')}
@@ -678,7 +758,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                 </button>
                 <button
                   type="button"
-                  className="grid h-11 w-11 place-items-center text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] disabled:opacity-40 desktop-shell:h-7 desktop-shell:w-7"
+                  className="grid h-11 w-11 place-items-center text-[var(--ui-text-muted)] not-disabled:hover:text-[var(--ui-text)] disabled:opacity-40 desktop-shell:h-7 desktop-shell:w-7"
                   onClick={() => adjustNoteFontScale(NOTE_FONT_SCALE_STEP)}
                   disabled={fontScale >= NOTE_FONT_SCALE_MAX - 0.001}
                   title={t('Larger note text')}
@@ -691,6 +771,20 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
             </div>
             {isEditingNote ? (
               <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="panel-action-button"
+                  onClick={addBoardToNote}
+                  disabled={hasBoardNoteBlock}
+                  title={hasBoardNoteBlock ? t('This position is already in the note') : t('Add the position to the note as a text diagram')}
+                  aria-label={hasBoardNoteBlock
+                    ? t('This position is already in the note')
+                    : t('Add the position to the note as a text diagram')}
+                  data-note-add-board="true"
+                >
+                  <FaTh size={11} aria-hidden="true" />
+                  <span>{hasBoardNoteBlock ? t('Board in note') : t('Add board')}</span>
+                </button>
                 <button
                   type="button"
                   className="panel-action-button"
@@ -721,7 +815,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
                 onClick={startNoteEdit}
                 title={noteActionTitle}
                 aria-label={
-                  noteShortcutLabel === 'Disabled'
+                  noteShortcutLabel === t('Disabled')
                     ? noteActionLabel
                     : t('{label}, keyboard shortcut {shortcut}', { label: noteActionLabel, shortcut: noteShortcutLabel })
                 }
@@ -729,7 +823,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
               >
                 <FaEdit size={11} aria-hidden="true" />
                 <span>{t('Edit')}</span>
-                {noteShortcutLabel !== 'Disabled' && (
+                {noteShortcutLabel !== t('Disabled') && (
                   <kbd className="font-mono text-[0.625rem] ui-text-faint">{noteShortcutLabel}</kbd>
                 )}
               </button>
@@ -739,7 +833,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
             <textarea
               ref={noteTextareaRef}
               value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
+              onChange={(e) => changeNoteDraft(e.target.value)}
               onKeyDown={handleNoteKeyDown}
               onFocus={scrollNoteEditorIntoView}
               aria-label={t('User note')}
@@ -773,7 +867,7 @@ export const NotesPanel: React.FC<NotesPanelProps> = ({ showInfo, detailed, show
               ) : (
                 <div className="flex h-full min-h-[4.5rem] flex-col items-center justify-center text-xs ui-text-faint">
                   <span className="font-semibold text-[var(--ui-text-muted)]">{t('Add a note')}</span>
-                  <span>{noteShortcutLabel === 'Disabled' || touchOnly ? t('Select this area to start writing') : t('Select this area or press {shortcut}', { shortcut: noteShortcutLabel })}</span>
+                  <span>{noteShortcutLabel === t('Disabled') || touchOnly ? t('Select this area to start writing') : t('Select this area or press {shortcut}', { shortcut: noteShortcutLabel })}</span>
                 </div>
               )}
             </div>

@@ -49,14 +49,15 @@ describe('the candidate list', () => {
   const source = readFileSync('src/components/CandidateMoveList.tsx', 'utf8');
 
   it('withholds the list while a drill is asking for exactly these moves', () => {
-    expect(source).toContain('isDrillHidingAnswer(state.mistakeDrill, state.currentNode.id)');
+    expect(source).toContain('isAnswerHidden(state, state.currentNode.id)');
   });
 
   it('plays a row only once that row is the one on the board', () => {
     // On a touchscreen no hover arrives before the tap, so this is what makes
     // the first tap a preview and the second the move.
     expect(source).toContain('if (hoveredKey !== key) {');
-    expect(source).toMatch(/onHover\(null\);\s*\n\s*playMove\(move\.x, move\.y\);/);
+    expect(source).toContain('if (move.x === -1 && move.y === -1) passTurn();');
+    expect(source).toContain('else playMove(move.x, move.y);');
   });
 
   it('is reachable from both shells, which have separate panels', () => {
@@ -77,5 +78,42 @@ describe('the candidate list', () => {
     // Pro honours the Settings cap instead of a private 24-row limit.
     expect(source).toContain('Math.min(Number.isFinite(topK) ? topK : DEFAULT_TOP_MOVES, 50)');
     expect(source).toContain('data-analysis-experience={analysisExperience}');
+  });
+});
+
+describe('candidate list controls', () => {
+  const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../src/components/CandidateMoveList.tsx', import.meta.url), 'utf8');
+
+  /**
+   * These four are Pro-only, and a Pro candidate list needs analysis data to
+   * render at all, so `npm run test:viewport` -- which drives the app in its
+   * default Coach experience with no engine -- cannot see them. It measured
+   * every other target at the WCAG 2.2 SC 2.5.8 floor while these four sat at
+   * 16-21px tall. Measured live at 1440x900 after the fix: all 24px or more,
+   * with the detail columns open and closed.
+   */
+  it('holds every Pro control at the 24px WCAG floor', () => {
+    const block = (selector: string): string => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThan(-1);
+      return css.slice(start, css.indexOf('}', start));
+    };
+    expect(block('.candidate-list-head .cl-sort {')).toContain('min-height: 1.5rem');
+    expect(block('.candidate-list-head .cl-detail-toggle {')).toContain('width: 1.5rem');
+    expect(block('.candidate-list-head .cl-detail-toggle {')).toContain('height: 1.5rem');
+    expect(block('.candidate-row-group .cl-pv-toggle {')).toContain('width: 1.5rem');
+    expect(block('.candidate-row-group .cl-pv-toggle {')).toContain('height: 1.5rem');
+    expect(block('.candidate-list .cl-pv-action {')).toContain('min-height: 1.5rem');
+    // The head budgets exactly 1.5rem in the list's max-height, so the taller
+    // controls have to replace its padding rather than stack on top of it.
+    expect(block('.candidate-list-head {')).toContain('padding-block: 0');
+    expect(source).toContain("+ 1.5rem");
+  });
+
+  it('distinguishes candidates the search has barely read', () => {
+    expect(source).toContain('state.settings.trainerLowVisits');
+    expect(source).toContain("move.order !== 0 && move.visits < lowVisitsThreshold");
+    expect(css).toContain('.candidate-row.is-uncertain .cl-num');
   });
 });

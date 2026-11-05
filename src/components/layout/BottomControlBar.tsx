@@ -13,6 +13,7 @@ import {
   FaSyncAlt,
   FaEllipsisH,
   FaUndo,
+  FaLevelUpAlt,
   FaRobot,
   FaFlag,
   FaEdit,
@@ -30,6 +31,8 @@ import { parseIntegerDraft } from '../../utils/numberDraft';
 import type { BranchInfo } from '../../utils/branchNavigation';
 import { getSaveStatusDisplay, type AutoSaveStatus } from '../../utils/saveStatusDisplay';
 import { useT } from '../../i18n';
+import { useBackGestureToClose } from '../../hooks/useEscapeToClose';
+import { useDocumentFlag } from '../../hooks/useDocumentFlag';
 
 const BOTTOM_CONTROL_SHORTCUT_IDS = [
   'pass',
@@ -83,6 +86,10 @@ interface BottomControlBarProps {
   isMobile?: boolean;
   onUndo?: () => void;
   onAiMove?: () => void;
+  /** The colour the engine is currently playing, or null when it is not. */
+  engineOpponent?: 'black' | 'white' | null;
+  /** Hand the position on screen to the engine, or take it back. */
+  onPlayFromHere?: () => void;
   onResign?: () => void;
   unsavedChanges?: boolean;
   autoSaveStatus?: AutoSaveStatus | null;
@@ -131,6 +138,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   isMobile = false,
   onUndo,
   onAiMove,
+  engineOpponent,
+  onPlayFromHere,
   onResign,
   unsavedChanges = false,
   autoSaveStatus = null,
@@ -150,6 +159,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   const moreCloseRef = useRef<HTMLButtonElement>(null);
   const [passBtnHeight, setPassBtnHeight] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
+  // The install card yields to the More Controls sheet (index.css).
+  useDocumentFlag('bottom-more-sheet', isMobile && moreOpen ? 'open' : null);
   const [suppressMoreTriggerFocusRing, setSuppressMoreTriggerFocusRing] = useState(false);
   const moreSheetId = React.useId();
   const moreSheetTitleId = React.useId();
@@ -159,6 +170,10 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   const [isBranchIndexEditing, setIsBranchIndexEditing] = useState(false);
   const [branchIndexDraft, setBranchIndexDraft] = useState('');
   const skipBranchIndexBlurCommit = useRef(false);
+  // Enter and Escape blur the field, which then unmounts; without a hand-back
+  // focus fell to <body> and the next Tab started from the top of the page.
+  const moveNumberButtonRef = useRef<HTMLButtonElement>(null);
+  const branchIndexButtonRef = useRef<HTMLButtonElement>(null);
   const shortcutLabels = useShortcutLabels(BOTTOM_CONTROL_SHORTCUT_IDS);
   const withShortcut = (label: string, id: BottomControlShortcutId) => `${label} (${shortcutLabels[id]})`;
   const showBranchControl = !!branchInfo?.hasBranches && !!switchBranch && !!switchToBranchIndex;
@@ -232,6 +247,17 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
   const closeMoreControlsFromAction = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     closeMoreControls(event.detail === 0 ? 'keyboard' : 'pointer');
   }, [closeMoreControls]);
+
+  /**
+   * This sheet only exists on touch, which is the one place the back gesture is
+   * the expected way out -- and it was the one modal here that did not answer
+   * it, so back closed the installed app instead of the sheet. The key handler
+   * below cannot ask for it: it listens in the capture phase to outrank
+   * Layout's Escape handlers, so it cannot use `useEscapeToClose`, which is the
+   * only other route into `overlayBackStack`. 'pointer' because a gesture is
+   * not a keyboard, so the trigger should come back without a focus ring.
+   */
+  useBackGestureToClose(React.useCallback(() => closeMoreControls('pointer'), [closeMoreControls]), moreOpen);
 
   useEffect(() => {
     if (!suppressMoreTriggerFocusRing) return;
@@ -326,11 +352,10 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
 
   const handleMoveNumberKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      if (event.key === 'Escape') cancelMoveNumberEdit();
       event.currentTarget.blur();
-    } else if (event.key === 'Escape') {
-      cancelMoveNumberEdit();
-      event.currentTarget.blur();
+      window.setTimeout(() => restoreFocusIfUnclaimed(moveNumberButtonRef.current), 0);
     }
   };
 
@@ -368,11 +393,10 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
 
   const handleBranchIndexKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      if (event.key === 'Escape') cancelBranchIndexEdit();
       event.currentTarget.blur();
-    } else if (event.key === 'Escape') {
-      cancelBranchIndexEdit();
-      event.currentTarget.blur();
+      window.setTimeout(() => restoreFocusIfUnclaimed(branchIndexButtonRef.current), 0);
     }
   };
 
@@ -386,10 +410,14 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
 
   const renderBranchIndexButton = (compact = false) => {
     if (!showBranchControl || !branchInfo) return null;
-    if (isBranchIndexEditing) {
+    // Only the full-size control edits; the chip opens More Controls. Both used
+    // to swap in an autofocused field, and the chip's -- hidden by CSS on
+    // phones -- took focus first, lost it to the sheet's, and its blur commit
+    // closed both before a digit could be typed.
+    if (isBranchIndexEditing && !compact) {
       return (
         <span className={compact ? 'inline-flex items-center gap-0.5' : 'inline-flex items-center gap-1'}>
-          <span className="ui-text-faint">{compact ? 'Br' : t('Branch')}</span>
+          <span className="ui-text-faint">{compact ? t('Br') : t('Branch')}</span>
           <input
             type="number"
             value={branchIndexDraft}
@@ -413,10 +441,11 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
     return (
       <button
         type="button"
+        ref={compact ? undefined : branchIndexButtonRef}
         className={[
           compact
-            ? 'inline-flex min-w-0 items-center gap-0.5 rounded px-1 font-mono hover:bg-[var(--ui-surface-2)] disabled:opacity-50'
-            : 'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-left hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50',
+            ? 'inline-flex min-w-0 items-center gap-0.5 rounded px-1 font-mono not-disabled:hover:bg-[var(--ui-surface-2)] disabled:opacity-50'
+            : 'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-left not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50',
         ].join(' ')}
         title={branchTitle}
         aria-label={branchTitle}
@@ -424,7 +453,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
         disabled={isInsertMode}
         data-bottom-branch-chip={compact ? 'true' : undefined}
       >
-        <span className="ui-text-faint">{compact ? 'Br' : t('Branch')}</span>
+        <span className="ui-text-faint">{compact ? t('Br') : t('Branch')}</span>
         <span className="font-mono text-[var(--ui-text)]">{branchInfo.currentIndex}/{branchInfo.totalBranches}</span>
         {branchDepthLabel && <span className="font-mono text-[var(--ui-accent)]">{branchDepthLabel}</span>}
       </button>
@@ -547,13 +576,15 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             ) : (
               <button
                 type="button"
-                className="mobile-bottom-move-button inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 font-mono text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] disabled:opacity-50"
+                className="mobile-bottom-move-button inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 font-mono text-[var(--ui-text-muted)] not-disabled:hover:bg-[var(--ui-surface-2)] not-disabled:hover:text-[var(--ui-text)] disabled:opacity-50"
+                ref={moveNumberButtonRef}
                 title={t('Set move number')}
                 aria-label={t('Move {current} of {total}. Tap to jump to a move.', { current: currentMoveNumber, total: totalMovesInCurrentLine })}
                 onClick={openMoveNumberEditor}
                 disabled={isInsertMode}
               >
-                #{currentMoveNumber}/{totalMovesInCurrentLine}
+                <span className="mobile-bottom-move-hash">#</span>{currentMoveNumber}
+                <span className="mobile-bottom-move-button-total">/{totalMovesInCurrentLine}</span>
               </button>
             )}
             {showBranchControl && (
@@ -571,12 +602,14 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                     mobileSaveStatusClass,
                   ].join(' ')}
                   title={mobileSaveStatus.title}
-                  aria-label={mobileSaveStatus.title}
                   data-mobile-save-status="true"
                   data-mobile-save-state={mobileSaveStatus.state}
                 >
                   {mobileSaveStatusIcon}
-                  <span className="mobile-bottom-save-status-label">{mobileSaveStatus.compactLabel}</span>
+                  {/* aria-label on a plain span is not read, so the full status
+                      is text for assistive tech and the short label is not. */}
+                  <span className="mobile-bottom-save-status-label" aria-hidden="true">{mobileSaveStatus.compactLabel}</span>
+                  <span className="sr-only">{mobileSaveStatus.title}</span>
                 </span>
               </>
             )}
@@ -670,7 +703,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                 className="fixed bottom-[var(--mobile-tabbar-height,60px)] left-0 right-0 max-h-[70dvh] ui-panel border-t rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.3)] overflow-y-auto z-50 overscroll-contain pb-safe animate-slide-up select-none touch-manipulation"
               >
                 <div className="sticky top-0 bg-[var(--ui-surface)]/95 backdrop-blur-md border-b border-[var(--ui-border)] px-4 py-2 flex items-center justify-between z-10">
-                  <div id={moreSheetTitleId} className="text-sm font-semibold">{t('More Controls')}</div>
+                  <h2 id={moreSheetTitleId} className="m-0 text-sm font-semibold">{t('More Controls')}</h2>
                   <button type="button"
                     ref={moreCloseRef}
                     onClick={(event) => closeMoreControls(event.detail === 0 ? 'keyboard' : 'pointer')}
@@ -819,22 +852,49 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
                         closeMoreControlsFromAction(event);
                       }}
                     >
-                      <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-teal-400">
+                      <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-accent)]">
                         <FaRobot size={14} />
                       </div>
-                      <div className="flex-1 font-medium text-teal-400">{t('Request AI move')}</div>
+                      <div className="flex-1 font-medium text-[var(--ui-accent)]">{t('Request AI move')}</div>
+                    </button>
+                  )}
+
+                  {/* The desktop review row carries this as a toggle; on a
+                      phone the sheet is where the same action belongs. */}
+                  {onPlayFromHere && (
+                    <button type="button"
+                      className={mobileMoreActionClass}
+                      aria-pressed={!!engineOpponent}
+                      /* The visible label is short on purpose: this grid is two
+                         169px columns at 360px, and the full phrasing wrapped to
+                         a second line, growing its row -- and its row partner --
+                         from 48px to 60px. The sentence lives here instead. */
+                      title={engineOpponent
+                        ? t('Stop the engine playing {color}', { color: t(engineOpponent === 'black' ? 'Black' : 'White') })
+                        : t('Play on from here against the engine')}
+                      onClick={(event) => {
+                        onPlayFromHere();
+                        closeMoreControlsFromAction(event);
+                      }}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-[var(--ui-surface-2)] flex items-center justify-center text-[var(--ui-accent)]">
+                        <FaLevelUpAlt size={14} />
+                      </div>
+                      <div className="flex-1 font-medium text-[var(--ui-accent)]">
+                        {engineOpponent ? t('Stop the engine') : t('Play from here')}
+                      </div>
                     </button>
                   )}
 
                   {onResign && (
                     <button type="button"
-                      className={`${mobileMoreActionClass} hover:bg-rose-950/30 active:bg-rose-950/30 text-rose-500`}
+                      className={`${mobileMoreActionClass} hover:bg-[var(--ui-danger-soft)] active:bg-[var(--ui-danger-soft)] text-[var(--ui-danger)]`}
                       onClick={(event) => {
                         onResign();
                         closeMoreControlsFromAction(event);
                       }}
                     >
-                      <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500">
+                      <div className="w-8 h-8 rounded-full bg-[var(--ui-danger-soft)] flex items-center justify-center text-[var(--ui-danger)]">
                         <FaFlag size={14} />
                       </div>
                       <div className="flex-1 font-medium">{t('Resign')}</div>
@@ -1051,7 +1111,8 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           ) : (
             <button
               type="button"
-              className="inline-flex min-h-11 items-center gap-1 rounded px-2 text-left hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+              ref={moveNumberButtonRef}
+              className="inline-flex min-h-11 items-center gap-1 rounded px-2 text-left not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
               title={t('Set move number')}
               onClick={openMoveNumberEditor}
               disabled={isInsertMode}
@@ -1070,7 +1131,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
           >
             <button
               type="button"
-              className="ui-control flex items-center justify-center rounded hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="ui-control flex items-center justify-center rounded not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
               title={withShortcut(t('Previous branch'), 'branch-prev')}
               aria-label={withShortcut(t('Previous branch'), 'branch-prev')}
               onClick={() => switchBranch(-1)}
@@ -1081,7 +1142,7 @@ export const BottomControlBar: React.FC<BottomControlBarProps> = ({
             {renderBranchIndexButton(false)}
             <button
               type="button"
-              className="ui-control flex items-center justify-center rounded hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="ui-control flex items-center justify-center rounded not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
               title={withShortcut(t('Next branch'), 'branch-next')}
               aria-label={withShortcut(t('Next branch'), 'branch-next')}
               onClick={() => switchBranch(1)}

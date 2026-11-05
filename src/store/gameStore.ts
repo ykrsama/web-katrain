@@ -9,13 +9,16 @@ import { engineCanExtendSearch, getEngineClient, isRemoteEngine } from '../engin
 import { getDefaultRemoteEngineUrl, REMOTE_ENGINE_PROXY_PATH } from '../engine/remote/defaults';
 import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
+import { clampAnalysisVisits } from '../utils/visitPresets';
+import { DEFAULT_EVAL_THRESHOLDS } from '../utils/nodeAnalysis';
 import { KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
 import { KATAGO_HUMAN_PROFILE_DEFAULT } from '../engine/katago/searchParams';
 import { decodeKaTrainKt, kaTrainAnalysisToAnalysisResult } from '../utils/katrainSgfAnalysis';
 import { decodeKayaKa } from '../utils/kayaSgfAnalysis';
 import { publicUrl } from '../utils/publicUrl';
+import { isLegacyGameEncoding } from '../utils/gameRecordImport';
 import { isBoardThemeId } from '../utils/boardThemes';
-import { getPreferredAppLocaleId, isAppLocaleId } from '../utils/locales';
+import { isAppLocaleId } from '../utils/locales';
 import { createEmptyBoard, getHandicapPoints, getMaxHandicap, normalizeBoardSize } from '../utils/boardSize';
 import { makeAnalysisPositionKey, makeGameStateAnalysisPositionKey } from '../utils/analysisPositionKey';
 import { computeTenukiValue, opponentFollowUp, type TenukiAnalysisState } from '../utils/tenukiValue';
@@ -31,6 +34,7 @@ import {
 } from '../utils/mistakeDrill';
 import {
   analysisQueue,
+  AnalysisQueueStaleError,
   isAnalysisQueueCanceledError,
   isAnalysisQueueStaleError,
 } from '../utils/analysisQueue';
@@ -44,7 +48,7 @@ import {
   rememberActiveBranchPath,
   type ActiveBranchMap,
 } from '../utils/branchNavigation';
-import { ensurePinGameId, getNodePath, getPinGameId, resolveNodePath, restorePinnedVariations, writeStoredPinnedVariations, type PinnedVariation } from '../utils/pinnedVariations';
+import { ensurePinGameId, getNodePath, getPinGameId, PIN_GAME_ID_PROP, repathPinnedVariations, resolvePinnedVariation, restorePinnedVariations, writeStoredPinnedVariations, type PinnedVariation } from '../utils/pinnedVariations';
 import { describeHumanBotPick, pickHumanBotMove } from '../utils/humanBotMove';
 import { komiWithHandicapBonus } from '../utils/handicap';
 import {
@@ -80,10 +84,14 @@ import {
   getMoveTreeCollapseTarget,
   isNodeDescendantOf,
 } from '../utils/moveTreeCollapse';
-import { parseGtpMove } from '../lib/gtp';
+import { formatBoardMoveLabel, formatGtpMove, parseGtpMove } from '../lib/gtp';
 import { buildTsumegoFrame, canFrameAsTsumego } from '../utils/tsumegoFrame';
-import { isSuicideLegal, rulesFromSgf, rulesOf, rulesToSgf, type KoRule } from '../utils/goRules';
-import { superkoRejectionMessage, violatesSuperko, type SuperkoPosition } from '../utils/superko';
+import { clampTsumegoFrameMargin } from '../utils/tsumegoFrameOptions';
+import { isGameRules, isSuicideLegal, rulesFromSgf, rulesLabel, rulesOf, rulesToSgf, suicideAllowingRulesLabel, type KoRule } from '../utils/goRules';
+import { readRecordedResult, toSgfResult } from '../utils/manualScore';
+import { engineHistoryBoards, koReferenceBoard } from '../utils/positionHistory';
+import { situationalKey, superkoRejectionMessage } from '../utils/superko';
+import { lineViolatesSuperko, repetitionHistoryForNode } from '../utils/treeSuperko';
 import { chooseAntiMirrorMove, isOpponentMirroring } from '../utils/antiMirrorAi';
 import { countRootHandicapStones, handicapPlayoutDoublingAdvantage } from '../utils/handicapAi';
 import { getResignResult } from '../utils/resign';
@@ -103,12 +111,20 @@ type BranchClipboardNode = {
   timeUsedSeconds: number;
   note: string;
   aiThoughts: string;
+  drawings?: BoardDrawing[];
   children: BranchClipboardNode[];
 };
 
 type ApplyEditToolOptions = {
   paintOnly?: boolean;
 };
+
+type GameReviewOptions = { moveRange?: [number, number] | null; reanalyzeExisting?: boolean };
+type FullGameReviewOptions = GameReviewOptions & { visits: number; mistakesOnly?: boolean };
+type GameReviewRequest =
+  | { kind: 'quick' }
+  | { kind: 'fast'; options?: GameReviewOptions }
+  | { kind: 'full'; options: FullGameReviewOptions };
 
 interface GameStore extends GameState {
   // Tree State
@@ -146,7 +162,18 @@ interface GameStore extends GameState {
    * the toast can offer to take the change straight back — these fire from a
    * single click on the board and are easy to trigger by accident.
    */
-  notification: { message: string, type: 'info' | 'error' | 'success', copyText?: string, undoable?: boolean } | null;
+  notification: { message: string, type: 'info' | 'error' | 'success', copyText?: string, undoable?: boolean, operationId?: string } | null;
+  /**
+   * Set by `loadGame` when an SGF held a move this ruleset rejects.
+   *
+   * A rejected move takes the rest of its line with it, so a long record can
+   * come in as a handful of moves. That is worth saying out loud: it is not a
+   * parse failure, nothing throws, and the game simply looks shorter than the
+   * file. It is separate from `notification` because every caller of
+   * `loadGame` toasts its own success message straight afterwards, which would
+   * overwrite a notification set here.
+   */
+  sgfLoadWarning: string | null;
   analysisData: AnalysisResult | null;
   /**
    * "What do I lose by playing elsewhere?", answered by evaluating the position
@@ -178,6 +205,13 @@ interface GameStore extends GameState {
    * Null when the mode is off.
    */
   blindfold: BlindfoldSession | null;
+  /**
+   * The node whose punish-quiz guess is armed, or null. The quiz lives in the
+   * board, but its answer is the node's own candidate list, which the panels
+   * showed while the board hid it.
+   */
+  punishQuizArmedNodeId: string | null;
+  setPunishQuizArmedNodeId: (nodeId: string | null) => void;
   analysisCacheSize: number;
   settings: GameSettings;
   engineStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -217,6 +251,7 @@ interface GameStore extends GameState {
   toggleTimerPaused: () => void;
   playMove: (x: number, y: number, isLoad?: boolean) => void;
   makeAiMove: (opts?: { force?: boolean }) => void;
+  scheduleAiMove: (delayMs?: number) => void;
   undoMove: () => void; // Go back
   navigateBack: () => void;
   navigateForward: () => void; // Go forward (main branch)
@@ -270,10 +305,16 @@ interface GameStore extends GameState {
   loadGame: (sgf: ParsedSgf) => void;
   passTurn: () => void;
   resign: (player?: Player) => void;
+  /** Write the result of a counted game onto the record; see the action. */
+  /** True when the result was recorded; false when this was only an estimate. */
+  recordCountedResult: (result: string) => boolean;
   runAnalysis: (opts?: {
     force?: boolean;
     /** Fill missing board ownership even with live analysis off, preserving an existing review. */
     ownershipOnly?: boolean;
+    /** Automatic triggers may await current work with the same position and search settings,
+     * even when its visit/time budget differs. Explicit deepening/restarts omit this. */
+    ifIdle?: boolean;
     visits?: number;
     maxTimeMs?: number;
     batchSize?: number;
@@ -319,15 +360,22 @@ interface GameStore extends GameState {
   stopSelfplayToEnd: () => void;
   generateSetupPosition: (opts: { untilMove: number; targetAdvantage: number }) => void;
   stopSetupPositionGeneration: () => void;
-  startQuickGameAnalysis: () => void;
-  startFastGameAnalysis: (opts?: { moveRange?: [number, number] | null }) => void;
-  startFullGameAnalysis: (opts: { visits: number; moveRange?: [number, number] | null; mistakesOnly?: boolean }) => void;
+  pendingGameReview: (GameReviewRequest & { rootId: string }) | null;
+  requestQuickGameAnalysis: () => void;
+  requestFastGameAnalysis: (options?: GameReviewOptions) => void;
+  requestFullGameAnalysis: (options: FullGameReviewOptions) => void;
+  chooseGameReviewMode: (reanalyzeExisting: boolean | null) => void;
+  startQuickGameAnalysis: (opts?: { reanalyzeExisting?: boolean }) => void;
+  startFastGameAnalysis: (opts?: GameReviewOptions) => void;
+  startFullGameAnalysis: (opts: FullGameReviewOptions) => void;
   stopGameAnalysis: () => void;
   updateSettings: (newSettings: Partial<GameSettings>) => void;
   setKomi: (komi: number) => void;
   setHandicap: (handicap: number) => void;
   setRootProperty: (key: string, value: string) => void;
   setCurrentNodeNote: (note: string) => void;
+  /** Write a note onto a node that is no longer the current one; see `getNoteDraftRescue`. */
+  setNodeNote: (nodeId: string, note: string) => void;
   rotateBoard: () => void;
   startNewGame: (opts: { komi: number; rules: GameRules; boardSize: BoardSize; handicap: number }) => void;
 }
@@ -353,6 +401,14 @@ const applyHandicapStones = (board: BoardState, boardSize: BoardSize, handicap: 
 const SETTINGS_STORAGE_KEY = 'web-katrain:settings:v3';
 const LEGACY_SETTINGS_STORAGE_KEYS = ['web-katrain:settings:v2', 'web-katrain:settings:v1'] as const;
 const OLD_DEFAULT_KATAGO_VISITS = 500;
+/**
+ * Stamped on every save. The visits default went from 500 to 5000 while this
+ * key was current, so stored settings holding 500 had to be read as the old
+ * default -- but a 500 chosen afterwards is a choice, and it came back as 5000
+ * on every reload. Settings saved since carry this, and keep their 500.
+ */
+const SETTINGS_REVISION_FIELD = 'settingsRevision';
+const SETTINGS_REVISION = 1;
 export const DEFAULT_KATAGO_VISITS = 5000;
 
 const normalizeModelUrl = (value: unknown): string | null => {
@@ -414,22 +470,31 @@ const clampStoredVisits = (parsed: Record<string, unknown>, key: 'katagoVisits' 
   parsed[key] = Math.max(16, Math.min(ENGINE_MAX_VISITS, Math.floor(num)));
 };
 
-const loadStoredSettings = (): Partial<GameSettings> | null => {
-  try {
-    const rawCurrent = readLocalStorage(SETTINGS_STORAGE_KEY);
-    const legacyEntry = rawCurrent
-      ? null
-      : LEGACY_SETTINGS_STORAGE_KEYS.map((key) => ({ key, raw: readLocalStorage(key) })).find((entry) => entry.raw);
-    const raw = rawCurrent ?? legacyEntry?.raw;
-    if (!raw) return null;
-    const isLegacySettings = legacyEntry != null;
-    const isV1Settings = legacyEntry?.key === 'web-katrain:settings:v1';
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    // Older builds persisted the dev-only proxy on static hosts as well.
-    // Adopt the deployed endpoint while retaining custom server URLs.
-    if (parsed.remoteEngineUrl === REMOTE_ENGINE_PROXY_PATH) {
-      parsed.remoteEngineUrl = getDefaultRemoteEngineUrl();
+/**
+ * Make sense of whatever is in localStorage under the settings key.
+ *
+ * This reads input the app did not write: the key is editable by hand, it
+ * survives across versions, and a value that was valid two releases ago may name
+ * a board theme or a backend that no longer exists. Every field that could reach
+ * arithmetic or a lookup is checked here, and anything that fails is dropped so
+ * the default takes over — losing one preference is always better than failing
+ * to start.
+ *
+ * Separated from the read so it can be tested and fuzzed, which is the only
+ * reason it is exported.
+ */
+export function normalizeStoredSettings(
+  parsed: unknown,
+  legacyKey?: string | null,
+): Partial<GameSettings> | null {
+  {
+    const isLegacySettings = legacyKey != null;
+    const isV1Settings = legacyKey === 'web-katrain:settings:v1';
+    // An array is an object as far as typeof is concerned, and spreading one
+    // over the defaults would put numeric keys into the settings.
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    if ((parsed as Record<string, unknown>).remoteEngineUrl === REMOTE_ENGINE_PROXY_PATH) {
+      (parsed as Record<string, unknown>).remoteEngineUrl = getDefaultRemoteEngineUrl();
     }
     // An uploaded human net lives in a blob: URL that dies with the page, so a
     // stored one would only produce a failing fetch on the next load.
@@ -458,7 +523,10 @@ const loadStoredSettings = (): Partial<GameSettings> | null => {
         delete (parsed as { katagoBackend?: unknown }).katagoBackend;
       }
     }
-    if ((parsed as { katagoVisits?: unknown }).katagoVisits === OLD_DEFAULT_KATAGO_VISITS) {
+    const revision = (parsed as Record<string, unknown>)[SETTINGS_REVISION_FIELD];
+    delete (parsed as Record<string, unknown>)[SETTINGS_REVISION_FIELD];
+    const savedBeforeRevisions = typeof revision !== 'number';
+    if (savedBeforeRevisions && (parsed as { katagoVisits?: unknown }).katagoVisits === OLD_DEFAULT_KATAGO_VISITS) {
       (parsed as { katagoVisits: number }).katagoVisits = DEFAULT_KATAGO_VISITS;
     }
     clampStoredVisits(parsed as Record<string, unknown>, 'katagoVisits');
@@ -473,14 +541,14 @@ const loadStoredSettings = (): Partial<GameSettings> | null => {
         delete (parsed as { appLocale?: unknown }).appLocale;
       }
     }
+    if ('legacyGameEncoding' in parsed && !isLegacyGameEncoding((parsed as { legacyGameEncoding?: unknown }).legacyGameEncoding)) {
+      delete (parsed as { legacyGameEncoding?: unknown }).legacyGameEncoding;
+    }
     if ('analysisExperience' in parsed) {
       const experience = (parsed as { analysisExperience?: unknown }).analysisExperience;
       if (experience !== 'coach' && experience !== 'pro') {
         delete (parsed as { analysisExperience?: unknown }).analysisExperience;
       }
-    }
-    if ((parsed as { gameRules?: unknown }).gameRules === 'japanese') {
-      delete (parsed as { gameRules?: unknown }).gameRules;
     }
     if ('defaultBoardSize' in parsed) {
       const sizeRaw = (parsed as { defaultBoardSize?: unknown }).defaultBoardSize;
@@ -496,14 +564,135 @@ const loadStoredSettings = (): Partial<GameSettings> | null => {
         ? Math.max(0, Math.min(Math.floor(num), max))
         : 0;
     }
+
+    /**
+     * The fields above are each checked by hand because each needs a different
+     * repair. The rest only need "is this still one of the shapes the UI can
+     * read?", so they are listed rather than written out, and anything that
+     * fails is dropped so the default takes over.
+     *
+     * These were missed, and `trainerEvalThresholds` was the one that mattered:
+     * the readers all guard with `?.length`, which a *string* passes, so a
+     * stored `"abc"` reached `computeGameReport` and threw on `thresholds.map`
+     * — the Game Report died on settings the app had itself declared valid.
+     * The others degrade quietly rather than throwing (`data-ui-theme="nope"`
+     * matches no CSS; `trainerShowDots: 7` indexes to `undefined`), which is
+     * worse to diagnose, not better.
+     */
+    const oneOf = <T extends string>(...allowed: T[]) => (value: unknown): boolean =>
+      typeof value === 'string' && (allowed as string[]).includes(value);
+    const arrayOf = (test: (item: unknown) => boolean) => (value: unknown): boolean =>
+      Array.isArray(value) && value.length > 0 && value.every(test);
+    const topMovesMetric = oneOf(
+      'top_move_score', 'top_move_delta_score', 'top_move_winrate',
+      'top_move_delta_winrate', 'top_move_visits', 'top_move_nothing',
+    );
+    /**
+     * Every remaining numeric setting, which must be a real number.
+     *
+     * The readers clamp, but `Math.max(1, Math.min(value, 64))` is not a
+     * clamp: given a string or NaN both comparisons are false and the result
+     * is NaN, which then passes for a number all the way down. Measured with
+     * the real engine: a batch size of NaN makes `jobs.length < batchSize`
+     * false on the first try, so the batch comes back empty, the root never
+     * gains a visit, and the search's own stuck-batch guard breaks out --
+     * analysis returns nothing at all, immediately, with no error anywhere.
+     *
+     * `defaultBoardSize` and `defaultHandicap` are absent because they are
+     * repaired above rather than dropped; each has a meaningful nearest value.
+     */
+    const numericSettings = [
+      'noteFontScale', 'tsumegoFrameMargin', 'setupPositionMove', 'setupPositionAdvantage',
+      'timerMainTimeMinutes', 'timerByoLengthSeconds', 'timerByoPeriods', 'timerMinimalUseSeconds',
+      'showLastNMistakes', 'mistakeThreshold', 'animPvTimeSeconds', 'animPvMoves',
+      'trainerLowVisits', 'katagoVisits', 'katagoFastVisits', 'katagoMaxTimeMs',
+      'katagoBatchSize', 'katagoMaxChildren', 'katagoTopK', 'katagoWideRootNoise',
+      'katagoRootPolicyTemperature', 'katagoAnalysisPvLen',
+    ] as const satisfies ReadonlyArray<keyof GameSettings>;
+    const numericFields = parsed as Record<string, unknown>;
+    for (const key of numericSettings) {
+      if (!(key in numericFields)) continue;
+      const value = numericFields[key];
+      if (typeof value === 'number' && Number.isFinite(value)) continue;
+      // A number written as text still says what the reader wanted, the way
+      // `defaultBoardSize` above treats one. Anything else has no number in it.
+      // `Number('')` and `Number('   ')` are both 0, which is a value nobody
+      // wrote down; only text with something in it can name a number.
+      const text = typeof value === 'string' ? value.trim() : '';
+      const parsedNumber = text ? Number(text) : Number.NaN;
+      if (Number.isFinite(parsedNumber)) numericFields[key] = parsedNumber;
+      else delete numericFields[key];
+    }
+
+    const checks: Array<[keyof GameSettings, (value: unknown) => boolean]> = [
+      // `labels` in computeGameReport names the second-to-last threshold, so a
+      // single-entry list is not a usable ladder even though it is an array.
+      ['trainerEvalThresholds', (value) =>
+        Array.isArray(value) && value.length >= 2
+        && value.every((item) => typeof item === 'number' && Number.isFinite(item))],
+      ['trainerShowDots', arrayOf((item) => typeof item === 'boolean')],
+      ['trainerSaveFeedback', arrayOf((item) => typeof item === 'boolean')],
+      ['uiTheme', oneOf('system', 'noir', 'kaya', 'studio', 'light')],
+      ['uiDensity', oneOf('compact', 'comfortable', 'large')],
+      ['gameRules', isGameRules],
+      ['trainerTheme', oneOf('theme:normal', 'theme:red-green-colourblind')],
+      ['trainerTopMovesShow', topMovesMetric],
+      ['trainerTopMovesShowSecondary', topMovesMetric],
+      ['analysisPolicyMetric', oneOf('policy', 'delta_score', 'delta_winrate')],
+      ['analysisSwingCompare', oneOf('previous', 'best')],
+      ['katagoOwnershipMode', oneOf('root', 'tree')],
+      ['humanSlBotStyle', oneOf('imitate', 'search')],
+      ['analysisPolicySource', oneOf('engine', 'human')],
+      ['aiStrategy', oneOf(
+        'default', 'human', 'handicap', 'antimirror', 'rank', 'scoreloss', 'policy', 'weighted',
+        'pick', 'local', 'tenuki', 'territory', 'influence', 'jigo', 'simple', 'settle',
+      )],
+      ['teachNumUndoPrompts', (value) =>
+        Array.isArray(value) && value.every((item) => typeof item === 'number' && Number.isFinite(item))],
+    ];
+    const fields = parsed as Record<string, unknown>;
+    for (const [key, isValid] of checks) {
+      if (key in fields && !isValid(fields[key])) delete fields[key];
+    }
+
+    // Whatever is left must at least have its default's type. A stored
+    // `humanSlProfile: null` reached describeHumanProfile, whose
+    // `profile.startsWith` threw while the desktop notes panel rendered -- the
+    // whole UI failed to start on one corrupt field.
+    const defaults = defaultSettings as unknown as Record<string, unknown>;
+    for (const key of Object.keys(fields)) {
+      if (!(key in defaults)) continue;
+      const expected = defaults[key];
+      const value = fields[key];
+      if (Array.isArray(expected)) {
+        if (!Array.isArray(value)) delete fields[key];
+      } else if (typeof expected === 'number') {
+        if (typeof value !== 'number' || !Number.isFinite(value)) delete fields[key];
+      } else if (typeof expected === 'string' || typeof expected === 'boolean') {
+        if (typeof value !== typeof expected) delete fields[key];
+      }
+    }
+
     return parsed as Partial<GameSettings>;
+  }
+}
+
+const loadStoredSettings = (): Partial<GameSettings> | null => {
+  try {
+    const rawCurrent = readLocalStorage(SETTINGS_STORAGE_KEY);
+    const legacyEntry = rawCurrent
+      ? null
+      : LEGACY_SETTINGS_STORAGE_KEYS.map((key) => ({ key, raw: readLocalStorage(key) })).find((entry) => entry.raw);
+    const raw = rawCurrent ?? legacyEntry?.raw;
+    if (!raw) return null;
+    return normalizeStoredSettings(JSON.parse(raw), legacyEntry?.key ?? null);
   } catch {
     return null;
   }
 };
 
 const saveStoredSettings = (settings: GameSettings): void => {
-  writeLocalStorage(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  writeLocalStorage(SETTINGS_STORAGE_KEY, JSON.stringify({ ...settings, [SETTINGS_REVISION_FIELD]: SETTINGS_REVISION }));
 };
 
 const rulesToSgfRu = (rules: GameRules): string => rulesToSgf(rules);
@@ -632,7 +821,7 @@ const createNode = (
 const createRootNodeId = (): string => `root-${Math.random().toString(36).slice(2, 11)}`;
 
 const nodeAnalysisPositionKey = (node: GameNode, rules: GameRules): string =>
-  makeGameStateAnalysisPositionKey(node.gameState, rules);
+  makeGameStateAnalysisPositionKey(node.gameState, rules, repetitionHistoryForNode(node, rules));
 
 const parentAnalysisPositionKey = (node: GameNode, rules: GameRules): string | undefined =>
   node.parent ? nodeAnalysisPositionKey(node.parent, rules) : undefined;
@@ -677,6 +866,22 @@ const SEGMENT_PROPERTIES = ['AR', 'LN'] as const;
 export type SegmentProperty = (typeof SEGMENT_PROPERTIES)[number];
 const SETUP_PROPERTIES = ['AB', 'AW', 'AE'] as const;
 
+/**
+ * What a move written into an SGF root node takes with it when the loader
+ * splits that node into our root and a first move. Everything else -- game
+ * info, setup, the comment, properties we do not know -- stays on the root.
+ * The first move used to get a copy of the whole node, so its comment and
+ * game info were written twice on save and read back that way for good.
+ */
+const ROOT_MOVE_NODE_PROPERTIES = new Set([
+  'B', 'W', 'KO', 'MN',
+  'BL', 'WL', 'OB', 'OW',
+  'BM', 'DO', 'IT', 'TE',
+  'DM', 'GB', 'GW', 'HO', 'UC', 'V',
+  'AR', 'CR', 'DD', 'LB', 'LN', 'MA', 'SL', 'SQ', 'TR',
+  'KT', 'KA',
+]);
+
 const editToolToMarkerProperty = (tool: EditTool): MarkerProperty | null => {
   switch (tool) {
     case 'marker-triangle':
@@ -694,6 +899,7 @@ const editToolToMarkerProperty = (tool: EditTool): MarkerProperty | null => {
 
 const cloneBoard = (board: BoardState): BoardState => board.map((row) => [...row]);
 
+
 const ensureNodeProperties = (node: GameNode): Record<string, string[]> => {
   node.properties = node.properties ?? {};
   return node.properties;
@@ -706,18 +912,43 @@ const cloneNodeProperties = (props: Record<string, string[]> | undefined): Recor
   return out;
 };
 
-const copyBranchSnapshot = (node: GameNode): BranchClipboardNode => ({
-  move: node.move ? { ...node.move } : null,
-  properties: cloneNodeProperties(node.properties),
-  endState: node.endState ?? null,
-  timeUsedSeconds: node.timeUsedSeconds ?? 0,
-  note: node.note ?? '',
-  aiThoughts: node.aiThoughts ?? '',
-  children: node.children.map(copyBranchSnapshot),
-});
+const cloneDrawings = (drawings: BoardDrawing[] | undefined): BoardDrawing[] | undefined =>
+  drawings?.map((drawing) => ({ ...drawing, points: drawing.points.map((point) => ({ ...point })) }));
 
-const countClipboardNodes = (node: BranchClipboardNode): number =>
-  1 + node.children.reduce((total, child) => total + countClipboardNodes(child), 0);
+const copyBranchSnapshot = (node: GameNode): BranchClipboardNode => {
+  const copyNode = (source: GameNode): BranchClipboardNode => ({
+    move: source.move ? { ...source.move } : null,
+    properties: cloneNodeProperties(source.properties),
+    endState: source.endState ?? null,
+    timeUsedSeconds: source.timeUsedSeconds ?? 0,
+    note: source.note ?? '',
+    aiThoughts: source.aiThoughts ?? '',
+    drawings: cloneDrawings(source.drawings),
+    children: [],
+  });
+  const root = copyNode(node);
+  const pending = [{ source: node, target: root }];
+  while (pending.length) {
+    const { source, target } = pending.pop()!;
+    for (const child of source.children) {
+      const copy = copyNode(child);
+      target.children.push(copy);
+      pending.push({ source: child, target: copy });
+    }
+  }
+  return root;
+};
+
+const countClipboardNodes = (node: BranchClipboardNode): number => {
+  let count = 0;
+  const pending = [node];
+  while (pending.length) {
+    const current = pending.pop()!;
+    count++;
+    for (const child of current.children) pending.push(child);
+  }
+  return count;
+};
 
 const removeValue = (props: Record<string, string[]>, key: string, shouldRemove: (value: string) => boolean): void => {
   const values = props[key];
@@ -875,11 +1106,14 @@ type EditHistoryEntry = {
   rootNode: GameNode;
   currentNodeId: string;
   activeBranchChildIds: ActiveBranchMap;
+  gameRules: GameRules;
+  analysisRevision: number;
 };
 
 const EDIT_HISTORY_LIMIT = 50;
 let editUndoStack: EditHistoryEntry[] = [];
 let editRedoStack: EditHistoryEntry[] = [];
+let analysisRevision = 0;
 
 const cloneMove = (move: Move | null): Move | null => (move ? { ...move } : null);
 
@@ -892,18 +1126,29 @@ const cloneGameState = (gameState: GameState): GameState => ({
   komi: gameState.komi,
 });
 
-const cloneGameNodeTree = (node: GameNode, parent: GameNode | null = null): GameNode => {
-  const copy = createNode(parent, cloneMove(node.move), cloneGameState(node.gameState), node.id);
-  copy.endState = node.endState;
-  copy.timeUsedSeconds = node.timeUsedSeconds;
-  copy.analysis = node.analysis;
-  copy.analysisVisitsRequested = node.analysisVisitsRequested;
-  copy.autoUndo = node.autoUndo;
-  copy.undoThreshold = node.undoThreshold;
-  copy.aiThoughts = node.aiThoughts;
-  copy.note = node.note;
-  copy.properties = cloneNodeProperties(node.properties);
-  copy.children = node.children.map((child) => cloneGameNodeTree(child, copy));
+const cloneGameNodeTree = (node: GameNode): GameNode => {
+  // Positions are immutable: setup edits, replay and komi changes replace
+  // gameState instead of mutating its board or move history. Reuse them here;
+  // copying the full history at every node made each annotation cost O(n²)
+  // on a long line, multiplied by up to 50 retained undo snapshots.
+  const copyNode = (source: GameNode, parent: GameNode | null): GameNode => ({
+    ...source,
+    parent,
+    children: [],
+    move: cloneMove(source.move),
+    properties: cloneNodeProperties(source.properties),
+    drawings: cloneDrawings(source.drawings),
+  });
+  const copy = copyNode(node, null);
+  const stack = [{ source: node, copy }];
+  while (stack.length > 0) {
+    const task = stack.pop()!;
+    for (const child of task.source.children) {
+      const childCopy = copyNode(child, task.copy);
+      task.copy.children.push(childCopy);
+      stack.push({ source: child, copy: childCopy });
+    }
+  }
   return copy;
 };
 
@@ -922,18 +1167,53 @@ const captureEditHistory = (state: GameStore): EditHistoryEntry => ({
   rootNode: cloneGameNodeTree(state.rootNode),
   currentNodeId: state.currentNode.id,
   activeBranchChildIds: { ...state.activeBranchChildIds },
+  gameRules: state.settings.gameRules,
+  analysisRevision,
 });
 
-const pushEditHistory = (state: GameStore) => {
-  editUndoStack.push(captureEditHistory(state));
+/** Record a snapshot taken earlier, for edits that only know afterwards whether they changed anything. */
+const commitEditHistory = (entry: EditHistoryEntry) => {
+  editUndoStack.push(entry);
   if (editUndoStack.length > EDIT_HISTORY_LIMIT) editUndoStack.shift();
   editRedoStack = [];
   return editHistoryCounts();
 };
 
+const pushEditHistory = (state: GameStore) => commitEditHistory(captureEditHistory(state));
+
+/**
+ * Pins follow their nodes through an edit that moves children around, and
+ * the stored copy -- which is by path, since node ids do not survive a reload
+ * -- follows too. `root` is the tree after the edit.
+ */
+const repathPins = (root: GameNode, pins: PinnedVariation[]): { pinnedVariations?: PinnedVariation[] } => {
+  const next = repathPinnedVariations(root, pins);
+  if (next === pins) return {};
+  writeStoredPinnedVariations(getPinGameId(root), next);
+  return { pinnedVariations: next };
+};
+
 const restoreEditHistory = (entry: EditHistoryEntry, state: GameStore) => {
+  // Pinning names the game on its root (WKID) without recording an edit, so
+  // an older snapshot lacks it; restored without it, the pins could not be
+  // found again after a reload.
+  const pinGameId = getPinGameId(state.rootNode);
+  if (pinGameId && !getPinGameId(entry.rootNode)) {
+    entry.rootNode.properties = { ...entry.rootNode.properties, [PIN_GAME_ID_PROP]: [pinGameId] };
+  }
+  const rulesChanged = entry.gameRules !== state.settings.gameRules;
+  const settings = rulesChanged ? { ...state.settings, gameRules: entry.gameRules } : state.settings;
+  if (rulesChanged) {
+    analysisRevision++;
+    analysisQueue.clearCache();
+    saveStoredSettings(settings);
+  }
+  // Old edits can outlive a model switch or an explicit cache clear. Keep
+  // their annotations and positions, but never revive their stale evaluations.
+  if (entry.analysisRevision !== analysisRevision) clearAnalysisInSubtree(entry.rootNode);
   const currentNode = findNodeById(entry.rootNode, entry.currentNodeId) ?? entry.rootNode;
   return {
+    settings,
     rootNode: entry.rootNode,
     currentNode,
     activeBranchChildIds: { ...entry.activeBranchChildIds },
@@ -946,6 +1226,15 @@ const restoreEditHistory = (entry: EditHistoryEntry, state: GameStore) => {
     analysisData: currentNode.analysis || null,
     analysisCacheSize: getAnalysisCacheSize(entry.rootNode),
     treeVersion: state.treeVersion + 1,
+    // Undo and redo stop every running job (their tokens are bumped and the
+    // queue cancelled); the flags go with them, or a review sat at "0/3" and
+    // play-to-end read as running with nothing behind either.
+    isAiThinking: false,
+    isContinuousAnalysis: false,
+    isSelfplayToEnd: false,
+    setupPositionProgress: null,
+    isGameAnalysisRunning: false,
+    gameAnalysisType: null,
   };
 };
 
@@ -1047,10 +1336,11 @@ const replayChildMove = (parent: GameNode, child: GameNode, suicideLegal = false
   const move = child.move;
   const parentState = parent.gameState;
   if (!move) {
-    const nextState = cloneGameState(parentState);
+    // Comment/setup nodes do not add a move. Positions are immutable, and
+    // applying setup properties already copies the board when stones change.
     return {
-      ...nextState,
-      board: applySetupPropsToBoard(nextState.board, child.properties),
+      ...parentState,
+      board: applySetupPropsToBoard(parentState.board, child.properties),
       currentPlayer: playerFromSgfPlayerToMove(child.properties) ?? parentState.currentPlayer,
     };
   }
@@ -1059,7 +1349,9 @@ const replayChildMove = (parent: GameNode, child: GameNode, suicideLegal = false
   if (move.x < 0 || move.y < 0) {
     const passMove: Move = { x: -1, y: -1, player: move.player };
     return {
-      board: cloneBoard(parentState.board),
+      // Setup on a pass node applies here as on any other node; the loader
+      // placed it, and a rebuild that skipped it lost the stones.
+      board: applySetupPropsToBoard(cloneBoard(parentState.board), child.properties),
       currentPlayer: playerFromSgfPlayerToMove(child.properties) ?? nextPlayer,
       moveHistory: [...parentState.moveHistory, passMove],
       capturedBlack: parentState.capturedBlack,
@@ -1085,7 +1377,8 @@ const replayChildMove = (parent: GameNode, child: GameNode, suicideLegal = false
     }
   }
 
-  if (parent.parent && boardsEqual(tentativeBoard, parent.parent.gameState.board)) return null;
+  const koBoard = koReferenceBoard(parent);
+  if (koBoard && boardsEqual(tentativeBoard, koBoard)) return null;
 
   const newCapturedBlack =
     parentState.capturedBlack + (move.player === 'white' ? captured.length : 0) + (move.player === 'black' ? selfCaptured : 0);
@@ -1102,55 +1395,58 @@ const replayChildMove = (parent: GameNode, child: GameNode, suicideLegal = false
 };
 
 const pasteBranchSnapshot = (parent: GameNode, source: BranchClipboardNode, suicideLegal = false): GameNode | null => {
-  const node = createNode(parent, cloneMove(source.move), cloneGameState(parent.gameState));
-  node.properties = cloneNodeProperties(source.properties);
-  node.endState = source.endState;
-  node.timeUsedSeconds = source.timeUsedSeconds;
-  node.note = source.note;
-  node.aiThoughts = source.aiThoughts;
+  const pasteNode = (parent: GameNode, source: BranchClipboardNode): GameNode | null => {
+    const node = createNode(parent, cloneMove(source.move), parent.gameState);
+    node.properties = cloneNodeProperties(source.properties);
+    node.endState = source.endState;
+    node.timeUsedSeconds = source.timeUsedSeconds;
+    node.note = source.note;
+    node.aiThoughts = source.aiThoughts;
+    node.drawings = cloneDrawings(source.drawings);
 
-  const rebuiltState = replayChildMove(parent, node, suicideLegal);
-  if (!rebuiltState) return null;
-  node.gameState = rebuiltState;
+    const rebuiltState = replayChildMove(parent, node, suicideLegal);
+    if (!rebuiltState) return null;
+    node.gameState = rebuiltState;
+    return node;
+  };
 
-  for (const child of source.children) {
-    const pastedChild = pasteBranchSnapshot(node, child, suicideLegal);
-    if (pastedChild) node.children.push(pastedChild);
+  const root = pasteNode(parent, source);
+  if (!root) return null;
+  const pending = [{ source, target: root }];
+  while (pending.length) {
+    const { source, target } = pending.pop()!;
+    for (const child of source.children) {
+      const pastedChild = pasteNode(target, child);
+      if (!pastedChild) continue;
+      target.children.push(pastedChild);
+      pending.push({ source: child, target: pastedChild });
+    }
   }
-  return node;
+  return root;
 };
 
 const rebuildDescendants = (node: GameNode, suicideLegal = false): number => {
   let pruned = 0;
-  const kept: GameNode[] = [];
-  for (const child of node.children) {
-    const rebuiltState = replayChildMove(node, child, suicideLegal);
-    if (!rebuiltState) {
-      pruned += countNodes(child);
-      continue;
+  const pending = [node];
+  while (pending.length) {
+    const parent = pending.pop()!;
+    const kept: GameNode[] = [];
+    for (const child of parent.children) {
+      const rebuiltState = replayChildMove(parent, child, suicideLegal);
+      if (!rebuiltState) {
+        pruned += countNodes(child);
+        continue;
+      }
+      child.gameState = rebuiltState;
+      child.analysis = null;
+      child.analysisVisitsRequested = 0;
+      kept.push(child);
+      pending.push(child);
     }
-    child.gameState = rebuiltState;
-    child.analysis = null;
-    child.analysisVisitsRequested = 0;
-    pruned += rebuildDescendants(child, suicideLegal);
-    kept.push(child);
+    parent.children = kept;
   }
-  node.children = kept;
   return pruned;
 };
-
-// Initial state helpers
-const initialBoard = createEmptyBoard(DEFAULT_BOARD_SIZE);
-const initialGameState: GameState = {
-    board: initialBoard,
-    currentPlayer: 'black',
-    moveHistory: [],
-    capturedBlack: 0,
-    capturedWhite: 0,
-    komi: KOMI
-};
-const initialRoot = createNode(null, null, initialGameState, createRootNodeId());
-initialRoot.properties = { RU: [rulesToSgfRu('chinese')] };
 
 const defaultSettings: GameSettings = {
   appLocale: 'en',
@@ -1183,6 +1479,7 @@ const defaultSettings: GameSettings = {
   timerMinimalUseSeconds: 0,
   showLastNMistakes: 3,
   mistakeThreshold: 3.0,
+  legacyGameEncoding: 'auto',
   loadSgfRewind: true,
   loadSgfFastAnalysis: false,
   animPvTimeSeconds: 0.5,
@@ -1190,7 +1487,7 @@ const defaultSettings: GameSettings = {
   gameRules: 'chinese',
   trainerLowVisits: 25,
   trainerTheme: 'theme:normal',
-  trainerEvalThresholds: [12, 6, 3, 1.5, 0.5, 0],
+  trainerEvalThresholds: [...DEFAULT_EVAL_THRESHOLDS],
   trainerShowDots: [true, true, true, true, true, true],
   trainerSaveFeedback: [true, true, true, true, false, false],
   trainerEvalShowAi: true,
@@ -1208,6 +1505,8 @@ const defaultSettings: GameSettings = {
   analysisShowOwnership: true,
   engineMode: 'remote' as const,
   remoteEngineUrl: getDefaultRemoteEngineUrl(),
+  analysisShowSwing: false,
+  analysisSwingCompare: 'previous',
   katagoModelUrl: publicUrl(KATAGO_SMALL_MODEL_PATH),
   katagoBackend: 'webgpu',
   katagoVisits: DEFAULT_KATAGO_VISITS,
@@ -1283,9 +1582,34 @@ const defaultSettings: GameSettings = {
 
 const initialSettings: GameSettings = {
   ...defaultSettings,
-  appLocale: getPreferredAppLocaleId(),
+  // English until the player picks otherwise. Every string in the app is
+  // English, and this only sets <html lang>: guessed from the browser, a
+  // French system marked the whole UI French, and screen readers read it with
+  // French pronunciation (WCAG 3.1.1).
+  appLocale: 'en',
   ...(loadStoredSettings() ?? {}),
 };
+// Construct the startup position after loading preferences, as New Game does.
+// Building it before settings were read always opened an empty 19x19 board.
+const initialBoardSize = initialSettings.defaultBoardSize;
+const initialHandicap = initialSettings.defaultHandicap;
+const initialBoard = createEmptyBoard(initialBoardSize);
+if (initialHandicap > 0) applyHandicapStones(initialBoard, initialBoardSize, initialHandicap);
+const initialGameState: GameState = {
+  board: initialBoard,
+  currentPlayer: initialHandicap > 0 ? 'white' : 'black',
+  moveHistory: [],
+  capturedBlack: 0,
+  capturedWhite: 0,
+  komi: rulesOf(initialSettings.gameRules).defaultKomi,
+};
+const initialRoot = createNode(null, null, initialGameState, createRootNodeId());
+initialRoot.properties = { RU: [rulesToSgfRu(initialSettings.gameRules)], SZ: [String(initialBoardSize)] };
+if (initialHandicap > 0) {
+  initialRoot.properties.HA = [String(initialHandicap)];
+  initialRoot.properties.PL = ['W'];
+  syncRootSetupPropertiesFromBoard(initialRoot.properties, initialBoard, initialBoardSize, initialHandicap);
+}
 
 /**
  * How many analyses may be in flight against the engine.
@@ -1308,28 +1632,74 @@ const engineAnalysisWindow = (settings: GameSettings): number =>
 analysisQueue.setConcurrency(engineAnalysisWindow(initialSettings));
 
 let continuousToken = 0;
-/**
- * Append `move` to `parent` as a new child, applying captures, suicide and
- * simple-ko rules. Returns null when the move is not legal there.
- *
- * Shared by insert mode and "add this variation to the tree": both replay moves
- * onto an existing node rather than going through the interactive play path.
- */
-/**
- * Whether playing to `newBoard` repeats a position already seen on this line,
- * under the ruleset's ko rule. Simple ko is checked separately by the callers
- * (it needs only the grandparent); this walks the whole line for the
- * positional and situational superko that AGA, New Zealand and Tromp-Taylor ask for.
- */
-export const lineViolatesSuperko = (from: GameNode, newBoard: BoardState, nextPlayerToMove: Player, koRule: KoRule): boolean => {
-  if (koRule === 'simple') return false;
-  const history: SuperkoPosition[] = [];
-  for (let node: GameNode | null = from; node; node = node.parent) {
-    history.push({ board: node.gameState.board, playerToMove: node.gameState.currentPlayer });
-  }
-  return violatesSuperko({ ko: koRule, next: { board: newBoard, playerToMove: nextPlayerToMove }, history });
+const scheduledAnalysisTimers = new Set<ReturnType<typeof setTimeout>>();
+
+// Moves and setup edits defer analysis until after their state update. Stop
+// must cancel these callbacks too: they have not entered analysisQueue yet.
+const scheduleAnalysis = (run: () => void, delayMs: number): void => {
+  const timer = setTimeout(() => {
+    scheduledAnalysisTimers.delete(timer);
+    run();
+  }, delayMs);
+  scheduledAnalysisTimers.add(timer);
 };
 
+const cancelScheduledAnalysis = (): void => {
+  for (const timer of scheduledAnalysisTimers) clearTimeout(timer);
+  scheduledAnalysisTimers.clear();
+};
+
+// AI replies have their own timers and ownership. Cancellation must invalidate
+// the caller too, otherwise its rejected promise can schedule the move again.
+let aiMoveGeneration = 0;
+/** Whether the AI search in flight is a one-off request, not the opponent's reply. */
+let aiMoveWorkIsOnDemand = false;
+const scheduledAiMoveTimers = new Set<ReturnType<typeof setTimeout>>();
+
+const clearScheduledAiMoves = (): void => {
+  for (const timer of scheduledAiMoveTimers) clearTimeout(timer);
+  scheduledAiMoveTimers.clear();
+};
+
+const cancelAiMoveWork = (): void => {
+  aiMoveGeneration++;
+  clearScheduledAiMoves();
+  analysisQueue.cancelGroup('ai-move');
+};
+
+const scheduleAiMoveTask = (run: () => void, delayMs: number, onPositionChanged?: () => void): void => {
+  const generation = aiMoveGeneration;
+  const node = useGameStore.getState().currentNode;
+  const position = node.gameState;
+  const timer = setTimeout(() => {
+    scheduledAiMoveTimers.delete(timer);
+    if (generation !== aiMoveGeneration) return;
+    const current = useGameStore.getState().currentNode;
+    if (current.id === node.id && current.gameState === position) run();
+    else onPositionChanged?.();
+  }, delayMs);
+  scheduledAiMoveTimers.add(timer);
+};
+
+export { lineViolatesSuperko } from '../utils/treeSuperko';
+
+/**
+ * Both players have passed, so the game is over.
+ *
+ * The only sign of this was a small "Game ended" chip in the game strip, which
+ * assumes the reader already knows that Go ends on two passes and that someone
+ * now has to count. Say it, and name the control that does the counting.
+ */
+const announceGameEnd = (set: (partial: { notification: StoreNotification }) => void) => {
+  set({
+    notification: {
+      message: 'Both players passed, so the game is over. Choose Score to count the territory.',
+      type: 'info',
+    },
+  });
+};
+
+/** Replay a move for insert mode or adding a variation, under the same ko rules as playMove. */
 const createChildForMove = (parent: GameNode, move: Move, suicideLegal = false, koRule: KoRule = 'simple'): GameNode | null => {
   const st = parent.gameState;
   if (st.currentPlayer !== move.player) return null;
@@ -1362,7 +1732,8 @@ const createChildForMove = (parent: GameNode, move: Move, suicideLegal = false, 
       selfCaptured = applySelfCaptureInPlace(newBoard, move.x, move.y).length;
     }
   }
-  if (parent.parent && boardsEqual(newBoard, parent.parent.gameState.board)) return null;
+  const koBoard = koReferenceBoard(parent);
+  if (koBoard && boardsEqual(newBoard, koBoard)) return null;
   const nextPlayer: Player = st.currentPlayer === 'black' ? 'white' : 'black';
   if (lineViolatesSuperko(parent, newBoard, nextPlayer, koRule)) return null;
 
@@ -1398,11 +1769,10 @@ const analyzeForPlayout = (
   opts: { group: string; label: string; id: string; wideRootNoise?: number }
 ): Promise<KataGoAnalysisPayload> => {
   const node = s.currentNode;
-  const parentBoard = node.parent?.gameState.board;
-  const grandparentBoard = node.parent?.parent?.gameState.board;
+  const { previousBoard: parentBoard, previousPreviousBoard: grandparentBoard } = engineHistoryBoards(node);
   const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
   const rules = s.settings.gameRules;
-  const visits = Math.max(16, Math.min(s.settings.katagoFastVisits, ENGINE_MAX_VISITS));
+  const visits = clampAnalysisVisits(s.settings.katagoFastVisits);
   const maxTimeMs = Math.max(250, Math.min(s.settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
   const wideRootNoise = opts.wideRootNoise ?? 0.0;
   return analysisQueue.enqueue<KataGoAnalysisPayload>({
@@ -1436,6 +1806,7 @@ const analyzeForPlayout = (
       previousPreviousBoard: grandparentBoard,
       currentPlayer: s.currentPlayer,
       moveHistory: s.moveHistory,
+      repetitionHistory: repetitionHistoryForNode(node, rules),
       komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, s.komi),
       rules,
       topK: Math.max(1, Math.min(s.settings.katagoTopK, 10)),
@@ -1484,6 +1855,55 @@ let selfplayToken = 0;
 let lastPlayedNodeId: string | null = null;
 let skipNavigationSoundForNodeId: string | null = null;
 
+// Moves the engine plays for itself -- the AI opponent, its heuristic
+// fallback, selfplay and the set-up position generator -- run inside
+// asEngineMove. Everything else is the player's hand.
+let engineMoveDepth = 0;
+const asEngineMove = <T,>(play: () => T): T => {
+  engineMoveDepth += 1;
+  try {
+    return play();
+  } finally {
+    engineMoveDepth -= 1;
+  }
+};
+
+/**
+ * Whether a move or pass from the player has to wait for the AI's reply.
+ *
+ * Neither playMove nor passTurn asked whose turn it was, so a second Pass (or
+ * P) while the AI thought was recorded as the AI's pass and ended the game on
+ * a move it never chose, and a board click placed a stone in its colour. Only
+ * at the end of the line: an earlier position the player stepped back to is
+ * one the AI will not answer, and trying a variation there stays allowed.
+ */
+const isAwaitingAiReply = (state: { isAiPlaying: boolean; aiColor: Player | null; currentPlayer: Player; currentNode: GameNode }) =>
+  engineMoveDepth === 0
+  && state.isAiPlaying
+  && state.aiColor === state.currentPlayer
+  && state.currentNode.children.length === 0
+  // Two passes ended the game: the AI will not move again, and play on
+  // (dispute, resumption) is the player's to choose.
+  && !(isPassMove(state.currentNode.move) && isPassMove(state.currentNode.parent?.move))
+  && !state.currentNode.endState;
+
+const AI_REPLY_PENDING_MESSAGE = 'The AI is to move. Wait for its reply, or turn the AI opponent off.';
+
+/**
+ * Refuse the player's move on the AI's turn -- and make sure a reply is on
+ * its way. Stepping forward onto the end of the line (Redo after an Undo that
+ * dropped the AI's search) left the AI to move with nothing scheduled, so the
+ * refusal alone would have stalled the game for good.
+ */
+const refuseWhileAwaitingAi = (
+  set: (partial: { notification: StoreNotification }) => void,
+  get: () => { isAiThinking: boolean; scheduleAiMove: (delayMs?: number) => void }
+) => {
+  set({ notification: { message: AI_REPLY_PENDING_MESSAGE, type: 'info' } });
+  const state = get();
+  if (!state.isAiThinking && scheduledAiMoveTimers.size === 0) state.scheduleAiMove(0);
+};
+
 /**
  * After a setup edit changed the stones on the board: the analysis in flight
  * was for the old position and would land on the new one by node id, and
@@ -1495,13 +1915,31 @@ const afterBoardEdit = (get: () => GameStore): void => {
   analysisQueue.cancelGroup('tenuki');
   tenukiToken++;
   const state = get();
+  // The token bump stops a pending answer from landing, but the pending
+  // marker itself stayed -- "Checking..." for good -- and a finished price
+  // stayed drawn over stones the edit had changed. Drop it for the edited
+  // position and everything below it.
+  const tenuki = state.tenukiAnalysis;
+  if (tenuki) {
+    const tenukiNode = findNodeById(state.rootNode, tenuki.nodeId);
+    if (!tenukiNode || tenukiNode === state.currentNode || isNodeDescendantOf(tenukiNode, state.currentNode)) {
+      useGameStore.setState({ tenukiAnalysis: null });
+    }
+  }
   if (state.isAnalysisMode && !state.isSelfplayToEnd) {
-    setTimeout(() => void get().runAnalysis({ force: true }), 0);
+    scheduleAnalysis(() => void get().runAnalysis({ force: true }), 0);
   }
 };
 let setupPositionToken = 0;
 // Where the current play-to-end began, so the finished line can be folded away.
 let selfplayStartNodeId: string | null = null;
+/**
+ * The first node the playout itself added. It can walk into moves the game
+ * already has -- the engine's choice is often the game's next move -- and
+ * folding the start's child then hid the real game, with the real moves it
+ * walked through counted as played out. Only what the playout made is folded.
+ */
+let selfplayHeadNodeId: string | null = null;
 
 /**
  * Fold a finished play-to-end line into a collapsed branch and step back to
@@ -1511,12 +1949,15 @@ const collapseFinishedSelfplay = (
   state: GameStore
 ): Partial<GameStore> => {
   const startId = selfplayStartNodeId;
+  const headId = selfplayHeadNodeId;
   selfplayStartNodeId = null;
-  if (!startId) return {};
+  selfplayHeadNodeId = null;
+  if (!startId || !headId) return {};
   const start = findNodeById(state.rootNode, startId);
   if (!start || !isNodeDescendantOf(state.currentNode, start)) return {};
-  const head = start.children.find((child) => isNodeDescendantOf(state.currentNode, child) || child.id === state.currentNode.id);
-  if (!head || head.children.length === 0) return {};
+  const head = findNodeById(start, headId);
+  if (!head || !(head === state.currentNode || isNodeDescendantOf(state.currentNode, head))) return {};
+  if (head.children.length === 0) return {};
   head.collapsed = true;
   const hidden = countMoveTreeDescendants(head);
   return {
@@ -1610,7 +2051,10 @@ async function runNodeAnalysisBatch(opts: {
           onFailure(err);
           return;
         }
-        if (tries >= maxRetries) return;
+        if (tries >= maxRetries) {
+          if (ownsRun()) onFailure(new Error('Interrupted repeatedly by other analysis.'));
+          return;
+        }
         await sleep(25);
       }
     }
@@ -1900,7 +2344,7 @@ const runBlindfoldSession = async (
         patch({
           phase: 'error',
           transcript: null,
-          message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）`,
+          message: `${BLINDFOLD_SPEECH.noMic}（${heard.reason}）。`,
           mic: { status: 'blocked', failure: microphoneFailureFromListen(heard.reason) },
         });
         await waitForResume();
@@ -2008,6 +2452,14 @@ const gameAnalysisFailureUpdate = (
 
 const analysisCacheKey = (...parts: unknown[]): string => JSON.stringify(parts);
 
+let runningInteractiveAnalysis: {
+  id: string;
+  contextKey: string;
+  cacheKey: string;
+  requestKey: string;
+  promise: Promise<void>;
+} | null = null;
+
 export const useGameStore = create<GameStore>((commit, get) => {
   const set = (update: Partial<GameStore> | ((state: GameStore) => Partial<GameStore>)): void => {
     const state = get();
@@ -2069,6 +2521,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
   isContinuousAnalysis: false,
   isTeachMode: false,
   notification: null,
+  sgfLoadWarning: null,
   analysisData: null,
   tenukiAnalysis: null,
   trickMoves: null,
@@ -2077,6 +2530,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
   trickScanTotal: 0,
   mistakeDrill: null,
   blindfold: null,
+  punishQuizArmedNodeId: null,
+  setPunishQuizArmedNodeId: (nodeId) => {
+    if (useGameStore.getState().punishQuizArmedNodeId !== nodeId) useGameStore.setState({ punishQuizArmedNodeId: nodeId });
+  },
   analysisCacheSize: getAnalysisCacheSize(initialRoot),
   settings: initialSettings,
   engineStatus: 'idle',
@@ -2093,18 +2550,18 @@ export const useGameStore = create<GameStore>((commit, get) => {
   toggleAi: (color) => {
     const s = get();
     const nextOn = !(s.isAiPlaying && s.aiColor === color);
-    if (!nextOn) analysisQueue.cancelGroup('ai-move');
-    set({ isAiPlaying: nextOn, aiColor: nextOn ? color : null });
+    cancelAiMoveWork();
+    set({ isAiPlaying: nextOn, isAiThinking: false, aiColor: nextOn ? color : null });
     const after = get();
     if (after.isAiPlaying && after.aiColor === after.currentPlayer) {
-      setTimeout(() => after.makeAiMove(), 0);
+      after.scheduleAiMove();
     }
   },
 
   toggleAnalysisMode: () => set((state) => {
       const newMode = !state.isAnalysisMode;
       if (newMode) {
-          setTimeout(() => void get().runAnalysis(), 0);
+          scheduleAnalysis(() => void get().runAnalysis({ ifIdle: true }), 0);
       } else {
           analysisQueue.cancelGroup('interactive');
       }
@@ -2163,7 +2620,11 @@ export const useGameStore = create<GameStore>((commit, get) => {
               if (!state.isContinuousAnalysis) return;
               if (!state.isAnalysisMode) return;
 
-              const target = Math.max(16, state.settings.katagoVisits);
+              // Clamped, or the loop below never settles. `runAnalysis` caps
+              // what it will actually request at ENGINE_MAX_VISITS, so a target
+              // above that leaves `normalizedVisits < target` true forever and
+              // re-runs a full search every 50ms for as long as the tab is open.
+              const target = clampAnalysisVisits(state.settings.katagoVisits);
               const rawFast = state.settings.katagoFastVisits;
               const fast = Number.isFinite(rawFast) ? rawFast : 25;
               const initialVisits = Math.max(16, Math.min(target, Math.floor(fast)));
@@ -2210,6 +2671,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
               await get().runAnalysis({
                 force: true,
+                ifIdle: true,
                 visits: nextVisits,
                 reuseTree: true,
                 ownershipRefreshIntervalMs: state.settings.katagoOwnershipMode === 'tree' ? 500 : undefined,
@@ -2231,7 +2693,18 @@ export const useGameStore = create<GameStore>((commit, get) => {
   },
 
   stopAnalysis: () => {
+      // Stop is for analysis -- pondering, a review, play-to-end -- and it is
+      // what Escape does, so it runs whenever a dialog is closed that way. It
+      // still stops a one-off "AI move" the player asked for. It used to
+      // cancel the AI opponent's reply as well, with nothing to start it
+      // again: Escape on the AI's turn left the game waiting for a move that
+      // never came. The opponent is stopped by turning it off.
+      if (aiMoveWorkIsOnDemand) {
+        cancelAiMoveWork();
+        set({ isAiThinking: false });
+      }
       continuousToken++;
+      cancelScheduledAnalysis();
       analysisQueue.cancelGroup('interactive');
       analysisQueue.cancelGroup('tenuki');
       // A sweep/equalize batch is a background scan the user may want to call
@@ -2285,16 +2758,21 @@ export const useGameStore = create<GameStore>((commit, get) => {
     const boardSize = getBoardSizeFromBoard(state.board);
     const komi = komiWithHandicapBonus(state.rootNode.gameState.board, rules, state.komi);
     const modelUrl = resolveModelUrlForFetch(state.settings.katagoModelUrl);
-    const visits = Math.max(16, Math.min(state.settings.katagoVisits, ENGINE_MAX_VISITS));
+    const visits = clampAnalysisVisits(state.settings.katagoVisits);
     const maxTimeMs = Math.max(25, Math.min(state.settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
 
     // A pass leaves the stones alone, so the post-pass position sees the same
     // board with the turn handed over and one more entry in the history.
     const moveHistory = [...state.moveHistory, passMove];
+    const beforePassHistory = repetitionHistoryForNode(node, rules);
+    const repetitionHistory = beforePassHistory
+      ? [...new Set([...beforePassHistory, situationalKey(state.board, opponent)])].sort()
+      : undefined;
     const positionKey = makeAnalysisPositionKey({
       board: state.board,
       currentPlayer: opponent,
       moveHistory,
+      repetitionHistory,
       komi,
       rules,
     });
@@ -2337,9 +2815,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
             backend: state.settings.katagoBackend,
             board: state.board,
             previousBoard: state.board,
-            previousPreviousBoard: node.parent?.gameState.board,
+            previousPreviousBoard: koReferenceBoard(node),
             currentPlayer: opponent,
             moveHistory,
+            repetitionHistory,
             komi,
             rules,
             topK: Math.max(1, Math.min(state.settings.katagoTopK, 50)),
@@ -2447,7 +2926,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
     const rules = state.settings.gameRules;
     const boardSize = getBoardSizeFromBoard(node.gameState.board);
     const modelUrl = resolveModelUrlForFetch(state.settings.katagoModelUrl);
-    const fastVisits = Math.max(16, Math.min(state.settings.katagoFastVisits, ENGINE_MAX_VISITS));
+    const fastVisits = clampAnalysisVisits(state.settings.katagoFastVisits);
     const maxTimeMs = Math.max(250, Math.min(state.settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
     const batchSize = Math.max(1, Math.min(state.settings.katagoBatchSize, 64));
     const maxChildren = Math.max(4, Math.min(state.settings.katagoMaxChildren, boardSize * boardSize));
@@ -2662,6 +3141,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
   },
 
   clearAnalysisCache: () => {
+      cancelAiMoveWork();
+      analysisRevision++;
+      cancelScheduledAnalysis();
       const removed = getAnalysisCacheSize(get().rootNode);
       const notification = {
         message: removed > 0 ? `Cleared ${removed} cached ${removed === 1 ? 'analysis' : 'analyses'}.` : 'No cached analysis to clear.',
@@ -2677,6 +3159,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
         return {
           analysisData: null,
           analysisCacheSize: 0,
+          isAiThinking: false,
           isContinuousAnalysis: false,
           isSelfplayToEnd: false,
           setupPositionProgress: null,
@@ -2688,13 +3171,16 @@ export const useGameStore = create<GameStore>((commit, get) => {
           notification,
         };
       });
+      // Clearing cancels the AI's search along with everything else; on its
+      // turn it has to start again, or it never moves.
+      get().scheduleAiMove(100);
   },
 
   toggleTeachMode: () => set((state) => {
       const newMode = !state.isTeachMode;
       if (newMode) {
            // Teach mode implies analysis
-           setTimeout(() => void get().runAnalysis(), 0);
+           scheduleAnalysis(() => void get().runAnalysis({ ifIdle: true }), 0);
       }
       return {
           isTeachMode: newMode,
@@ -2724,7 +3210,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       isSelectingRegionOfInterest: false,
       treeVersion: state.treeVersion + 1,
     }));
-    if (get().isAnalysisMode) setTimeout(() => void get().runAnalysis({ force: true }), 0);
+    if (get().isAnalysisMode) scheduleAnalysis(() => void get().runAnalysis({ force: true }), 0);
   },
 
   resetCurrentAnalysis: () => {
@@ -2732,7 +3218,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
     s.currentNode.analysis = null;
     s.currentNode.analysisVisitsRequested = 0;
     set((state) => ({ analysisData: null, treeVersion: state.treeVersion + 1 }));
-    if (get().isAnalysisMode) setTimeout(() => void get().runAnalysis({ force: true }), 0);
+    if (get().isAnalysisMode) scheduleAnalysis(() => void get().runAnalysis({ force: true }), 0);
   },
 
   analyzeExtra: (mode) => {
@@ -2863,11 +3349,11 @@ export const useGameStore = create<GameStore>((commit, get) => {
     };
 
     if (mode === 'extra') {
-      const base = Math.max(16, Math.min(s.settings.katagoVisits, ENGINE_MAX_VISITS));
+      const base = clampAnalysisVisits(s.settings.katagoVisits);
       const prev = Math.max(0, Math.min(s.currentNode.analysisVisitsRequested ?? base, ENGINE_MAX_VISITS));
-      const visits = Math.max(16, Math.min(prev + base, ENGINE_MAX_VISITS));
-      toast(`Extra analysis: ${visits} visits`);
-      void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs, allowShallower: true });
+      const visits = clampAnalysisVisits(prev + base);
+      toast(`Extra analysis: ${visits} visits.`);
+      void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs });
       return;
     }
 
@@ -2879,9 +3365,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       const maxMoveVisits = analysis.moves.reduce((acc, cur) => Math.max(acc, cur.visits), 1);
       const target = Math.max(maxMoveVisits * analysis.moves.length, s.currentNode.analysisVisitsRequested ?? s.settings.katagoVisits);
-      const visits = Math.max(16, Math.min(target, ENGINE_MAX_VISITS));
+      const visits = clampAnalysisVisits(target);
       if (isRemoteEngine(s.settings)) {
-        toast(`Equalize: ${analysis.moves.length} candidates at ${visits} visits`);
+        toast(`Equalize: ${analysis.moves.length} candidates at ${visits} visits.`);
         refineCandidates(
           s.currentNode,
           analysis.moves.map((m) => ({ x: m.x, y: m.y })),
@@ -2891,16 +3377,16 @@ export const useGameStore = create<GameStore>((commit, get) => {
         );
         return;
       }
-      toast(`Equalize: ${visits} visits`);
+      toast(`Equalize: ${visits} visits.`);
       void s.runAnalysis({ force: true, visits, maxTimeMs: longTimeMs, allowShallower: true });
       return;
     }
 
     if (mode === 'sweep') {
-      const visits = Math.max(16, Math.min(s.settings.katagoFastVisits, ENGINE_MAX_VISITS));
+      const visits = clampAnalysisVisits(s.settings.katagoFastVisits);
       if (isRemoteEngine(s.settings)) {
         const node = s.currentNode;
-        toast(`Sweep: ${visits} visits per candidate`);
+        toast(`Sweep: ${visits} visits per candidate.`);
         void (async () => {
           // Refined entries live on the node's move list, so a first pass has to
           // have filled it (KaTrain assumes the same).
@@ -2922,7 +3408,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       const boardSize = getBoardSizeFromBoard(s.board);
       const maxChildren = boardSize * boardSize;
-      toast(`Sweep: ${visits} visits, maxChildren ${maxChildren}`);
+      toast(`Sweep: ${visits} visits, maxChildren ${maxChildren}.`);
       void s.runAnalysis({
         force: true,
         visits,
@@ -2942,9 +3428,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
         set({ notification: { message: 'Analyze the position first, then ask what else there is.', type: 'error' } });
         return;
       }
-      const label = `${String.fromCharCode(65 + (top.x >= 8 ? top.x + 1 : top.x))}${s.board.length - top.y}`;
-      const visits = Math.max(16, Math.min(s.settings.katagoVisits, ENGINE_MAX_VISITS));
-      toast(`Analyzing without ${label}: ${visits} visits`);
+      const label = formatGtpMove(top.x, top.y, s.board.length);
+      const visits = clampAnalysisVisits(s.settings.katagoVisits);
+      toast(`Analyzing without ${label}: ${visits} visits.`);
       void s.runAnalysis({
         force: true,
         visits,
@@ -2957,9 +3443,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
     }
 
     if (mode === 'alternative') {
-      const visits = Math.max(16, Math.min(s.settings.katagoFastVisits, ENGINE_MAX_VISITS));
+      const visits = clampAnalysisVisits(s.settings.katagoFastVisits);
       const wideRootNoise = Math.max(s.settings.katagoWideRootNoise, 0.12);
-      toast(`Alternative: ${visits} visits, noise ${wideRootNoise.toFixed(2)}`);
+      toast(`Alternative: ${visits} visits, noise ${wideRootNoise.toFixed(2)}.`);
       void s.runAnalysis({
         force: true,
         visits,
@@ -3020,6 +3506,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
     // Copy continuation from insertAfter down its mainline onto the inserted branch.
     const insertedMoves = new Set<string>();
+    let numInserted = 0;
     {
       const above = new Set<string>();
       let n: GameNode | null = insertAfter;
@@ -3029,8 +3516,22 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       let cur: GameNode | null = s.currentNode;
       while (cur && !above.has(cur.id)) {
-        if (cur.move) insertedMoves.add(moveKey(cur.move));
+        if (cur.move) {
+          insertedMoves.add(moveKey(cur.move));
+          numInserted += 1;
+        }
         cur = cur.parent;
+      }
+    }
+
+    // How much continuation there is to carry over, so a copy that stops short
+    // can be reported rather than left as a branch that simply ends.
+    let numToCopy = 0;
+    {
+      let from: GameNode | null = insertAfter;
+      while (from?.move) {
+        if (!insertedMoves.has(moveKey(from.move))) numToCopy += 1;
+        from = getActiveChild(from, s.activeBranchChildIds);
       }
     }
 
@@ -3045,14 +3546,47 @@ export const useGameStore = create<GameStore>((commit, get) => {
       if (!insertedMoves.has(moveKey(move))) {
         const child = createChildForMove(to, move, isSuicideLegal(s.settings.gameRules), rulesOf(s.settings.gameRules).ko);
         if (!child) break;
+        // The copy carries the move's comment, markup and drawings, as
+        // KaTrain's insert mode copies each node's properties; bare copies
+        // lost them, for good once the original line was deleted. Analysis
+        // stays behind: the inserted moves changed the position it was for.
+        child.properties = cloneNodeProperties(from.properties);
+        delete child.properties.KT;
+        delete child.properties.KA;
+        if (from.note) child.note = from.note;
+        const drawings = cloneDrawings(from.drawings);
+        if (drawings) child.drawings = drawings;
+        applySetupPropsToNode(child, child.properties);
         to = child;
         numCopied++;
       }
       from = getActiveChild(from, s.activeBranchChildIds);
     }
 
-    const notification = numCopied > 0 ? { message: `Insert mode ended: copied ${numCopied} moves.`, type: 'info' as const } : null;
+    /**
+     * Say so when the continuation did not come with it.
+     *
+     * Each copied move keeps its own colour, so an *odd* number of inserted
+     * moves puts the whole rest of the game on the wrong side: the first copy
+     * is refused, the loop breaks, and the inserted branch stops dead at the
+     * move just played. Measured before this: inserting one move copied 0 of 5
+     * continuation moves -- and reported nothing at all, because the message
+     * was written only for the success case, so the previous toast was left
+     * standing and the operation looked like it had worked. The moves are all
+     * still on the original branch, so nothing is lost; what was missing was
+     * any way to find out it had not worked.
+     */
+    const numMissing = numToCopy - numCopied;
+    const notification = numMissing > 0
+      ? {
+        message: numInserted % 2 === 1
+          ? `Insert mode ended: ${numInserted} inserted move${numInserted === 1 ? ' puts' : 's put'} the rest of the game on the other color, so ${numMissing} of ${numToCopy} continuation move${numToCopy === 1 ? '' : 's'} could not follow. Insert in pairs to carry the continuation with you.`
+          : `Insert mode ended: ${numMissing} of ${numToCopy} continuation move${numToCopy === 1 ? '' : 's'} could not be replayed after the insert.`,
+        type: 'error' as const,
+      }
+      : numCopied > 0 ? { message: `Insert mode ended: copied ${numCopied} moves.`, type: 'info' as const } : null;
     set((state) => ({
+      ...clearEditHistory(),
       isInsertMode: false,
       insertAfterNodeId: null,
       insertAnchorNodeId: null,
@@ -3088,7 +3622,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       return {
         ...history,
         treeVersion: state.treeVersion + 1,
-        notification: { message: 'Cleared markers, labels and drawings on this node.', type: 'info', undoable: true },
+        notification: { message: 'Cleared markers, labels, arrows and lines on this node.', type: 'info', undoable: true },
       };
     }),
 
@@ -3112,16 +3646,19 @@ export const useGameStore = create<GameStore>((commit, get) => {
     set((state) => {
       if (drawing.points.length < 2) return {};
       const node = state.currentNode;
-      node.drawings = [...(node.drawings ?? []), drawing];
-      return { treeVersion: state.treeVersion + 1 };
+      const history = pushEditHistory(state);
+      node.drawings = [...(node.drawings ?? []), ...cloneDrawings([drawing])!];
+      return { ...history, treeVersion: state.treeVersion + 1 };
     }),
 
   clearNodeDrawings: () =>
     set((state) => {
       const node = state.currentNode;
       if (!node.drawings?.length) return {};
+      const history = pushEditHistory(state);
       node.drawings = [];
       return {
+        ...history,
         treeVersion: state.treeVersion + 1,
         notification: { message: 'Cleared drawings on this node.', type: 'info', undoable: true },
       };
@@ -3163,6 +3700,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
 
       if (tool === 'label-alpha' || tool === 'label-number') {
+        // A drag that sweeps back over a label keeps it, as it keeps markers;
+        // relabelling renamed A and B to E and D on the way past.
+        if (options.paintOnly && (props.LB ?? []).some((value) => value.split(':', 1)[0] === coord)) return {};
         const history = pushEditHistory(state);
         removeMarkupCoord(props, coord);
         const label = tool === 'label-alpha' ? nextAlphaLabel(props) : nextNumberLabel(props);
@@ -3417,7 +3957,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
       komi: state.komi,
       blackToPlay: state.currentPlayer === 'black',
       koAllowed,
-      margin,
+      // Clamped here as well as in the dialog. The bounds module says it is
+      // shared by the UI and the store and it was not: the dialog was the only
+      // caller and the only place that held to them, so a margin arriving any
+      // other way went straight into `iMin - margin` arithmetic that has no
+      // range of its own.
+      margin: clampTsumegoFrameMargin(margin),
     });
     if (frame.black.length === 0 && frame.white.length === 0) {
       set({ notification: { message: 'This position leaves no room for a frame.', type: 'info' } });
@@ -3464,7 +4009,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
     // KaTrain folds the playout away when it finishes and puts you back where
     // you started, so a 200-move "what if" never buries the real game.
     selfplayStartNodeId = get().currentNode.id;
+    selfplayHeadNodeId = null;
     set({ isSelfplayToEnd: true });
+    // Notes the first node a step of the playout created, rather than walked into.
+    const noteCreated = (from: GameNode, existing: ReadonlySet<string>) => {
+      if (selfplayHeadNodeId) return;
+      const now = get().currentNode;
+      if (now.parent === from && !existing.has(now.id)) selfplayHeadNodeId = now.id;
+    };
 
     void (async () => {
       let safety = 0;
@@ -3500,15 +4052,22 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }
 
           const best = analysis.moves[0] ?? null;
-          if (!best || best.x < 0 || best.y < 0) s.passTurn();
-          else s.playMove(best.x, best.y);
+          const existing = new Set(s.currentNode.children.map((child) => child.id));
+          asEngineMove(() => {
+            if (!best || best.x < 0 || best.y < 0) s.passTurn();
+            else s.playMove(best.x, best.y);
+          });
+          noteCreated(s.currentNode, existing);
         } catch (err) {
           if (isAnalysisCanceled(err)) {
             await sleep(25);
             continue;
           }
           // Fall back to heuristics if engine fails.
+          const from = get().currentNode;
+          const existing = new Set(from.children.map((child) => child.id));
           makeHeuristicMove(get());
+          noteCreated(from, existing);
         }
 
         await sleep(50);
@@ -3543,6 +4102,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
         treeVersion: state.treeVersion + 1,
         notification: { message, type },
       }));
+      // The opponent waited while the position was built; its turn now.
+      get().scheduleAiMove(500);
     };
 
     void (async () => {
@@ -3604,7 +4165,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
             );
           }
 
-          s.playMove(chosen.x, chosen.y);
+          asEngineMove(() => s.playMove(chosen.x, chosen.y));
           const played = get().currentNode.gameState.moveHistory.length;
           set({ setupPositionProgress: { move: played, untilMove: target } });
           if (played === depth) {
@@ -3630,6 +4191,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
     setupPositionToken++;
     analysisQueue.cancelGroup('setup-position');
     const depth = get().currentNode.gameState.moveHistory.length;
+    const wasGenerating = !!get().setupPositionProgress;
     set((state) =>
       state.setupPositionProgress
         ? {
@@ -3638,6 +4200,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }
         : {}
     );
+    // Only a generation that was running held the opponent back; Stop with
+    // nothing generating must not start an AI move it was meant to cancel.
+    if (wasGenerating) get().scheduleAiMove(500);
   },
 
   stopSelfplayToEnd: () => {
@@ -3646,7 +4211,20 @@ export const useGameStore = create<GameStore>((commit, get) => {
     set((cur) => ({ isSelfplayToEnd: false, ...collapseFinishedSelfplay(cur) }));
   },
 
-  startQuickGameAnalysis: () => {
+  pendingGameReview: null,
+  requestQuickGameAnalysis: () => set({ pendingGameReview: { kind: 'quick', rootId: get().rootNode.id } }),
+  requestFastGameAnalysis: (options) => set({ pendingGameReview: { kind: 'fast', options, rootId: get().rootNode.id } }),
+  requestFullGameAnalysis: (options) => set({ pendingGameReview: { kind: 'full', options, rootId: get().rootNode.id } }),
+  chooseGameReviewMode: (reanalyzeExisting) => {
+    const request = get().pendingGameReview;
+    set({ pendingGameReview: null });
+    if (!request || reanalyzeExisting === null || request.rootId !== get().rootNode.id) return;
+    if (request.kind === 'quick') get().startQuickGameAnalysis({ reanalyzeExisting });
+    else if (request.kind === 'fast') get().startFastGameAnalysis({ ...request.options, reanalyzeExisting });
+    else get().startFullGameAnalysis({ ...request.options, reanalyzeExisting });
+  },
+
+  startQuickGameAnalysis: (opts) => {
     const token = ++gameAnalysisToken;
     analysisQueue.cancelGroup('game-analysis');
     // A review is the refresh, and nothing tells the client the model
@@ -3686,13 +4264,15 @@ export const useGameStore = create<GameStore>((commit, get) => {
         const chunk = nodes.slice(start, start + evalBatchSize);
         // Every position, not only the ones with no analysis: after a model
         // update an existing value is exactly what needs replacing.
-        const toEval = chunk;
+        const toEval = opts?.reanalyzeExisting === false ? chunk.filter(node => !node.analysis) : chunk;
+        const previousAnalyses = new Map(toEval.map(node => [node.id, node.analysis]));
         if (toEval.length > 0) {
           try {
             const s = get();
             const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
             const rules = s.settings.gameRules;
             const conservativePass = s.settings.katagoConservativePass;
+            const positionKeys = toEval.map((n) => nodeAnalysisPositionKey(n, rules));
             const evals = await analysisQueue.enqueue({
               id: `quick-game:${token}:${start}`,
               label: 'Quick game analysis',
@@ -3704,7 +4284,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
                 s.settings.katagoBackend,
                 rules,
                 conservativePass,
-                toEval.map((n) => nodeAnalysisPositionKey(n, rules))
+                positionKeys
               ),
               bypassCache: true,
               run: (ctx) => getEngineClient(get().settings).evaluateBatch({
@@ -3712,10 +4292,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
               backend: s.settings.katagoBackend,
               positions: toEval.map((n) => ({
                 board: n.gameState.board,
-                previousBoard: n.parent?.gameState.board,
-                previousPreviousBoard: n.parent?.parent?.gameState.board,
+                ...engineHistoryBoards(n),
                 currentPlayer: n.gameState.currentPlayer,
                 moveHistory: n.gameState.moveHistory,
+                repetitionHistory: repetitionHistoryForNode(n, rules),
                 komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, n.gameState.komi),
               })),
               rules,
@@ -3733,9 +4313,19 @@ export const useGameStore = create<GameStore>((commit, get) => {
               metaSynced = true;
             }
 
+            // The job waited in the queue, so the node may have moved on: a
+            // live search can have landed a deeper result (a raw eval replaced
+            // it), or a setup edit changed the position (the old one's eval
+            // was stored as the new one's). Keep the first; redo the second.
+            let positionChanged = false;
             for (let i = 0; i < toEval.length; i++) {
               const node = toEval[i]!;
               const evaled = evals[i]!;
+              if (node.analysis && node.analysis !== previousAnalyses.get(node.id)) continue;
+              if (nodeAnalysisPositionKey(node, rules) !== positionKeys[i]) {
+                positionChanged = true;
+                continue;
+              }
               const boardSize = getBoardSizeFromBoard(node.gameState.board);
               node.analysis = {
                 rootWinRate: evaled.rootWinRate,
@@ -3750,6 +4340,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
               };
               node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, 1);
             }
+            if (positionChanged && chunkRetries < 3) {
+              chunkRetries += 1;
+              start -= evalBatchSize;
+              continue;
+            }
+            chunkRetries = 0;
           } catch (err) {
             if (isAnalysisCanceled(err)) {
               // Queue-level preemption (e.g. live analysis while the user
@@ -3760,12 +4356,19 @@ export const useGameStore = create<GameStore>((commit, get) => {
                 chunkRetries += 1;
                 await sleep(25);
                 start -= evalBatchSize;
+                continue;
               }
-              continue;
+              // Retries count per chunk (reset on success); once spent, the
+              // chunk is reported as a failure rather than skipped silently,
+              // which ended the run short ("5 of 6") with a hole in the graph.
+              chunkRetries = 0;
+              failed += toEval.length;
+              lastFailure = 'Interrupted repeatedly by other analysis.';
+            } else {
+              chunkRetries = 0;
+              failed += toEval.length;
+              lastFailure = errorMessage(err);
             }
-            chunkRetries = 0;
-            failed += toEval.length;
-            lastFailure = errorMessage(err);
           }
         }
         if (token !== gameAnalysisToken) return;
@@ -3830,7 +4433,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
     void (async () => {
       const boardSize = getBoardSizeFromBoard(state.board);
-      const fastVisits = Math.max(16, Math.min(get().settings.katagoFastVisits, ENGINE_MAX_VISITS));
+      const fastVisits = clampAnalysisVisits(get().settings.katagoFastVisits);
       // Same budget rule as the other fast reads (`analyzeForPlayout`): the depth
       // setting decides when the search stops and Max Time is the user's own
       // ceiling on it. The old `min(600, Max Time * 0.15)` was a hidden clock —
@@ -3874,11 +4477,16 @@ export const useGameStore = create<GameStore>((commit, get) => {
         // it covers and overwrites whatever analysis is on the node, the way
         // KaTrain's game re-analysis does. Skipping meant a second review of
         // the same game did nothing at all.
+        if (opts?.reanalyzeExisting === false && node.analysis && nodeAnalysisVisitCount(node) >= fastVisits) {
+          markDone();
+          return;
+        }
+        const previousAnalysis = node.analysis;
         const s = get();
-        const parentBoard = node.parent?.gameState.board;
-        const grandparentBoard = node.parent?.parent?.gameState.board;
+        const { previousBoard: parentBoard, previousPreviousBoard: grandparentBoard } = engineHistoryBoards(node);
         const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
         const rules = s.settings.gameRules;
+        const positionKey = nodeAnalysisPositionKey(node, rules);
         const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
           id: `fast-game:${token}:${node.id}`,
           label: 'Fast game analysis',
@@ -3920,6 +4528,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           previousPreviousBoard: grandparentBoard,
           currentPlayer: node.gameState.currentPlayer,
           moveHistory: node.gameState.moveHistory,
+          repetitionHistory: repetitionHistoryForNode(node, rules),
           komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
           rules,
           topK,
@@ -3942,13 +4551,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }),
         });
         if (!stillOwnsRun()) return;
+        if (nodeAnalysisPositionKey(node, rules) !== positionKey) throw new AnalysisQueueStaleError('Position changed during review');
         if (!metaSynced) {
           const engineInfo = getEngineClient(get().settings).getEngineInfo();
           set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
           metaSynced = true;
         }
 
-        node.analysis = {
+        if (!(node.analysis && node.analysis !== previousAnalysis && analysisDepth(node.analysis) > (analysis.rootVisits ?? fastVisits))) node.analysis = {
           rootWinRate: analysis.rootWinRate,
           rootScoreLead: analysis.rootScoreLead,
           rootScoreSelfplay: analysis.rootScoreSelfplay,
@@ -4009,14 +4619,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
     analysisQueue.clearCache();
     const state = get();
 
-    const visits = Math.max(16, Math.min(Math.floor(opts.visits || 0), ENGINE_MAX_VISITS));
+    const visits = clampAnalysisVisits(opts.visits || 0);
     const moveRangeRaw = opts.moveRange ?? null;
     const moveRange: [number, number] | null = moveRangeRaw
       ? [Math.min(moveRangeRaw[0]!, moveRangeRaw[1]!), Math.max(moveRangeRaw[0]!, moveRangeRaw[1]!)]
       : null;
     const mistakesOnly = opts.mistakesOnly === true;
 
-    const thresholds = state.settings.trainerEvalThresholds?.length ? state.settings.trainerEvalThresholds : [12, 6, 3, 1.5, 0.5, 0];
+    const thresholds = state.settings.trainerEvalThresholds?.length ? state.settings.trainerEvalThresholds : DEFAULT_EVAL_THRESHOLDS;
     const mistakesThreshold =
       thresholds.length >= 4 ? thresholds[thresholds.length - 4]! : 3;
     const nodes = selectFullGameAnalysisNodes({
@@ -4063,9 +4673,13 @@ export const useGameStore = create<GameStore>((commit, get) => {
         // it covers and overwrites whatever analysis is on the node, the way
         // KaTrain's game re-analysis does. Skipping meant a second review of
         // the same game did nothing at all.
+        if (opts?.reanalyzeExisting === false && node.analysis && nodeAnalysisVisitCount(node) >= visits) {
+          markDone();
+          return;
+        }
+        const previousAnalysis = node.analysis;
         const s = get();
-        const parentBoard = node.parent?.gameState.board;
-        const grandparentBoard = node.parent?.parent?.gameState.board;
+        const { previousBoard: parentBoard, previousPreviousBoard: grandparentBoard } = engineHistoryBoards(node);
         const maxTimeMs = ENGINE_MAX_TIME_MS;
         const batchSize = Math.max(1, Math.min(s.settings.katagoBatchSize, 64));
         const boardSize = getBoardSizeFromBoard(node.gameState.board);
@@ -4074,6 +4688,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
         const analysisPvLen = Math.max(0, Math.min(s.settings.katagoAnalysisPvLen, 60));
         const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
         const rules = s.settings.gameRules;
+        const positionKey = nodeAnalysisPositionKey(node, rules);
 
         const analysis = await analysisQueue.enqueue<KataGoAnalysisPayload>({
           id: `full-game:${token}:${node.id}`,
@@ -4118,6 +4733,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           previousPreviousBoard: grandparentBoard,
           currentPlayer: node.gameState.currentPlayer,
           moveHistory: node.gameState.moveHistory,
+          repetitionHistory: repetitionHistoryForNode(node, rules),
           komi: komiWithHandicapBonus(s.rootNode.gameState.board, rules, node.gameState.komi),
           rules,
           topK,
@@ -4142,6 +4758,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }),
         });
         if (!stillOwnsRun()) return;
+        if (nodeAnalysisPositionKey(node, rules) !== positionKey) throw new AnalysisQueueStaleError('Position changed during review');
 
         if (!metaSynced) {
           const engineInfo = getEngineClient(get().settings).getEngineInfo();
@@ -4149,7 +4766,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           metaSynced = true;
         }
 
-        node.analysis = {
+        if (!(node.analysis && node.analysis !== previousAnalysis && analysisDepth(node.analysis) > (analysis.rootVisits ?? visits))) node.analysis = {
           rootWinRate: analysis.rootWinRate,
           rootScoreLead: analysis.rootScoreLead,
           rootScoreSelfplay: analysis.rootScoreSelfplay,
@@ -4220,7 +4837,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
         : state.settings.katagoVisits);
 
       // Check if current node already has analysis
-      const desiredVisits = Math.max(16, Math.min(requestedVisits, ENGINE_MAX_VISITS));
+      const desiredVisits = clampAnalysisVisits(requestedVisits);
       const avoidMoves = opts?.avoidMoves && opts.avoidMoves.length > 0 ? opts.avoidMoves : undefined;
       if (!opts?.force && !avoidMoves && state.currentNode.analysis) {
         const existing = state.currentNode.analysis;
@@ -4247,10 +4864,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
 
 		      const node = state.currentNode;
-		      const parentBoard = node.parent?.gameState.board;
-		      const grandparentBoard = node.parent?.parent?.gameState.board;
-          // A live read keeps a deeper result rather than replacing it; see the
-          // option's doc comment.
+		      const { previousBoard: parentBoard, previousPreviousBoard: grandparentBoard } = engineHistoryBoards(node);
           const keepDeeper = opts?.allowShallower !== true;
 		      const modelUrl = resolveModelUrlForFetch(state.settings.katagoModelUrl);
           const rules = state.settings.gameRules;
@@ -4392,7 +5006,13 @@ export const useGameStore = create<GameStore>((commit, get) => {
               includeTerritory: shouldUpdateTerritory,
               fallbackTerritory,
             });
-            node.analysis = analysisWithTerritory;
+            // A search that has not yet caught up with what the node already
+            // holds (a review's or a loaded file's result) leaves it alone:
+            // its first progress report replaced 500 visits with 12, and
+            // stepping on before it finished kept the 12.
+            const keepStored = keepDeeper && !!node.analysis && analysis.rootVisits < nodeAnalysisVisitCount(node);
+            if (keepStored && !isFinal) return;
+            if (!keepStored) node.analysis = analysisWithTerritory;
             if (isFinal) node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, visits);
 
             const latest = get();
@@ -4404,17 +5024,19 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
             if (!isCurrent && !isFinal && !shouldBumpTree) return;
 
-            const engineInfo = isFinal ? getEngineClient(get().settings).getEngineInfo() : null;
+            // A valid progress result proves the model is loaded. Waiting for
+            // completion left “Loading model” beside live evaluations for the
+            // entire first deep search, and hid the active fallback backend.
+            const engineInfo = getEngineClient(get().settings).getEngineInfo();
             set((s) => {
-              const next: Partial<GameStore> = {};
-              if (isCurrent) next.analysisData = analysisWithTerritory;
-              if (isFinal && engineInfo) {
-                next.engineStatus = 'ready';
-                next.engineError = null;
-                next.engineBackend = engineInfo.backend;
-                next.engineModelName = engineInfo.modelName;
-                next.engineBackendNote = engineInfo.backendNote;
-              }
+              const next: Partial<GameStore> = {
+                engineStatus: 'ready',
+                engineError: null,
+                engineBackend: engineInfo.backend,
+                engineModelName: engineInfo.modelName,
+                engineBackendNote: engineInfo.backendNote,
+              };
+              if (isCurrent) next.analysisData = node.analysis ?? analysisWithTerritory;
               if (shouldBumpTree) next.treeVersion = s.treeVersion + 1;
               if (isFinal) next.analysisCacheSize = getAnalysisCacheSize(s.rootNode);
               return next;
@@ -4437,7 +5059,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       // swaps the node's position in place, and a result for the old stones
       // must not be drawn on the new ones just because the node id matches.
       const requestPositionKey = nodeAnalysisPositionKey(node, rules);
-      const interactiveCacheKey = analysisCacheKey(
+      const interactiveContextKey = analysisCacheKey(
         'interactive',
         node.id,
         requestPositionKey,
@@ -4453,16 +5075,22 @@ export const useGameStore = create<GameStore>((commit, get) => {
         fillDameBeforePass,
         nnRandomize,
         conservativePass,
-        visits,
-        maxTimeMs,
         batchSize,
         maxChildren,
         reuseTree,
-        ownershipRefreshIntervalMs,
         state.settings.humanSlEnabled ? state.settings.humanSlProfile : '',
         state.settings.humanSlEnabled ? state.settings.humanSlModelUrl : '',
         avoidMoves ? avoidMoves.map((m) => `${m.x},${m.y}`).sort().join(' ') : ''
       );
+      const interactiveCacheKey = analysisCacheKey(interactiveContextKey, visits, maxTimeMs, ownershipRefreshIntervalMs);
+      const requestKey = analysisCacheKey(interactiveCacheKey, reportDuringSearchEveryMs);
+      const current = runningInteractiveAnalysis;
+      if (current && (opts?.ifIdle
+        ? current.contextKey === interactiveContextKey
+        : !opts?.force && current.requestKey === requestKey)
+        && analysisQueue.hasLiveJob(current.id, current.cacheKey)) {
+        return current.promise;
+      }
       // "Loading" is about the model, not about a request being in flight.
       // Flagging it on every live-analysis pass left the pill reading
       // "Loading model" — and the notes panel "Loading engine..." — for the
@@ -4473,9 +5101,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
         ? { engineError: null }
         : { engineStatus: 'loading', engineError: null }));
 
-	      return analysisQueue
+      const id = `interactive:${node.id}`;
+      const promise: Promise<void> = analysisQueue
 	        .enqueue<KataGoAnalysisPayload>({
-          id: `interactive:${node.id}`,
+          id,
           label: 'Live analysis',
           group: 'interactive',
           priority: ANALYSIS_QUEUE_PRIORITY.interactive,
@@ -4499,6 +5128,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 	          previousPreviousBoard: grandparentBoard,
 	          currentPlayer: state.currentPlayer,
 	          moveHistory: state.moveHistory,
+	          repetitionHistory: repetitionHistoryForNode(node, rules),
 	          komi: komiWithHandicapBonus(state.rootNode.gameState.board, rules, state.komi),
             rules,
             regionOfInterest: state.regionOfInterest,
@@ -4560,7 +5190,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
             const pointsLost = (move.player === 'black' ? 1 : -1) * (parentScore - childScore);
             const thresholds = latestState.settings.trainerEvalThresholds?.length
               ? latestState.settings.trainerEvalThresholds
-              : ([12, 6, 3, 1.5, 0.5, 0] as const);
+              : DEFAULT_EVAL_THRESHOLDS;
 
             let i = 0;
             while (i < thresholds.length - 1 && pointsLost < thresholds[i]!) i++;
@@ -4584,13 +5214,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
             if (!undo) return;
 
-            const moveLabel =
-              move.x < 0 || move.y < 0
-                ? 'Pass'
-                : `${String.fromCharCode(65 + (move.x >= 8 ? move.x + 1 : move.x))}${boardSize - move.y}`;
+            const moveLabel = formatBoardMoveLabel(move, boardSize);
 
             const notification = {
-              message: `Teaching undo: ${moveLabel} (${pointsLost.toFixed(1)} points lost)`,
+              message: `Teaching undo: ${moveLabel} (${pointsLost.toFixed(1)} points lost).`,
               type: 'info' as const,
             };
             set({ notification });
@@ -4608,7 +5235,13 @@ export const useGameStore = create<GameStore>((commit, get) => {
             engineError: msg,
             notification,
           });
+        }).finally(() => {
+          // A canceled request can settle after its replacement has started.
+          if (runningInteractiveAnalysis === request) runningInteractiveAnalysis = null;
         });
+      const request = { id, contextKey: interactiveContextKey, cacheKey: interactiveCacheKey, requestKey, promise };
+      runningInteractiveAnalysis = request;
+      return promise;
   },
 
   updateSettings: (newSettings) =>
@@ -4655,6 +5288,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       // Switching between the local worker and a remote server changes how many
       // analyses may be in flight; see the queue's setConcurrency.
       analysisQueue.setConcurrency(engineAnalysisWindow(nextSettings));
+      analysisRevision++;
 
       continuousToken++;
       selfplayToken++;
@@ -4662,12 +5296,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       analysisQueue.cancelWhere(() => true, 'Analysis settings changed');
       analysisQueue.clearCache();
 
-      const clearAnalysis = (node: GameNode) => {
-        node.analysis = null;
-        node.analysisVisitsRequested = 0;
-        for (const child of node.children) clearAnalysis(child);
-      };
-      clearAnalysis(state.rootNode);
+      clearAnalysisInSubtree(state.rootNode);
 
       const rulesChanged = newSettings.gameRules !== undefined && newSettings.gameRules !== state.settings.gameRules;
       const history = rulesChanged ? pushEditHistory(state) : {};
@@ -4826,8 +5455,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
       };
       syncRootSetupPropertiesFromBoard(root.properties, nextBoard, rootBoardSize, nextHandicap);
       clearAnalysisInSubtree(root);
-      rebuildDescendants(root, isSuicideLegal(get().settings.gameRules));
+      // Moves on a new handicap point cannot be replayed and go, with their
+      // lines. That happened silently, the cursor dropping to the root, where
+      // every other edit that prunes says so and offers Undo.
+      const pruned = rebuildDescendants(root, isSuicideLegal(get().settings.gameRules));
       const currentNode = findNodeById(root, state.currentNode.id) ?? root;
+      const handicapLabel = nextHandicap > 0 ? `Handicap set to ${nextHandicap}.` : 'Handicap removed.';
 
       return {
         currentNode,
@@ -4847,6 +5480,15 @@ export const useGameStore = create<GameStore>((commit, get) => {
         engineError: null,
         ...history,
         treeVersion: state.treeVersion + 1,
+        ...(pruned > 0
+          ? {
+            notification: {
+              message: `${handicapLabel} ${pruned} ${pruned === 1 ? 'node' : 'nodes'} no longer fit the stones and ${pruned === 1 ? 'was' : 'were'} removed.`,
+              type: 'info' as const,
+              undoable: true,
+            },
+          }
+          : {}),
       };
     });
   },
@@ -4904,14 +5546,32 @@ export const useGameStore = create<GameStore>((commit, get) => {
     });
   },
 
+  // Note edits are undoable edits. Unrecorded, "Undo edit" restored a tree
+  // snapshot from before them and took the note with it.
   setCurrentNodeNote: (note) =>
     set((state) => {
+      if ((state.currentNode.note ?? '') === note) return {};
+      const history = pushEditHistory(state);
       state.currentNode.note = note;
-      return { treeVersion: state.treeVersion + 1 };
+      return { ...history, treeVersion: state.treeVersion + 1 };
+    }),
+
+  setNodeNote: (nodeId, note) =>
+    set((state) => {
+      const node = findNodeById(state.rootNode, nodeId);
+      // The node can be gone -- a branch deleted while its note was open.
+      if (!node || (node.note ?? '') === note) return {};
+      const history = pushEditHistory(state);
+      node.note = note;
+      return { ...history, treeVersion: state.treeVersion + 1 };
     }),
 
   playMove: (x: number, y: number, isLoad = false) => {
     const state = get();
+    if (!isLoad && isAwaitingAiReply(state)) {
+      refuseWhileAwaitingAi(set, get);
+      return;
+    }
 
     // Check if we are loading or playing normally.
     // First, check if move exists in children (Navigation)
@@ -4933,10 +5593,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
        lastPlayedNodeId = existingChild.id;
        const after = get();
        if (after.isAiPlaying && after.currentPlayer === after.aiColor) {
-         setTimeout(() => get().makeAiMove(), 500);
+         get().scheduleAiMove(500);
        }
        if (after.isAnalysisMode && !after.isSelfplayToEnd) {
-         setTimeout(() => void get().runAnalysis(), 500);
+         scheduleAnalysis(() => void get().runAnalysis({ ifIdle: true }), 500);
        }
        return;
     }
@@ -4944,7 +5604,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
     // New Move Logic
     // Validate against the same simple-ko/no-suicide rules used by the engine presets exposed in the UI.
     if (
-      !isValidMove(state.board, x, y, state.currentPlayer, state.currentNode.parent?.gameState.board, {
+      !isValidMove(state.board, x, y, state.currentPlayer, koReferenceBoard(state.currentNode), {
         multiStoneSuicideLegal: isSuicideLegal(state.settings.gameRules),
       })
     )
@@ -4968,8 +5628,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
     }
 
-    // Simple ko: the position two plies back must not come straight back.
-    if (state.currentNode.parent && boardsEqual(newBoard, state.currentNode.parent.gameState.board)) {
+    // Simple ko: the position before the last move must not come straight back.
+    const koBoard = koReferenceBoard(state.currentNode);
+    if (koBoard && boardsEqual(newBoard, koBoard)) {
         return;
     }
 
@@ -5020,6 +5681,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
     state.currentNode.children.push(newNode);
 
     set({
+      // "Undo edit" restores a whole-tree snapshot, so one taken before this
+      // move would take the move away with the edit -- and a later edit would
+      // clear the redo that could bring it back. Playing on starts afresh.
+      ...clearEditHistory(),
       currentNode: newNode,
       board: newGameState.board,
       currentPlayer: newGameState.currentPlayer,
@@ -5034,13 +5699,20 @@ export const useGameStore = create<GameStore>((commit, get) => {
     if (!isLoad) {
       const newState = get();
       if (newState.isAiPlaying && newState.currentPlayer === newState.aiColor) {
-        setTimeout(() => get().makeAiMove(), 500);
+        get().scheduleAiMove(500);
       }
 	      if (newState.isAnalysisMode && !newState.isSelfplayToEnd) {
-	          setTimeout(() => void get().runAnalysis(), 500);
+	          scheduleAnalysis(() => void get().runAnalysis({ ifIdle: true }), 500);
 	      }
 	    }
 	  },
+
+  scheduleAiMove: (delayMs = 0) => {
+    const state = get();
+    if (!state.isAiPlaying || state.currentPlayer !== state.aiColor) return;
+    aiMoveWorkIsOnDemand = false;
+    scheduleAiMoveTask(() => get().makeAiMove(), delayMs);
+  },
 
 	  makeAiMove: (opts) => {
 	      const force = opts?.force ?? false;
@@ -5050,14 +5722,29 @@ export const useGameStore = create<GameStore>((commit, get) => {
 	      if (!force) {
 	        if (!state.isAiPlaying || !state.aiColor) return;
 	        if (state.currentPlayer !== state.aiColor) return;
+	        // While the engine is playing both sides -- generating a set-up
+	        // position, or playing to the end -- the opponent waits: it answered
+	        // every move the generator made, so half the position came from a
+	        // full-strength opponent instead of the score-steered generator.
+	        if (state.setupPositionProgress || state.isSelfplayToEnd) return;
 	      }
 
 	      const node = state.currentNode;
 	      const nodeId = node.id;
 	      const playerAtStart = state.currentPlayer;
+        cancelAiMoveWork();
+        aiMoveWorkIsOnDemand = force && !(state.isAiPlaying && state.aiColor === playerAtStart);
+        const generation = aiMoveGeneration;
+        const position = node.gameState;
+        const revision = analysisRevision;
+        const ownsPosition = (): boolean => {
+          const latest = get();
+          return generation === aiMoveGeneration && latest.currentNode.id === nodeId
+            && latest.currentNode.gameState === position && latest.currentPlayer === playerAtStart
+            && (force || (latest.isAiPlaying && latest.aiColor === playerAtStart));
+        };
 
-	      const parentBoard = node.parent?.gameState.board;
-	      const grandparentBoard = node.parent?.parent?.gameState.board;
+	      const { previousBoard: parentBoard, previousPreviousBoard: grandparentBoard } = engineHistoryBoards(node);
 	      const modelUrl = resolveModelUrlForFetch(state.settings.katagoModelUrl);
         const rules = state.settings.gameRules;
         const analysisPvLen = state.settings.katagoAnalysisPvLen;
@@ -5085,7 +5772,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           state.settings.aiStrategy === 'default'
             ? state.settings.katagoTopK
             : Math.max(state.settings.katagoTopK, 30);
-        const visits = Math.max(16, Math.min(state.settings.katagoVisits, ENGINE_MAX_VISITS));
+        const visits = clampAnalysisVisits(state.settings.katagoVisits);
         const maxTimeMs = Math.max(25, Math.min(state.settings.katagoMaxTimeMs, ENGINE_MAX_TIME_MS));
         const batchSize = state.settings.katagoBatchSize;
         const maxChildren = state.settings.katagoMaxChildren;
@@ -5145,6 +5832,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 	          previousPreviousBoard: grandparentBoard,
 	          currentPlayer: state.currentPlayer,
 	          moveHistory: state.moveHistory,
+	          repetitionHistory: repetitionHistoryForNode(node, rules),
 	          komi: komiWithHandicapBonus(state.rootNode.gameState.board, rules, state.komi),
             rules,
 	          topK,
@@ -5175,13 +5863,22 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }),
         })
         .then((analysis) => {
+          if (!ownsPosition()) return;
+          // Settings changed under the search (model, rules, visits): its
+          // answer is for the old ones. Dropped, it left the AI to move with
+          // nothing searching; ask again under the new ones.
+          if (revision !== analysisRevision) {
+            retryScheduled = true;
+            scheduleAiMoveTask(() => {
+              if (ownsPosition()) get().makeAiMove(force ? { force: true } : undefined);
+              else set({ isAiThinking: false });
+            }, 100, () => set({ isAiThinking: false }));
+            return;
+          }
           const engineInfo = getEngineClient(get().settings).getEngineInfo();
           set({ engineBackend: engineInfo.backend, engineModelName: engineInfo.modelName, engineBackendNote: engineInfo.backendNote });
 
           const latest = get();
-          if (latest.currentNode.id !== nodeId) return;
-          if (latest.currentPlayer !== playerAtStart) return;
-          if (!force && (!latest.isAiPlaying || latest.aiColor !== playerAtStart)) return;
           const settings = latest.settings;
           const boardSize = getBoardSizeFromBoard(latest.board);
 
@@ -5207,8 +5904,15 @@ export const useGameStore = create<GameStore>((commit, get) => {
             ownershipMode: aiOwnershipMode,
           };
 
-          // Cache analysis on the node we analyzed.
-          node.analysis = analysisWithTerritory;
+          // Cache analysis on the node we analyzed -- unless the search was
+          // biased for choosing a move (Handicap's playout-doubling advantage,
+          // Human's root exploration), which is not the position's evaluation:
+          // stored, it became the player's points lost and graph, and was
+          // never re-read. Nor over a deeper result already there.
+          const aiSearchIsBiased = handicapPda !== 0 || state.settings.aiStrategy === 'human';
+          if (!aiSearchIsBiased && !(node.analysis && analysis.rootVisits < nodeAnalysisVisitCount(node))) {
+            node.analysis = analysisWithTerritory;
+          }
 
           type PolicyMove = { prob: number; x: number; y: number; isPass: boolean };
           const policyRanking = (policy: FloatArray): PolicyMove[] => {
@@ -5262,12 +5966,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
             const best =
               candidates.find((m) => m.order === 0) ?? candidates[0] ?? null;
-            const bestLabel =
-              !best
-                ? 'pass'
-                : best.x < 0 || best.y < 0
-                  ? 'pass'
-                  : `${String.fromCharCode(65 + (best.x >= 8 ? best.x + 1 : best.x))}${boardSize - best.y}`;
+            const bestLabel = best ? formatGtpMove(best.x, best.y, boardSize) : 'pass';
 
             if (strategy === 'default') {
               if (!best) return null;
@@ -5289,7 +5988,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
                   playerToMove: playerAtStart,
                   turnNumber: latest.moveHistory.length,
                   params: humanBotPresets[settings.humanSlBotStyle],
-                  isLegal: (x, y) => isValidMove(latest.board, x, y, playerAtStart, parentBoard),
+                  isLegal: (x, y) => isValidMove(latest.board, x, y, playerAtStart, koReferenceBoard(node)),
                 });
                 if (pick) {
                   return {
@@ -5333,18 +6032,22 @@ export const useGameStore = create<GameStore>((commit, get) => {
                 return {
                   x: best.x,
                   y: best.y,
-                  thoughts: `AntiMirror: mirror detected, but no centre move was affordable — played ${bestLabel}.`,
+                  thoughts: `AntiMirror: mirror detected, but no center move was affordable — played ${bestLabel}.`,
                 };
               }
-              const label =
-                choice.move.x < 0 || choice.move.y < 0
-                  ? 'pass'
-                  : `${String.fromCharCode(65 + (choice.move.x >= 8 ? choice.move.x + 1 : choice.move.x))}${boardSize - choice.move.y}`;
+              const label = formatGtpMove(choice.move.x, choice.move.y, boardSize);
               return {
                 x: choice.move.x,
                 y: choice.move.y,
                 thoughts: `AntiMirror: mirror detected, ${choice.reason} with ${label} (pointsLost ${choice.move.pointsLost.toFixed(1)}).`,
               };
+            }
+
+            // KaTrain passes before applying these strategies when the top
+            // move is a pass -- "don't play suicidal to balance score". Jigo
+            // otherwise filled its own territory to close the gap at the end.
+            if ((strategy === 'scoreloss' || strategy === 'jigo') && best && (best.x < 0 || best.y < 0)) {
+              return { x: best.x, y: best.y, thoughts: `${strategy === 'jigo' ? 'Jigo' : 'ScoreLoss'}: top move is pass, so passing regardless of strategy.` };
             }
 
             if (strategy === 'scoreloss') {
@@ -5356,10 +6059,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
               }));
               const picked = pickOneWeighted(weighted);
               if (!picked) return null;
-              const label =
-                picked.x < 0 || picked.y < 0
-                  ? 'pass'
-                  : `${String.fromCharCode(65 + (picked.x >= 8 ? picked.x + 1 : picked.x))}${boardSize - picked.y}`;
+              const label = formatGtpMove(picked.x, picked.y, boardSize);
               return {
                 x: picked.x,
                 y: picked.y,
@@ -5381,10 +6081,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
                   bestCand = m;
                 }
               }
-              const label =
-                bestCand.x < 0 || bestCand.y < 0
-                  ? 'pass'
-                  : `${String.fromCharCode(65 + (bestCand.x >= 8 ? bestCand.x + 1 : bestCand.x))}${boardSize - bestCand.y}`;
+              const label = formatGtpMove(bestCand.x, bestCand.y, boardSize);
               return {
                 x: bestCand.x,
                 y: bestCand.y,
@@ -5403,13 +6100,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
               const nextPlayer = playerAtStart;
               const lastMovePlayer = latest.currentNode.move?.player ?? null;
-
-              const xyToGtp = (x: number, y: number): string => {
-                if (x < 0 || y < 0) return 'pass';
-                const col = x >= 8 ? x + 1 : x;
-                const letter = String.fromCharCode(65 + col);
-                return `${letter}${boardSize - y}`;
-              };
 
               const inBounds = (x: number, y: number) => x >= 0 && x < boardSize && y >= 0 && y < boardSize;
 
@@ -5533,7 +6223,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
               const top5 = scored.slice(0, 5).map((s) => {
                 const mv = s.move;
-                const label = xyToGtp(mv.x, mv.y);
+                const label = formatGtpMove(mv.x, mv.y, boardSize);
                 return `${label} (${mv.pointsLost.toFixed(1)} pt lost, ${mv.visits} visits, ${s.ownSettled.toFixed(1)} settledness, ${s.oppSettled.toFixed(1)} opponent settledness${s.attach ? ', attachment' : ''}${s.tenuki ? ', tenuki' : ''})`;
               });
 
@@ -5733,9 +6423,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
                 }
 
                 const w = Math.pow(1 / lineWeight, exponent);
+                // Ranked by policy times the style's line weight, as KaTrain's
+                // generate_influence_territory_weights does; by raw policy the
+                // style only shaped the sample, and with few moves sampled an
+                // influence bot happily played the 1-1 point.
+                const weight = Number.isFinite(w) ? Math.max(0, w) : 0;
                 return {
-                  score: m.prob,
-                  weight: Number.isFinite(w) ? Math.max(0, w) : 0,
+                  score: m.prob * weight,
+                  weight,
                   x: m.x,
                   y: m.y,
                 };
@@ -5859,27 +6554,39 @@ export const useGameStore = create<GameStore>((commit, get) => {
             makeHeuristicMove(get());
             return;
           }
-          if (chosen.x === -1 || chosen.y === -1) get().passTurn();
-          else get().playMove(chosen.x, chosen.y);
+          asEngineMove(() => {
+            if (chosen.x === -1 || chosen.y === -1) get().passTurn();
+            else get().playMove(chosen.x, chosen.y);
+          });
 
           const after = get();
           after.currentNode.aiThoughts = chosen.thoughts;
           set((s) => ({ treeVersion: s.treeVersion + 1 }));
         })
         .catch((err) => {
+          if (!ownsPosition()) return;
           if (isAnalysisCanceled(err)) {
-            const latest = get();
-            if (latest.currentNode.id !== nodeId) return;
-            if (latest.currentPlayer !== playerAtStart) return;
-            if (!force && (!latest.isAiPlaying || latest.aiColor !== playerAtStart)) return;
+            // Preemption and model changes may need a fresh search, but only
+            // while this caller still owns this position. Stop and replacement
+            // requests invalidate ownership before the rejection arrives.
             retryScheduled = true;
-            setTimeout(() => latest.makeAiMove(force ? { force: true } : undefined), 100);
+            scheduleAiMoveTask(() => {
+              if (ownsPosition()) get().makeAiMove(force ? { force: true } : undefined);
+              else set({ isAiThinking: false });
+            }, 100, () => set({ isAiThinking: false }));
             return;
           }
-          makeHeuristicMove(get());
+          if (revision === analysisRevision) makeHeuristicMove(get());
+          else {
+            retryScheduled = true;
+            scheduleAiMoveTask(() => {
+              if (ownsPosition()) get().makeAiMove(force ? { force: true } : undefined);
+              else set({ isAiThinking: false });
+            }, 100, () => set({ isAiThinking: false }));
+          }
         })
         .finally(() => {
-          if (!retryScheduled) set({ isAiThinking: false });
+          if (generation === aiMoveGeneration && !retryScheduled) set({ isAiThinking: false });
         });
   },
 
@@ -6097,7 +6804,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }
           node = parent;
       }
-      return { ...history, treeVersion: state.treeVersion + 1 };
+      return { ...history, ...repathPins(state.rootNode, state.pinnedVariations), treeVersion: state.treeVersion + 1 };
   }),
 
   // KaTrain's 'c': fold the run of moves back to the previous branch point away,
@@ -6148,7 +6855,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
       return { notification: { message: 'Nothing to add from this variation.', type: 'info' as const } };
     }
     const boardSize = normalizeBoardSize(state.board.length, DEFAULT_BOARD_SIZE);
-    const history = pushEditHistory(state);
+    // Snapshot now, record only if a node is added: recording up front wiped
+    // redo for a line that was unplayable or already in the tree.
+    const snapshot = captureEditHistory(state);
 
     let parent = state.currentNode;
     let created = 0;
@@ -6179,7 +6888,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
     }
     const total = created + reused;
     return {
-      ...history,
+      ...(created > 0 ? commitEditHistory(snapshot) : {}),
       activeBranchChildIds,
       treeVersion: state.treeVersion + 1,
       notification: {
@@ -6219,6 +6928,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
       return {
           ...history,
+          ...repathPins(state.rootNode, state.pinnedVariations),
           treeVersion: state.treeVersion + 1,
           notification: {
               message: direction === 'left' ? 'Moved variation earlier.' : 'Moved variation later.',
@@ -6258,6 +6968,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
       return {
           ...history,
+          ...repathPins(state.rootNode, state.pinnedVariations),
           currentNode: parent,
           board: parent.gameState.board,
           currentPlayer: parent.gameState.currentPlayer,
@@ -6295,6 +7006,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
       return {
           ...history,
+          ...repathPins(state.rootNode, state.pinnedVariations),
           activeBranchChildIds: rememberActiveBranchPath(state.activeBranchChildIds, state.currentNode),
           notification: {
               message: `Kept current line and deleted ${removedNodes} other branch node${removedNodes === 1 ? '' : 's'}.`,
@@ -6321,8 +7033,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
           if (!previous) return editHistoryCounts();
           editRedoStack.push(current);
           if (editRedoStack.length > EDIT_HISTORY_LIMIT) editRedoStack.shift();
+          const restored = restoreEditHistory(previous, state);
           return {
-              ...restoreEditHistory(previous, state),
+              ...restored,
+              ...repathPins(restored.rootNode, state.pinnedVariations),
               ...editHistoryCounts(),
               notification: { message: 'Undid edit.', type: 'success' },
           };
@@ -6346,8 +7060,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
           if (!next) return editHistoryCounts();
           editUndoStack.push(current);
           if (editUndoStack.length > EDIT_HISTORY_LIMIT) editUndoStack.shift();
+          const restored = restoreEditHistory(next, state);
           return {
-              ...restoreEditHistory(next, state),
+              ...restored,
+              ...repathPins(restored.rootNode, state.pinnedVariations),
               ...editHistoryCounts(),
               notification: { message: 'Redid edit.', type: 'success' },
           };
@@ -6432,19 +7148,24 @@ export const useGameStore = create<GameStore>((commit, get) => {
     }
     const path = getNodePath(node);
     const moveNumber = getCurrentLineMoveNumber(node);
-    const coord = node.move && node.move.x >= 0 && node.move.y >= 0
-      ? `${String.fromCharCode(65 + (node.move.x >= 8 ? node.move.x + 1 : node.move.x))}${node.gameState.board.length - node.move.y}`
-      : node.move ? 'pass' : 'setup';
+    const coord = node.move
+      ? formatGtpMove(node.move.x, node.move.y, node.gameState.board.length)
+      : 'setup';
     const side = node.move ? (node.move.player === 'black' ? 'B' : 'W') : '';
     const label = `Move ${moveNumber}${side ? ` ${side} ${coord}` : ''}`;
     const pin: PinnedVariation = {
-      id: `pin_${moveNumber}_${path.join('-')}`,
+      // The path alone is not an identity: reordering variations moves
+      // another line onto a pinned one's old path, and pinning it then read
+      // "already pinned".
+      id: `pin_${moveNumber}_${path.join('-')}_${node.id}`,
       label,
       path,
       moveNumber,
       createdAt: state.treeVersion,
+      nodeId: node.id,
     };
-    if (state.pinnedVariations.some((p) => p.id === pin.id)) {
+    const pathKey = path.join('-');
+    if (state.pinnedVariations.some((p) => (p.nodeId ? p.nodeId === node.id : p.path.join('-') === pathKey))) {
       return { notification: { message: 'This line is already pinned.', type: 'info' } };
     }
     // Assigning the WKID root property makes pins recoverable after reloads;
@@ -6463,7 +7184,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
     const state = get();
     const pin = state.pinnedVariations.find((p) => p.id === id);
     if (!pin) return;
-    const node = resolveNodePath(state.rootNode, pin.path);
+    const node = resolvePinnedVariation(state.rootNode, pin);
     if (!node) {
       set({ notification: { message: 'That pinned line no longer exists in this game.', type: 'error' } });
       return;
@@ -6537,7 +7258,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       set({ mistakeDrill: null });
       return;
     }
-    const verdict = gradeDrillGuess(parent, { x, y }, mistake.pointsLost);
+    const verdict = gradeDrillGuess(parent, { x, y }, mistake.pointsLost, mistake.played);
     if (!verdict) return;
     const solvedIds = isDrillSolved(verdict.kind) && !drill.solvedIds.includes(mistake.nodeId)
       ? [...drill.solvedIds, mistake.nodeId]
@@ -6676,6 +7397,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
   )),
 
   startNewGame: ({ komi, rules, boardSize, handicap }) => {
+    cancelAiMoveWork();
     const state = get();
     // A blindfold session belongs to the game it was started in, and its loop
     // holds the microphone open until it is stopped.
@@ -6759,6 +7481,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
   },
 
   resetGame: () => {
+    cancelAiMoveWork();
     const state = get();
     // A blindfold session belongs to the game it was started in, and its loop
     // holds the microphone open until it is stopped.
@@ -6838,7 +7561,17 @@ export const useGameStore = create<GameStore>((commit, get) => {
     const firstMovePlayer = sgf.moves[0]?.player;
     const ha = parseInt(sgfProps?.['HA']?.[0] ?? '0', 10);
     const safeHandicap = Number.isFinite(ha) ? Math.max(0, Math.min(ha, getMaxHandicap(boardSize))) : 0;
-    if (safeHandicap > 0 && !hasExplicitRootSetup) {
+    // Only a declared handicap of two or more places stones, and only when the
+    // file does not place them itself -- in the root or, as Tygem and other
+    // servers write it, in the first node after it. HA[1] put a stone on Q16,
+    // the commonest first move, so B[pd] met an occupied point and the whole
+    // game was dropped; stones in the first node were placed twice over, and
+    // White's first move usually landed on one of them. KaTrain applies the
+    // same two conditions.
+    const firstChildProps = sgf.tree?.children?.[0]?.props;
+    const firstChildPlacesStones = !!(firstChildProps?.['AB']?.length || firstChildProps?.['AW']?.length);
+    const placesHandicapStones = safeHandicap >= 2 && !hasExplicitRootSetup && !firstChildPlacesStones;
+    if (placesHandicapStones) {
       currentBoard = cloneBoard(currentBoard);
       applyHandicapStones(currentBoard, boardSize, safeHandicap);
     }
@@ -6858,12 +7591,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
     newRoot.properties = { RU: [rulesToSgfRu(rules)], SZ: [String(boardSize)] };
     if (safeHandicap > 0) {
       newRoot.properties.HA = [String(safeHandicap)];
-      newRoot.properties.PL = ['W'];
-      if (!hasExplicitRootSetup) syncRootSetupPropertiesFromBoard(newRoot.properties, rootState.board, boardSize, safeHandicap);
+      if (safeHandicap >= 2 && !firstChildPlacesStones) newRoot.properties.PL = ['W'];
+      if (placesHandicapStones) syncRootSetupPropertiesFromBoard(newRoot.properties, rootState.board, boardSize, safeHandicap);
     }
 
     const applyKtAnalysis = (node: GameNode, kt: string[]) => {
-      const decoded = decodeKaTrainKt({ kt });
+      // The ownership and policy buffers are sized by the board: read as
+      // 19x19, a 9x9 game's came back empty and the next save wrote zeros.
+      const decoded = decodeKaTrainKt({ kt, boardSize });
       if (!decoded) return;
       const analysis = kaTrainAnalysisToAnalysisResult({
         analysis: decoded,
@@ -6925,6 +7660,47 @@ export const useGameStore = create<GameStore>((commit, get) => {
       return null;
     };
 
+    /**
+     * `applyMoveToNode` returns null for a move this ruleset will not play --
+     * an occupied point, a suicide, or a repeat of the grandparent position --
+     * and the builder then skips that node *and everything under it*, because
+     * there is no parent to hang the rest of the line on. A file whose eighth
+     * move is illegal therefore loads as a seven-move game, which used to
+     * happen in complete silence: no throw, no toast, just a short game. The
+     * counts here are what turns that into a sentence.
+     */
+    /**
+     * Why a move could not be replayed. Three of these four are illegal under
+     * every ruleset this app offers; only `suicide-multi` depends on which one
+     * is in force, and it is the only case where naming the ruleset tells the
+     * reader something they can act on.
+     */
+    type RejectReason = 'occupied' | 'ko' | 'suicide-single' | 'suicide-multi';
+    let lastRejectReason: RejectReason = 'occupied';
+    const rejected = { moves: 0, lines: 0, firstLabel: '', firstReason: 'occupied' as RejectReason };
+    const countMovesIn = (node: NonNullable<ParsedSgf['tree']>): number => {
+      let total = 0;
+      const stack = [node];
+      while (stack.length > 0) {
+        const next = stack.pop()!;
+        if (extractMove(next.props)) total += 1;
+        for (const child of next.children) stack.push(child);
+      }
+      return total;
+    };
+    const noteRejectedMove = (parent: GameNode, move: Move, movesLost: number) => {
+      rejected.moves += Math.max(1, movesLost);
+      rejected.lines += 1;
+      if (rejected.firstLabel) return;
+      // The parent chain includes the root, so its length is the move number
+      // the rejected move would have had.
+      let moveNumber = 0;
+      for (let node: GameNode | null = parent; node; node = node.parent) moveNumber += 1;
+      const player = move.player === 'black' ? 'Black' : 'White';
+      rejected.firstLabel = `Move ${moveNumber} (${player} ${formatBoardMoveLabel(move, boardSize)})`;
+      rejected.firstReason = lastRejectReason;
+    };
+
     const applyMoveToNode = (parent: GameNode, move: Move): GameNode | null => {
       const parentState = parent.gameState;
       const nextPlayer: Player = move.player === 'black' ? 'white' : 'black';
@@ -6942,7 +7718,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
         return createNode(parent, passMove, newGameState);
       }
 
-      if (parentState.board[move.y]?.[move.x] !== null) return null;
+      if (parentState.board[move.y]?.[move.x] !== null) {
+        lastRejectReason = 'occupied';
+        return null;
+      }
 
 	      const tentativeBoard = parentState.board.map((row) => [...row]);
 	      tentativeBoard[move.y]![move.x] = move.player;
@@ -6953,12 +7732,17 @@ export const useGameStore = create<GameStore>((commit, get) => {
       if (captured.length === 0) {
         const { liberties, group } = getLiberties(newBoard, move.x, move.y);
         if (liberties === 0) {
-          if (!isSuicideLegal(rules) || group.length <= 1) return null;
+          if (!isSuicideLegal(rules) || group.length <= 1) {
+            lastRejectReason = group.length <= 1 ? 'suicide-single' : 'suicide-multi';
+            return null;
+          }
           selfCaptured = applySelfCaptureInPlace(newBoard, move.x, move.y).length;
         }
       }
 
-      if (parent.parent && boardsEqual(newBoard, parent.parent.gameState.board)) {
+      const koBoard = koReferenceBoard(parent);
+      if (koBoard && boardsEqual(newBoard, koBoard)) {
+        lastRejectReason = 'ko';
         return null;
       }
 
@@ -6981,6 +7765,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
     if (sgf.tree) {
       const rootPropsCopy = cloneProps(sgf.tree.props);
+      const rootMoveProps: Record<string, string[]> = {};
+      if (extractMove(sgf.tree.props)) {
+        for (const key of Object.keys(rootPropsCopy)) {
+          if (!ROOT_MOVE_NODE_PROPERTIES.has(key)) continue;
+          rootMoveProps[key] = rootPropsCopy[key]!;
+          delete rootPropsCopy[key];
+        }
+      }
       delete rootPropsCopy.B;
       delete rootPropsCopy.W;
       const rootNote = extractKaTrainUserNoteFromSgfComment(rootPropsCopy['C']);
@@ -6990,8 +7782,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
       if (!rootPropsCopy['SZ']?.length) rootPropsCopy['SZ'] = [String(boardSize)];
       if (safeHandicap > 0) {
         rootPropsCopy['HA'] = [String(safeHandicap)];
-        if (!rootPropsCopy['PL']?.length) rootPropsCopy['PL'] = ['W'];
-        if (!hasExplicitRootSetup) syncRootSetupPropertiesFromBoard(rootPropsCopy, rootState.board, boardSize, safeHandicap);
+        if (!rootPropsCopy['PL']?.length && safeHandicap >= 2 && !firstChildPlacesStones) rootPropsCopy['PL'] = ['W'];
+        if (placesHandicapStones) syncRootSetupPropertiesFromBoard(rootPropsCopy, rootState.board, boardSize, safeHandicap);
       }
       newRoot.properties = rootPropsCopy;
       const rootMove = extractMove(sgf.tree.props);
@@ -7047,7 +7839,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
           }
 
           const childNode = applyMoveToNode(parent, move);
-          if (!childNode) continue;
+          if (!childNode) {
+            noteRejectedMove(parent, move, countMovesIn(node));
+            continue;
+          }
           childNode.properties = cloneProps(node.props);
           applySetupPropsToNode(childNode, childNode.properties, boardSize);
           applySgfPlayerToMoveToNode(childNode, childNode.properties);
@@ -7068,13 +7863,11 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
       if (rootMove) {
         const first = applyMoveToNode(newRoot, rootMove);
+        if (!first) {
+          noteRejectedMove(newRoot, rootMove, 1 + sgf.tree.children.reduce((n, child) => n + countMovesIn(child), 0));
+        }
         if (first) {
-          first.properties = cloneProps(sgf.tree.props);
-          applySetupPropsToNode(first, first.properties, boardSize);
-          applySgfPlayerToMoveToNode(first, first.properties);
-          const firstNote = extractKaTrainUserNoteFromSgfComment(first.properties['C']);
-          if (firstNote) first.note = firstNote;
-          delete first.properties['C'];
+          first.properties = rootMoveProps;
           if (sgf.tree.props['KT'] && !first.analysis) {
             applyKtAnalysis(first, sgf.tree.props['KT']);
           }
@@ -7090,9 +7883,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
     } else {
       // Legacy: just the main line (no SGF tree provided)
       let cursor: GameNode = newRoot;
-      for (const mv of sgf.moves) {
+      for (const [index, mv] of sgf.moves.entries()) {
         const child = applyMoveToNode(cursor, { x: mv.x, y: mv.y, player: mv.player });
-        if (!child) break;
+        if (!child) {
+          noteRejectedMove(cursor, { x: mv.x, y: mv.y, player: mv.player }, sgf.moves.length - index);
+          break;
+        }
         cursor.children.push(child);
         cursor = child;
       }
@@ -7115,9 +7911,34 @@ export const useGameStore = create<GameStore>((commit, get) => {
       while (current.children.length > 0) current = current.children[0]!;
     }
 
-    set((state) => ({      // A drill describes positions in the tree being replaced, so it cannot
+    const describeRejected = (): string | null => {
+      if (!rejected.firstLabel) return null;
+      const detail =
+        rejected.lines > 1
+          ? `${rejected.moves} moves across ${rejected.lines} lines were not loaded.`
+          : rejected.moves > 1
+            ? `It and the ${rejected.moves === 2 ? 'move' : `${rejected.moves - 1} moves`} after it were not loaded.`
+            : 'It was not loaded.';
+      // Only multi-stone suicide depends on the ruleset. Blaming the ruleset
+      // for the other three sent the reader off to change a setting that would
+      // not have helped: an occupied point, a ko and a one-stone suicide are
+      // illegal under every ruleset here.
+      const cause =
+        rejected.firstReason === 'occupied'
+          ? 'plays on a point that already holds a stone'
+          : rejected.firstReason === 'ko'
+            ? 'repeats the position before it, which the ko rule forbids'
+            : rejected.firstReason === 'suicide-single'
+              ? 'is a single-stone suicide, which no ruleset allows'
+              : `is a multi-stone suicide, which ${rulesLabel(rules)} rules forbid. ${suicideAllowingRulesLabel()} rules allow it`;
+      return `${rejected.firstLabel} ${cause}. ${detail}`;
+    };
+
+    set((state) => ({
+      // A drill describes positions in the tree being replaced, so it cannot
       // survive the replacement.
       mistakeDrill: null,
+      sgfLoadWarning: describeRejected(),
       rootNode: newRoot,
       currentNode: current,
       pinnedVariations: restorePinnedVariations(newRoot),
@@ -7134,7 +7955,15 @@ export const useGameStore = create<GameStore>((commit, get) => {
       analysisData: current.analysis || null,
       analysisCacheSize: getAnalysisCacheSize(newRoot),
 	      treeVersion: state.treeVersion + 1,
-	      settings: { ...state.settings, gameRules: rules, defaultBoardSize: boardSize, defaultHandicap: safeHandicap },
+	      // Rules follow the file, because a loaded game has to be scored under
+	      // the rules it was played with. The *new game* defaults do not: those
+	      // are the reader's own settings, and a file is not a preference.
+	      // Writing them here laundered a property of someone else's game into
+	      // a persisted setting -- open a 9-stone handicap game, press Quick
+	      // new game, and you got nine stones you never asked for, on a control
+	      // whose warning names only the board size. `startNewGame` then saved
+	      // it, so every later new game had them too.
+	      settings: { ...state.settings, gameRules: rules },
 		    }));
 
 		    // KaTrain-like: optionally start fast background analysis of the whole mainline so graphs populate fast.
@@ -7145,6 +7974,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
   passTurn: () => {
       const state = get();
+      if (isAwaitingAiReply(state)) {
+        refuseWhileAwaitingAi(set, get);
+        return;
+      }
       if (state.settings.soundEnabled) {
         playPassSound();
       }
@@ -7160,11 +7993,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
            get().jumpToNode(existingChild);
            const after = get();
            const ended = isPassMove(after.currentNode.move) && isPassMove(after.currentNode.parent?.move);
+           if (ended) announceGameEnd(set);
            if (!ended && after.isAiPlaying && after.aiColor && after.currentPlayer === after.aiColor) {
-             setTimeout(() => after.makeAiMove(), 500);
+             after.scheduleAiMove(500);
            }
            if (after.isAnalysisMode && !after.isSelfplayToEnd) {
-             setTimeout(() => void after.runAnalysis(), 0);
+             scheduleAnalysis(() => void after.runAnalysis({ ifIdle: true }), 0);
            }
            return;
       }
@@ -7185,6 +8019,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
       state.currentNode.children.push(newNode);
 
       set({
+          ...clearEditHistory(), // as playMove: an older snapshot would take the pass away
           currentNode: newNode,
           currentPlayer: newGameState.currentPlayer,
           moveHistory: newGameState.moveHistory,
@@ -7196,19 +8031,22 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
       const after = get();
       const ended = isPassMove(after.currentNode.move) && isPassMove(after.currentNode.parent?.move);
+      if (ended) announceGameEnd(set);
       if (!ended && after.isAiPlaying && after.aiColor && after.currentPlayer === after.aiColor) {
-        setTimeout(() => after.makeAiMove(), 500);
+        after.scheduleAiMove(500);
       }
-      if (after.isAnalysisMode && !after.isSelfplayToEnd) setTimeout(() => void after.runAnalysis(), 0);
+      if (after.isAnalysisMode && !after.isSelfplayToEnd) scheduleAnalysis(() => void after.runAnalysis({ ifIdle: true }), 0);
   },
 
   resign: (player) => {
+    cancelAiMoveWork();
     const state = get();
     const endState = getResignResult(player ?? state.currentPlayer);
     state.currentNode.endState = endState;
 
     if (!state.rootNode.properties) state.rootNode.properties = {};
-    state.rootNode.properties.RE = [endState];
+    // As recordCountedResult: never overwrite the result the game carries.
+    if (!readRecordedResult(state.rootNode.properties.RE?.[0])) state.rootNode.properties.RE = [endState];
 
     get().stopSelfplayToEnd();
 
@@ -7220,11 +8058,75 @@ export const useGameStore = create<GameStore>((commit, get) => {
     }));
   },
 
+  /**
+   * Record the result of a game that was played out and counted.
+   *
+   * Resigning wrote `RE`; counting did not, so the ordinary way to finish a Go
+   * game -- two passes and a count -- was the one that lost its result. The
+   * panel showed W+7.0, and the exported SGF carried no result at all, which
+   * also left the library and any reopened copy with nothing.
+   *
+   * Only for a position that really is the end. Scoring can be opened mid-game
+   * to estimate, and an estimate is not a result.
+   */
+  recordCountedResult: (result: string) => {
+    const state = get();
+    const node = state.currentNode;
+    const bothPassed = isPassMove(node.move) && isPassMove(node.parent?.move);
+    if (!bothPassed) return false;
+    // Never overwrite a result the game already carries: a loaded SGF's RE is
+    // what the players agreed, and a count here is only this app's arithmetic.
+    if (node.endState) return false;
+
+    node.endState = result;
+    if (!state.rootNode.properties) state.rootNode.properties = {};
+    if (!state.rootNode.properties.RE?.[0]) state.rootNode.properties.RE = [toSgfResult(result)];
+
+    set((s) => ({ treeVersion: s.treeVersion + 1 }));
+    return true;
+  },
+
   rotateBoard: () =>
     set((state) => ({
       boardRotation: (((state.boardRotation ?? 0) + 1) % 4) as 0 | 1 | 2 | 3,
     })),
   };
+});
+
+/**
+ * A watchdog for the AI opponent's turn.
+ *
+ * Every path that hands the AI the move is meant to schedule its reply, and
+ * every path that cancels its search is meant to start it again. Each one
+ * that forgot -- Escape's Stop, clearing the cache, a settings change landing
+ * mid-search, Undo to the root, Redo onto its turn -- left a game waiting on
+ * a move that never came, with nothing on screen saying why. Whatever the
+ * cause, a position that settles with the AI to move at the end of the line
+ * and nothing searching gets its search started.
+ */
+const AI_WATCHDOG_DELAY_MS = 1500;
+let aiWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+const aiIsStranded = (state: GameStore): boolean =>
+  isAwaitingAiReply(state)
+  && !state.isAiThinking
+  && scheduledAiMoveTimers.size === 0
+  && !state.setupPositionProgress
+  && !state.isSelfplayToEnd
+  && !state.isGameAnalysisRunning
+  && !state.isEditMode
+  && !state.isInsertMode
+  && !state.mistakeDrill;
+// Re-armed on every change rather than held while pending, so a timer that
+// never fires (a discarded one) cannot switch the watchdog off.
+useGameStore.subscribe((state) => {
+  if (aiWatchdogTimer !== null) clearTimeout(aiWatchdogTimer);
+  aiWatchdogTimer = null;
+  if (!aiIsStranded(state)) return;
+  aiWatchdogTimer = setTimeout(() => {
+    aiWatchdogTimer = null;
+    const latest = useGameStore.getState();
+    if (aiIsStranded(latest)) latest.scheduleAiMove(0);
+  }, AI_WATCHDOG_DELAY_MS);
 });
 
 let notificationAutoDismissTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -7290,9 +8192,33 @@ analysisQueue.subscribeCacheSize((queueCacheSize) => {
   }));
 });
 
-const makeHeuristicMove = (store: GameStore) => {
+/**
+ * The moves the fallback bot may choose from: legal under the game's rules,
+ * superko included. Exported for tests.
+ */
+export const heuristicLegalMoves = (store: Pick<GameStore, 'board' | 'currentPlayer' | 'currentNode' | 'settings'>): Array<{ x: number; y: number }> => {
     const { board, currentPlayer, currentNode } = store;
-    const parentBoard = currentNode.parent ? currentNode.parent.gameState.board : undefined;
+    const parentBoard = koReferenceBoard(currentNode);
+    const rules = store.settings.gameRules;
+    const koRule = rulesOf(rules).ko;
+    const nextPlayer: Player = currentPlayer === 'black' ? 'white' : 'black';
+    return getLegalMoves(board, currentPlayer, parentBoard, { multiStoneSuicideLegal: isSuicideLegal(rules) }).filter((m) => {
+        if (koRule === 'simple') return true;
+        const tentative = board.map((row) => [...row]);
+        tentative[m.y]![m.x] = currentPlayer;
+        const captured = applyCapturesInPlace(tentative, m.x, m.y, currentPlayer);
+        // Superko judges the position after a legal suicide comes off, as
+        // playMove does; testing it with the group still on offered a move
+        // playMove then refused, and the bot made none.
+        if (captured.length === 0 && getLiberties(tentative, m.x, m.y).liberties === 0) {
+          applySelfCaptureInPlace(tentative, m.x, m.y);
+        }
+        return !lineViolatesSuperko(currentNode, tentative, nextPlayer, koRule);
+    });
+};
+
+const makeHeuristicMove = (store: GameStore) => {
+    const { board, currentPlayer } = store;
     const boardSize = getBoardSizeFromBoard(board);
     const center = (boardSize - 1) / 2;
     const line3 = 2;
@@ -7303,19 +8229,10 @@ const makeHeuristicMove = (store: GameStore) => {
     // 1. Get all legal moves, under the same rules playMove will apply: the
     // fallback used to offer a move playMove then refused, and the AI passed
     // on nothing.
-    const rules = store.settings.gameRules;
-    const koRule = rulesOf(rules).ko;
-    const nextPlayer: Player = currentPlayer === 'black' ? 'white' : 'black';
-    const legalMoves = getLegalMoves(board, currentPlayer, parentBoard, { multiStoneSuicideLegal: isSuicideLegal(rules) }).filter((m) => {
-        if (koRule === 'simple') return true;
-        const tentative = board.map((row) => [...row]);
-        tentative[m.y]![m.x] = currentPlayer;
-        applyCapturesInPlace(tentative, m.x, m.y, currentPlayer);
-        return !lineViolatesSuperko(currentNode, tentative, nextPlayer, koRule);
-    });
+    const legalMoves = heuristicLegalMoves(store);
 
     if (legalMoves.length === 0) {
-        store.passTurn();
+        asEngineMove(() => store.passTurn());
         return;
     }
 
@@ -7415,10 +8332,12 @@ const makeHeuristicMove = (store: GameStore) => {
         }
     }
 
-    if (bestScore < -500) {
-        // If best move is terrible (e.g. filling eye), pass.
-        store.passTurn();
-    } else {
-        store.playMove(bestMove.x, bestMove.y);
-    }
+    asEngineMove(() => {
+      if (bestScore < -500) {
+          // If best move is terrible (e.g. filling eye), pass.
+          store.passTurn();
+      } else {
+          store.playMove(bestMove.x, bestMove.y);
+      }
+    });
 };

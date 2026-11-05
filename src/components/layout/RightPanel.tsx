@@ -15,6 +15,7 @@ import {
   FaAlignLeft,
   FaStickyNote,
   FaChevronLeft,
+  FaSearch,
 } from 'react-icons/fa';
 import type { Player, GameNode, CandidateMove } from '../../types';
 import { useGameStore } from '../../store/gameStore';
@@ -25,6 +26,7 @@ import { AnalysisExperienceToggle } from '../AnalysisExperienceToggle';
 import { GameInfoPanel } from '../GameInfoPanel';
 import { MoveTree } from '../MoveTree';
 import { NotesPanel } from '../NotesPanel';
+import { MobilePanelRegion } from './MobilePanelRegion';
 import { Timer } from '../Timer';
 import type { AnalysisControlsState, UiMode, UiState } from './types';
 import { MOBILE_TAB_PANEL_IDS, mobileTabId, type MobileTab } from './mobileTabs';
@@ -42,10 +44,12 @@ import {
   getCurrentLineMoveNumber,
   getCurrentLineNodes,
   isGameNodeStep,
+  isOnMainLine,
 } from '../../utils/branchNavigation';
 import { useShortcutLabels } from '../../hooks/useShortcutLabels';
 import { parseIntegerDraft } from '../../utils/numberDraft';
 import { readLocalStorage, writeLocalStorage } from '../../utils/storage';
+import { restoreFocusIfUnclaimed } from '../../utils/focusRestore';
 
 const RIGHT_PANEL_SHORTCUT_IDS = [
   'nav-back',
@@ -103,6 +107,7 @@ interface RightPanelProps {
   analysisCacheSize: number;
   onOpenGameAnalysis: () => void;
   onOpenGameReport: () => void;
+  onChooseModel?: () => void;
   // Player info
   currentPlayer: Player;
   // Navigation
@@ -142,6 +147,7 @@ interface RightPanelProps {
   shapeCoachEnabled?: boolean;
   onToggleShapeCoach?: () => void;
   noteFocusRequest?: number;
+  onFindNotes?: (returnFocus?: HTMLElement | null) => void;
 }
 
 export const RightPanel: React.FC<RightPanelProps> = ({
@@ -171,6 +177,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   analysisCacheSize,
   onOpenGameAnalysis,
   onOpenGameReport,
+  onChooseModel,
   currentPlayer,
   navigateStart,
   navigateEnd,
@@ -204,6 +211,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   shapeCoachEnabled = false,
   onToggleShapeCoach,
   noteFocusRequest = 0,
+  onFindNotes,
 }) => {
   const t = useT();
   const showTree = !isMobile || activeMobileTab === 'tree';
@@ -241,10 +249,16 @@ export const RightPanel: React.FC<RightPanelProps> = ({
     return getBranchInfo(currentNode);
   }, [currentNode, treeVersion]);
   const branchToolbarActionClass = branchInfo.hasBranches ? 'panel-icon-button' : 'hidden';
-  const promoteBranchActionClass = branchInfo.hasBranches && branchInfo.currentIndex > 1 ? 'panel-icon-button' : 'hidden';
+  // The whole path decides, not the nearest fork: a line can be first there
+  // and still have left the main line at an earlier one.
+  const isMainLine = isOnMainLine(currentNode);
+  const promoteBranchActionClass = isMainLine ? 'hidden' : 'panel-icon-button';
   const [isBranchIndexEditing, setIsBranchIndexEditing] = React.useState(false);
   const [branchIndexDraft, setBranchIndexDraft] = React.useState('');
   const skipBranchIndexBlurCommit = React.useRef(false);
+  // Enter or Escape blurs the field, which then unmounts; without a hand-back
+  // focus fell to <body>, as it did in the bottom bar before.
+  const branchIndexChipRef = React.useRef<HTMLButtonElement>(null);
   const shortcutLabels = useShortcutLabels(RIGHT_PANEL_SHORTCUT_IDS);
   const withShortcut = (label: string, id: RightPanelShortcutId) => `${label} (${shortcutLabels[id]})`;
 
@@ -276,11 +290,10 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
   const handleBranchIndexKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' || event.key === 'Escape') {
+      if (event.key === 'Escape') cancelBranchIndexEdit();
       event.currentTarget.blur();
-    } else if (event.key === 'Escape') {
-      cancelBranchIndexEdit();
-      event.currentTarget.blur();
+      window.setTimeout(() => restoreFocusIfUnclaimed(branchIndexChipRef.current), 0);
     }
   };
 
@@ -368,13 +381,17 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   });
   const currentTreeListItemRef = React.useRef<HTMLButtonElement>(null);
 
+  // Keyed on the line's length, not treeVersion: analysis bumps that twice a
+  // second, so the list re-centred on the current move while the player was
+  // scrolling it, and forced a layout each time.
+  const treeListLength = treeListNodes.length;
   React.useEffect(() => {
     if (!isMobile || activeMobileTab !== 'tree' || treeView !== 'list') return;
     const frame = window.requestAnimationFrame(() => {
       currentTreeListItemRef.current?.scrollIntoView({ block: 'center' });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeMobileTab, currentNode.id, isMobile, treeVersion, treeView]);
+  }, [activeMobileTab, currentNode.id, isMobile, treeListLength, treeView]);
 
   React.useEffect(() => {
     writeLocalStorage('web-katrain:tree_view:v1', treeView);
@@ -473,6 +490,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           onClick={onClose}
         />
       )}
+      <MobilePanelRegion isMobile={isMobile} visible={open} label={activeMobileTab === 'tree' ? t('Game tree') : t('Game review')}>
       <div
         data-layout-panel="side"
         // Tree and Review are two tabs over one container, so the panel names
@@ -490,7 +508,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           open ? 'flex' : 'hidden',
           'desktop-shell:static desktop-shell:max-w-none desktop-shell:z-auto',
           showOnDesktop ? 'desktop-shell:flex' : 'desktop-shell:hidden',
-          isMobile ? 'mobile-safe-bottom mobile-safe-inset' : '',
+          isMobile ? 'flex-1 min-h-0 mobile-safe-bottom mobile-safe-inset' : '',
         ].join(' ')}
         style={width ? { width } : undefined}
       >
@@ -619,7 +637,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                       ) : (
                         <button
                           type="button"
-                          className="min-w-[4.75rem] rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-left text-[0.625rem] leading-none text-[var(--ui-text-muted)] hover:border-[var(--ui-border-strong)] hover:text-[var(--ui-text)] disabled:cursor-not-allowed disabled:opacity-50"
+                          ref={branchIndexChipRef}
+                          className="min-w-[4.75rem] rounded border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-left text-[0.625rem] leading-none text-[var(--ui-text-muted)] not-disabled:hover:border-[var(--ui-border-strong)] not-disabled:hover:text-[var(--ui-text)] disabled:cursor-not-allowed disabled:opacity-50"
                           title={
                             branchInfo.isAtFork
                               ? t('Set branch number')
@@ -676,7 +695,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                       className={promoteBranchActionClass}
                       title={withShortcut(t('Make main branch'), 'make-main-branch')}
                       onClick={() => guardInsertMode(makeCurrentNodeMainBranch)}
-                      disabled={isInsertMode || !branchInfo.hasBranches || branchInfo.currentIndex <= 1}
+                      disabled={isInsertMode || isMainLine}
                     >
                       <FaStar size={12} />
                     </button>
@@ -728,6 +747,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                                 // Nodes that carry no move (the root, setup-only nodes) break the
                                 // black-left/white-right rhythm of the split list, so let them span it.
                                 isMobile && !move ? 'move-tree-list-split-full' : '',
+                                isMobile && move ? `move-tree-list-split-${move.player}` : '',
                                 isCurrent ? 'bg-[var(--ui-accent-soft)] text-[var(--ui-accent)]' : 'hover:bg-[var(--ui-surface-2)] text-[var(--ui-text)]',
                               ].join(' ')}
                               onClick={() =>
@@ -834,6 +854,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                     analysisCacheSize={analysisCacheSize}
                     onOpenGameAnalysis={onOpenGameAnalysis}
                     onOpenGameReport={onOpenGameReport}
+                    onChooseModel={onChooseModel}
                     currentMoveNumber={currentMoveNumber}
                     winRate={winRate}
                     scoreLead={scoreLead}
@@ -860,6 +881,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
             {renderSection({
               show: showNotes,
               title: t('Comment'),
+              actions: onFindNotes && (
+                <button type="button" className="panel-icon-button" aria-label={t('Find notes')} title={t('Find notes in this game')} onClick={(event) => onFindNotes(event.currentTarget)}>
+                  <FaSearch size={12} aria-hidden="true" />
+                </button>
+              ),
               icon: <FaCommentDots size={12} />,
               open: modePanels.notesOpen,
               onToggle: () => updatePanels((current) => ({ notesOpen: !current.notesOpen })),
@@ -879,7 +905,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
                         title={currentMoveInsight.detail}
                         data-panel-move-insight={currentMoveInsight.tone}
                       >
-                        <span className="text-[var(--ui-text-faint)]">Shape</span>
+                        <span className="text-[var(--ui-text-faint)]">{t('Shape')}</span>
                         <span className="truncate font-semibold">{currentMoveInsight.label}</span>
                       </div>
                     )}
@@ -994,6 +1020,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           </div>
         </div>
       </div>
+      </MobilePanelRegion>
     </>
   );
 };

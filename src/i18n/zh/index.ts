@@ -11,6 +11,7 @@ import dashboard from './dashboard';
 import data from './data';
 import utils from './utils';
 import fox from './fox';
+import upstreamMerge from './upstreamMerge';
 
 export const zhMessages: Record<string, string> = {
   ...layout,
@@ -26,4 +27,5 @@ export const zhMessages: Record<string, string> = {
   ...data,
   ...utils,
   ...fox,
+  ...upstreamMerge,
 };

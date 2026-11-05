@@ -1,12 +1,13 @@
 import type { KataGoWorkerRequest, KataGoWorkerResponse } from './types';
 import type { BoardState, GameRules, KataGoBackendPreference, Move, Player, RegionOfInterest } from '../../types';
 import { getWorkerConstructor } from '../../utils/browserWorker';
+import type { AnalysisQueueSignal } from '../../utils/analysisQueue';
 
 type Analysis = NonNullable<Extract<KataGoWorkerResponse, { type: 'katago:analyze_result' }>['analysis']>;
 type EvalResult = NonNullable<Extract<KataGoWorkerResponse, { type: 'katago:eval_result' }>['eval']>;
 type EvalBatchResult = NonNullable<Extract<KataGoWorkerResponse, { type: 'katago:eval_batch_result' }>['evals']>;
 
-const takeLastMoves = (moves: Move[]): Move[] => (moves.length <= 5 ? moves : moves.slice(moves.length - 5));
+const takeFeatureHistory = (moves: Move[]): Move[] => (moves.length <= 5 ? moves : moves.slice(moves.length - 5));
 
 type WorkerErrorEventLike = { error?: unknown; message?: string };
 
@@ -234,6 +235,7 @@ class KataGoEngineClient {
   }
 
   async analyze(args: {
+    signal?: AbortSignal | Pick<AnalysisQueueSignal, 'aborted' | 'addAbortListener'>;
     analysisGroup?: 'interactive' | 'background';
     positionId?: string;
     parentPositionId?: string;
@@ -246,6 +248,8 @@ class KataGoEngineClient {
     previousPreviousBoard?: BoardState;
     currentPlayer: Player;
     moveHistory: Move[];
+    /** Full exact situational keys for superko, separate from the five NN history moves. */
+    repetitionHistory?: readonly string[];
     komi: number;
     rules?: GameRules;
     regionOfInterest?: RegionOfInterest | null;
@@ -275,6 +279,7 @@ class KataGoEngineClient {
     onProgress?: (analysis: Analysis) => void;
   }): Promise<Analysis> {
     this.rejectIfCrashed();
+    if (args.signal?.aborted) throw new KataGoCanceledError();
     const id = this.nextId++;
     const req: KataGoWorkerRequest = {
       type: 'katago:analyze',
@@ -290,7 +295,10 @@ class KataGoEngineClient {
       previousBoard: args.previousBoard,
       previousPreviousBoard: args.previousPreviousBoard,
       currentPlayer: args.currentPlayer,
-      moveHistory: takeLastMoves(args.moveHistory),
+      // Search uses the true turn number and repeated opponent passes, beyond
+      // the five recent moves that the neural input planes consume.
+      moveHistory: args.moveHistory,
+      repetitionHistory: args.repetitionHistory,
       komi: args.komi,
       rules: args.rules,
       regionOfInterest: args.regionOfInterest,
@@ -321,13 +329,36 @@ class KataGoEngineClient {
     const promise = new Promise<Analysis>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress: args.onProgress });
     });
+    let unsubscribe: (() => void) | undefined;
     try {
       this.postToWorker(req);
-    } catch (err) {
+      const cancel = () => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        // Settle locally so Stop releases the queue even while the worker is
+        // finishing its current batch. Ignore any later progress or result.
+        this.pending.delete(id);
+        try {
+          this.postToWorker({ type: 'katago:cancel', id, analysisGroup: args.analysisGroup ?? 'background' });
+          pending.reject(new KataGoCanceledError());
+        } catch (err) {
+          pending.reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      };
+      if (args.signal) {
+        const signal = args.signal;
+        if ('addAbortListener' in signal) unsubscribe = signal.addAbortListener(cancel);
+        else {
+          signal.addEventListener('abort', cancel, { once: true });
+          unsubscribe = () => signal.removeEventListener('abort', cancel);
+          if (signal.aborted) cancel();
+        }
+      }
+      return await promise;
+    } finally {
+      unsubscribe?.();
       this.pending.delete(id);
-      throw err;
     }
-    return promise;
   }
 
   async evaluate(args: {
@@ -338,6 +369,8 @@ class KataGoEngineClient {
     previousPreviousBoard?: BoardState;
     currentPlayer: Player;
     moveHistory: Move[];
+    /** Full exact situational keys for superko, separate from the five NN history moves. */
+    repetitionHistory?: readonly string[];
     komi: number;
     rules?: GameRules;
     conservativePass?: boolean;
@@ -353,7 +386,8 @@ class KataGoEngineClient {
       previousBoard: args.previousBoard,
       previousPreviousBoard: args.previousPreviousBoard,
       currentPlayer: args.currentPlayer,
-      moveHistory: takeLastMoves(args.moveHistory),
+      moveHistory: takeFeatureHistory(args.moveHistory),
+      repetitionHistory: args.repetitionHistory,
       komi: args.komi,
       rules: args.rules,
       conservativePass: args.conservativePass,
@@ -379,6 +413,8 @@ class KataGoEngineClient {
       previousPreviousBoard?: BoardState;
       currentPlayer: Player;
       moveHistory: Move[];
+      /** Full exact situational keys for superko, separate from the five NN history moves. */
+      repetitionHistory?: readonly string[];
       komi: number;
     }>;
     rules?: GameRules;
@@ -396,7 +432,8 @@ class KataGoEngineClient {
         previousBoard: p.previousBoard,
         previousPreviousBoard: p.previousPreviousBoard,
         currentPlayer: p.currentPlayer,
-        moveHistory: takeLastMoves(p.moveHistory),
+        moveHistory: takeFeatureHistory(p.moveHistory),
+        repetitionHistory: p.repetitionHistory,
         komi: p.komi,
       })),
       rules: args.rules,

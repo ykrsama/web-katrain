@@ -12,7 +12,6 @@ import {
   sumRegionOwnership,
   type RegionRect,
 } from '../utils/boardDrawing';
-import { parseGtpMove } from '../lib/gtp';
 import { getKaTrainEvalColors } from '../utils/katrainTheme';
 import {
   hasAdjacentHintLabel,
@@ -25,7 +24,7 @@ import {
 import { gestureForPointer } from '../utils/pointerGesture';
 import { publicUrl } from '../utils/publicUrl';
 import { getBoardTheme } from '../utils/boardThemes';
-import { computeNodePointsLost, getEvaluationClass } from '../utils/nodeAnalysis';
+import { computeNodePointsLost, DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from '../utils/nodeAnalysis';
 import { getHoshiPoints, normalizeBoardSize } from '../utils/boardSize';
 import { expandSgfPointList, sgfCoordToXy } from '../utils/sgf';
 import { getHorizontalSwipeNavigationAction } from '../utils/swipeNavigation';
@@ -43,22 +42,24 @@ import {
 } from '../utils/wheelNavigation';
 import { getActiveChild, findCurrentLineNodeByPlayedMoves } from '../utils/branchNavigation';
 import { buildFuzzyStoneOffsets } from '../utils/fuzzyPlacement';
-import { formatBoardMoveLabel } from '../utils/playedMoveQuality';
+import { formatBoardMoveLabel, parseGtpMove } from '../lib/gtp';
 import { setTimedNotification, type TimedNotificationType } from '../utils/timedNotification';
 import { getTapConfirmAction, TAP_CONFIRM_TIMEOUT_MS, type TapConfirmPoint } from '../utils/tapConfirm';
 import { playNavigationHaptic, playStoneHaptic } from '../utils/haptics';
 import { getResizeObserverConstructor } from '../utils/resizeObserver';
 import { getBoardTooltipPlacement } from '../utils/boardTooltipPlacement';
+import { CandidateMoveTooltip } from './CandidateMoveTooltip';
 import { useResolvedUiTheme } from '../hooks/useResolvedUiTheme';
 import {
+  boardKeyboardCursorHandlesKey,
   getInitialBoardKeyboardCursor,
-  moveBoardKeyboardCursor,
+  stepBoardKeyboardCursorOnScreen,
   type BoardKeyboardPoint,
 } from '../utils/boardKeyboardNavigation';
 import { boardToQaString, countBoardStones } from '../utils/boardQaSnapshot';
 import { useT } from '../i18n';
+import { computeTerritorySwing, hasVisibleSwing, resolveSwingBaseline, swingAlpha } from '../utils/territorySwing';
 
-const KATRAN_EVAL_THRESHOLDS = [12, 6, 3, 1.5, 0.5, 0] as const;
 const OWNERSHIP_COLORS = {
   black: [0.0, 0.0, 0.1, 0.75],
   white: [0.92, 0.92, 1.0, 0.8],
@@ -266,6 +267,27 @@ type EditDragState = {
   painted: Set<string>;
 };
 
+/** Refuse forward navigation mid-insert, as the keyboard and panels do. */
+const refuseNavigationWhileInserting = (): boolean => {
+  if (!useGameStore.getState().isInsertMode) return false;
+  setTimedNotification('Finish inserting before navigating.', 'error');
+  return true;
+};
+
+/**
+ * The row and column under the cursor or a pending tap. Marked in the board
+ * theme's own label colour: the UI accent is chosen for the app's surfaces, and
+ * in dark mode it is a pale green that read at about 1.2:1 on the (always
+ * light) wood. An underline rather than scale(1.2), which pushed "10"-"19"
+ * past the board's left edge.
+ */
+const ACTIVE_COORDINATE_STYLE: React.CSSProperties = {
+  textDecorationLine: 'underline',
+  textDecorationThickness: '2px',
+  textUnderlineOffset: '2px',
+  fontWeight: 900,
+};
+
 export const GoBoard: React.FC<GoBoardProps> = ({
   hoveredMove,
   onHoverMove,
@@ -426,6 +448,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         onPvScroll(action === 'forward' ? 1 : -1);
         return;
       }
+
+      // Stepping back undoes inserted moves, as the key does. Anything else
+      // walked onto the original line with insert still on, and finishing then
+      // copied the continuation onto it.
+      if (action !== 'back' && refuseNavigationWhileInserting()) return;
 
       switch (action) {
         case 'prevMistake':
@@ -617,7 +644,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const [isKeyboardCursorActive, setIsKeyboardCursorActive] = useState(false);
   const boardPointerFocusRef = useRef(false);
 
-  const evalThresholds: readonly number[] = settings.trainerEvalThresholds?.length ? settings.trainerEvalThresholds : KATRAN_EVAL_THRESHOLDS;
+  const evalThresholds: readonly number[] = settings.trainerEvalThresholds?.length ? settings.trainerEvalThresholds : DEFAULT_EVAL_THRESHOLDS;
   const boardTheme = useMemo(() => getBoardTheme(settings.boardTheme), [settings.boardTheme]);
   const { fuzzyOffsets, fuzzyStoneScale } = useMemo(() => {
     // Sabaki's SVG includes a transparent margin (42px body in a 67px viewBox).
@@ -761,7 +788,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const compactAnalysisHints = usesCompactAnalysisHints(cellSize);
   const originX = Math.floor(cellSize * gridSpacesMarginX.left + 0.5);
   const originY = Math.floor(cellSize * gridSpacesMarginY.top + 0.5);
-  const coordOffset = (cellSize * 1.5) / 2;
+  // Coordinates sit just clear of the edge stones rather than centred in the
+  // margin: centred, a two-digit row number reached 0.2 of a cell past the
+  // stone's edge -- "13" under the stone on A13 at every board size -- and the
+  // bottom letters grazed row 1. A stone reaches 0.5 of a cell out.
+  const coordGap = cellSize * 0.56;
+  const coordFontSize = cellSize > 20 ? cellSize / 1.5 : cellSize * 0.7;
 
   const setupOverlayCanvas = useCallback(
     (canvas: HTMLCanvasElement): CanvasRenderingContext2D | null => {
@@ -880,12 +912,15 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     [moveHistory, boardSize]
   );
 
+  // Add PV hangs children on this same node in place, so the tree's version,
+  // not the node's identity, says the rings are out of date.
   const childMoveRings = useMemo(() => {
+    void treeVersion;
     if (!hasAnalysisOverlay || !settings.analysisShowChildren || drillAsking) return [];
     return currentNode.children
       .map((c) => c.move)
       .filter((m): m is NonNullable<typeof m> => !!m && m.x >= 0 && m.y >= 0);
-  }, [currentNode, drillAsking, hasAnalysisOverlay, settings.analysisShowChildren]);
+  }, [currentNode, drillAsking, hasAnalysisOverlay, settings.analysisShowChildren, treeVersion]);
 
   const analysisHintMoves = useMemo(
     () => selectAnalysisHintMoves(visibleAnalysis?.moves ?? [], compactAnalysisHints, settings.katagoTopK),
@@ -914,6 +949,48 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   // hints and the policy heatmap say where the engine wants to play, and the
   // child rings and next-move ghost say what was played.
   const hidesAnswer = punishQuizArmed || drillAsking;
+  // Tell the panels too: the answer is this node's candidate list.
+  const setPunishQuizArmedNodeId = useGameStore((s) => s.setPunishQuizArmedNodeId);
+  const armedNodeId = punishQuizArmed ? currentNode.id : null;
+  useEffect(() => {
+    setPunishQuizArmedNodeId(armedNodeId);
+  }, [armedNodeId, setPunishQuizArmedNodeId]);
+  useEffect(() => () => setPunishQuizArmedNodeId(null), [setPunishQuizArmedNodeId]);
+  /**
+   * What the move that reached this position changed, rather than who owns
+   * what now. Both maps have to come from a real analysis of their own node --
+   * the `parentTerritory` fallback above exists so the wash survives a node
+   * that has not been read yet, and differencing a map against itself would
+   * paint a confident blank board.
+   *
+   * Gated on `hidesAnswer` with the hints: the swing is drawn from the played
+   * move, so during a drill it is the answer.
+   */
+  // Analysis lands on the node in place; without the version the wash waited
+  // for a move away and back.
+  const territorySwing = useMemo(() => {
+    void treeVersion;
+    void visibleAnalysis;
+    if (!hasAnalysisOverlay || !settings.analysisShowSwing || scoringMode || hidesAnswer) return null;
+    const after = currentNode.analysis;
+    if (!after || (after.ownershipMode ?? 'root') === 'none') return null;
+    const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
+      formatBoardMoveLabel({ x, y }, boardSize)
+    );
+    if (baseline.kind === 'unavailable') return null;
+    const swing = computeTerritorySwing(baseline.territory, after.territory);
+    return hasVisibleSwing(swing) ? swing : null;
+  }, [
+    boardSize,
+    currentNode,
+    hasAnalysisOverlay,
+    hidesAnswer,
+    scoringMode,
+    settings.analysisShowSwing,
+    settings.analysisSwingCompare,
+    treeVersion,
+    visibleAnalysis,
+  ]);
   const shouldShowPolicy = settings.analysisShowPolicy && !drillAsking;
   const shouldShowHints =
     hasAnalysisOverlay && !!visibleAnalysis && settings.analysisShowHints && !settings.analysisShowPolicy && !hidesAnswer;
@@ -933,6 +1010,13 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     null
   );
   const [cursorPt, setCursorPt] = useState<BoardKeyboardPoint | null>(null);
+  const boardCursorStatusId = React.useId();
+  const boardCursorAnnouncement = (() => {
+    if (!isKeyboardCursorActive || !cursorPt) return 'Arrow keys move a cursor over the board; Enter plays there.';
+    const stone = board[cursorPt.y]?.[cursorPt.x];
+    const point = formatBoardMoveLabel({ x: cursorPt.x, y: cursorPt.y }, boardSize);
+    return `${point}, ${stone ? `${stone} stone` : 'empty'}`;
+  })();
   // Hover affordances are for pointers that can hover. A touch "hover" is just
   // the moment before a tap, so showing them there flashes a tooltip over the
   // stone the player is trying to place.
@@ -1767,6 +1851,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   ]);
 
   const childMoveCoords = useMemo(() => {
+    void treeVersion;
     const set = new Set<string>();
     for (const c of currentNode.children) {
       const m = c.move;
@@ -1774,7 +1859,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       set.add(`${m.x},${m.y}`);
     }
     return set;
-  }, [currentNode]);
+  }, [currentNode, treeVersion]);
 
   const eventToInternal = (
     e: { clientX: number; clientY: number; currentTarget: HTMLDivElement }
@@ -1875,9 +1960,40 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     setIsKeyboardCursorActive(false);
   };
 
+  /**
+   * A drill or an armed punish quiz takes the point as its answer, and the
+   * point is not played. True when one did. Shared by click, tap and Enter:
+   * held in the click handler alone, a tap on a phone -- whose touchend
+   * cancels the click -- played the guess as a move while the drill went on
+   * asking.
+   */
+  const answerQuizAt = (pt: { x: number; y: number }): boolean => {
+    // A drill comes before the punish quiz because it is something the player
+    // deliberately started, and before playing a move because answering must
+    // not add the guess to the game tree.
+    if (drillAsking) {
+      if (!board[pt.y]?.[pt.x]) answerMistakeDrill(pt.x, pt.y); // an occupied point is not an answer
+      return true;
+    }
+    if (punishQuiz?.phase === 'armed') {
+      if (board[pt.y]?.[pt.x]) return true; // occupied points are not a legal guess
+      const verdict = gradePunishGuess(currentNode, pt);
+      if (verdict) {
+        setPunishQuizResponse({ nodeId: currentNode.id, phase: 'result', text: punishQuizVerdictText(verdict) });
+      } else {
+        dismissPunishQuiz();
+      }
+      return true;
+    }
+    return false;
+  };
+
   const handleBoardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    boardPointerFocusRef.current = false;
+    // Read before anything clears it: this is the only record of whether the
+    // board was reached by Tab or by a click, and the two want opposite things
+    // from the arrow keys.
+    const pointerFocused = boardPointerFocusRef.current;
 
     const movement: Record<string, [number, number] | undefined> = {
       ArrowUp: [0, -1],
@@ -1886,12 +2002,19 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ArrowRight: [1, 0],
     };
     const delta = movement[event.key];
+    const cursorOwnsKey = boardKeyboardCursorHandlesKey(event.key, {
+      active: isKeyboardCursorActive,
+      pointerFocused,
+    });
     if (delta) {
+      // Left for the app's move navigation when the board was only clicked.
+      if (!cursorOwnsKey) return;
+      boardPointerFocusRef.current = false;
       event.preventDefault();
       event.stopPropagation();
       clearPendingTap();
       setIsKeyboardCursorActive(true);
-      setCursorPt((prev) => moveBoardKeyboardCursor(prev, boardSize, delta[0], delta[1]));
+      setCursorPt((prev) => stepBoardKeyboardCursorOnScreen(prev, boardSize, delta[0], delta[1], toDisplay, toInternal));
       return;
     }
 
@@ -1913,6 +2036,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }
 
     if (event.key !== 'Enter' && event.key !== ' ') return;
+    // Same rule: Enter is the global "AI move" shortcut when the cursor is off.
+    if (!cursorOwnsKey) return;
+    // A region is chosen by dragging, as clicks and taps already respect;
+    // Enter played a stone with the selection still armed.
+    if (isSelectingRegionOfInterest) return;
+    boardPointerFocusRef.current = false;
     event.preventDefault();
     event.stopPropagation();
     clearPendingTap();
@@ -1928,6 +2057,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       applyEditTool(pt.x, pt.y);
       return;
     }
+    if (answerQuizAt(pt)) return;
     tryPlayPoint(pt);
   };
 
@@ -1991,8 +2121,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       suppressNextClickRef.current = true;
       clearPendingTap();
       const beforeNodeId = useGameStore.getState().currentNode.id;
-      if (action === 'next') navigateForward();
-      else navigateBack();
+      if (action === 'next') {
+        if (refuseNavigationWhileInserting()) return;
+        navigateForward();
+      } else navigateBack();
       const didNavigate = useGameStore.getState().currentNode.id !== beforeNodeId;
       if (didNavigate && settings.hapticFeedback) playNavigationHaptic();
       return;
@@ -2011,6 +2143,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }
 
     const pt = eventToInternal({ clientX: endX, clientY: endY, currentTarget: e.currentTarget });
+    if (pt && answerQuizAt(pt)) {
+      clearPendingTap();
+      return;
+    }
     if (!pt || board[pt.y]?.[pt.x]) {
       clearPendingTap();
       return;
@@ -2064,28 +2200,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       return;
     }
 
-    // A drill that is asking about this position consumes the click as the
-    // answer. It comes before the punish quiz because a drill is something the
-    // player deliberately started, and before playing a move because answering
-    // must not add the guess to the game tree.
-    if (drillAsking) {
-      if (board[pt.y]?.[pt.x]) return; // an occupied point is not an answer
-      answerMistakeDrill(pt.x, pt.y);
-      return;
-    }
-
-    // An armed punish quiz consumes the click as the user's answer.
-    if (punishQuiz?.phase === 'armed') {
-      if (board[pt.y]?.[pt.x]) return; // occupied points are not a legal guess
-      const verdict = gradePunishGuess(currentNode, pt);
-      if (verdict) {
-        setPunishQuizResponse({ nodeId: currentNode.id, phase: 'result', text: punishQuizVerdictText(verdict) });
-      } else {
-        dismissPunishQuiz();
-      }
-      return;
-    }
-
+    if (answerQuizAt(pt)) return;
     tryPlayPoint(pt);
   };
 
@@ -2100,6 +2215,16 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Every press starts clean. The flag is for the click a gesture itself
+    // synthesises, but a right-click or a cancelled touchend set it with no
+    // click to follow, and it swallowed the next real one: a right-click mark,
+    // then a left click that placed no stone.
+    suppressNextClickRef.current = false;
+    if (e.button === 1 && onPvCommit && hoveredMove?.pv?.length) {
+      // Suppress browser autoscroll before auxclick keeps the continuation.
+      e.preventDefault();
+      return;
+    }
     if (e.button !== 0) return;
     boardPointerFocusRef.current = true;
     setIsKeyboardCursorActive(false);
@@ -2253,7 +2378,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           const dy = localY - cy;
           const inHint = dx * dx + dy * dy <= radius * radius;
           if (inHint) {
-            if (!hoveredMove || hoveredMove.x !== move.x || hoveredMove.y !== move.y) onHoverMove(move);
+            // The displayed preview may still belong to the candidate list.
+            // Record this board hover even at the same coordinate so clearing
+            // the list's preview cannot erase the handoff. An unchanged
+            // coordinate is a no-op for the parent's selection setter.
+            onHoverMove(move);
           } else if (hoveredMove) {
             onHoverMove(null);
           }
@@ -2373,8 +2502,14 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   };
 
   const ownershipTexture = useMemo(() => {
-    if (!scoringMode && (!hasAnalysisOverlay || !settings.analysisShowOwnership)) return null;
-    if (!territory) return null;
+    // The swing and the ownership wash are the same visual channel -- a tint on
+    // an intersection saying who has it -- so they share the layer rather than
+    // stacking into mud. Swing wins while it is on, and says so in its label.
+    const swingGrid = territorySwing?.grid ?? null;
+    if (!swingGrid && !scoringMode && (!hasAnalysisOverlay || !settings.analysisShowOwnership)) return null;
+    const source = swingGrid ?? territory;
+    if (!source) return null;
+    const peak = territorySwing?.peak ?? 0;
 
     const width = boardSize + 2;
     const height = boardSize + 2;
@@ -2390,9 +2525,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const clampedDisplayY = Math.max(0, Math.min(displayY, boardSize - 1));
         const internal = toInternal(clampedDisplayX, clampedDisplayY);
 
-        const val = territory[internal.y]?.[internal.x] ?? 0;
+        const val = source[internal.y]?.[internal.x] ?? 0;
         const base = val > 0 ? OWNERSHIP_COLORS.black : OWNERSHIP_COLORS.white;
-        let alpha = inBoard ? Math.abs(val) : 0;
+        // The swing is normalised against its own peak: an endgame exchange
+        // moves ownership by a fraction of what a capture does, and against a
+        // fixed scale it would render as a blank board.
+        let alpha = inBoard ? (swingGrid ? swingAlpha(val, peak) : Math.abs(val)) : 0;
         if (alpha > 1) alpha = 1;
         alpha = alpha ** (1 / OWNERSHIP_GAMMA);
         alpha = base[3] * alpha;
@@ -2406,7 +2544,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }
 
     return { width, height, bytes };
-  }, [boardSize, hasAnalysisOverlay, scoringMode, settings.analysisShowOwnership, territory, toInternal]);
+  }, [boardSize, hasAnalysisOverlay, scoringMode, settings.analysisShowOwnership, territory, territorySwing, toInternal]);
 
   useEffect(() => {
     const canvas = ownershipCanvasRef.current;
@@ -3202,11 +3340,18 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const passCircle = useMemo(() => {
     const m = lastMove;
     if (!m || m.x >= 0 || m.y >= 0) return null;
+    // Not while counting. The marker is 22.7% of the board at 0.7 alpha, and
+    // scoring is when the board most needs reading: on a 9x9 it covers the
+    // middle intersections, which is where a beginner may have to decide
+    // whether a group is dead. Clicks already pass through it; sight does not.
+    // Nothing is lost -- the game strip says "Game ended" and the score panel
+    // is open on top of it.
+    if (scoringMode) return null;
     const cx = originX + ((boardSize - 1) / 2) * cellSize;
     const cy = originY + ((boardSize - 1) / 2) * cellSize;
     const size = Math.min(boardWidth, boardHeight) * 0.227;
     return { cx, cy, size };
-  }, [boardHeight, boardWidth, boardSize, cellSize, lastMove, originX, originY]);
+  }, [boardHeight, boardWidth, boardSize, cellSize, lastMove, originX, originY, scoringMode]);
 
   const pendingTapMarker = useMemo(() => {
     if (!pendingTap) return null;
@@ -3278,9 +3423,20 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           </div>
         </div>
       ) : null}
+      {/* `shrink-0` keeps the board square. `cellSize` rounds *up* (the `+ 0.1`
+          above), so the board can come out up to a tenth of a cell -- about 2px
+          on 19x19 -- wider than this flex container. As a shrinkable item the
+          width absorbed that overflow while `items-center` left the height
+          alone: measured at 1024x768, a board styled 465.75px square laid out
+          464 x 465.75, and the canvases, which keep their full styled width,
+          lost their right edge to the container's `overflow: hidden`. Held at
+          its own size the overflow is split by `justify-center` and falls in
+          the board's own 0.75-cell margin instead of on the grid. The mobile
+          edit/scoring overlays already pinned this element the same way in
+          index.css; this is the general case. */}
       <div
         className={[
-          'relative shadow-lg rounded-sm select-none',
+          'relative shadow-lg rounded-sm select-none shrink-0',
           isEditMode || scoringMode ? 'cursor-crosshair' : 'cursor-pointer',
         ].join(' ')}
         data-board-snapshot="true"
@@ -3332,8 +3488,17 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         onWheel={handleWheel}
         onAuxClick={handleAuxClick}
         tabIndex={0}
+        // The board takes its own arrow keys, so it is an application to
+        // assistive tech, and says where its cursor is: moving it was visual
+        // only, and nothing told a screen-reader user which point they were on.
+        role="application"
+        aria-roledescription={t('Go board')}
         aria-label={t('Go board')}
+        aria-describedby={boardCursorStatusId}
       >
+        <span id={boardCursorStatusId} className="sr-only" aria-live="polite">
+          {boardCursorAnnouncement}
+        </span>
         {/* Region of interest (KaTrain-style) */}
         {roiRect && (
           <div
@@ -3555,11 +3720,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 className="absolute font-bold tracking-tight"
                 style={{
                   left: originX + i * cellSize,
-                  top: originY + (boardSize - 1) * cellSize + coordOffset,
-                  transform:
-                    cursorCoordinate?.x === i ? 'translate(-50%, -50%) scale(1.2)' : 'translate(-50%, -50%)',
-                  fontSize: cellSize > 20 ? cellSize / 1.5 : cellSize / 1.2,
-                  color: cursorCoordinate?.x === i ? 'var(--ui-accent)' : labelColor,
+                  top: originY + (boardSize - 1) * cellSize + coordGap,
+                  transform: 'translate(-50%, 0)',
+                  lineHeight: 1,
+                  fontSize: coordFontSize,
+                  color: labelColor,
+                  ...(cursorCoordinate?.x === i ? ACTIVE_COORDINATE_STYLE : null),
                   textAlign: 'center',
                   zIndex: 4,
                 }}
@@ -3577,13 +3743,14 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                    low as 1.8:1 against the wood. */
                 className="absolute font-bold tracking-tight"
                 style={{
-                  left: originX - coordOffset,
+                  left: originX - coordGap,
                   top: originY + i * cellSize,
-                  transform:
-                    cursorCoordinate?.y === i ? 'translate(-50%, -50%) scale(1.2)' : 'translate(-50%, -50%)',
-                  fontSize: cellSize > 20 ? cellSize / 1.5 : cellSize / 1.2,
-                  color: cursorCoordinate?.y === i ? 'var(--ui-accent)' : labelColor,
-                  textAlign: 'center',
+                  transform: 'translate(-100%, -50%)',
+                  lineHeight: 1,
+                  fontSize: coordFontSize,
+                  color: labelColor,
+                  ...(cursorCoordinate?.y === i ? ACTIVE_COORDINATE_STYLE : null),
+                  textAlign: 'right',
                   zIndex: 4,
                 }}
                 data-coordinate-active={cursorCoordinate?.y === i ? 'true' : undefined}
@@ -3849,92 +4016,40 @@ export const GoBoard: React.FC<GoBoardProps> = ({
             });
             return (
               <div
-                className="absolute z-20 bg-[var(--ui-panel)] text-[var(--ui-text)] text-xs px-2 py-1 rounded-lg shadow-xl pointer-events-none border border-[var(--ui-border-strong)] whitespace-nowrap"
+                className="absolute z-20 bg-[var(--ui-panel)] text-[var(--ui-text)] text-xs px-2 py-1 rounded-lg shadow-xl pointer-events-none border border-[var(--ui-border-strong)] w-max"
                 style={{
                   left: placement.left,
                   top: placement.top,
                   transform: placement.transform,
+                  maxWidth: placement.maxWidth,
                 }}
                 data-stone-move-tooltip={hoveredStoneMoveNumber}
               >
-                <span className="font-semibold">{t('Move {n}', { n: hoveredStoneMoveNumber })}</span>
+                <span className="font-semibold whitespace-nowrap">{t('Move {n}', { n: hoveredStoneMoveNumber })}</span>
+                {hoveredStonePointsLost !== null && ' '}
                 {hoveredStonePointsLost !== null && (
                   <span
-                    className="ui-text-faint"
+                    className="ui-text-faint whitespace-nowrap"
                     style={hoveredStonePointsLost >= 0.5 ? { color: 'var(--ui-danger)' } : undefined}
                   >
-                    {' · '}
+                    {'· '}
                     {hoveredStonePointsLost >= 0.05
                       ? t('−{pts} pts', { pts: hoveredStonePointsLost.toFixed(1) })
                       : t('no loss')}
                   </span>
                 )}
-                <span className="ui-text-faint">{' · '}{t('Alt-click to jump')}</span>
+                <span className="ui-text-faint whitespace-nowrap">{' · '}{t('Alt-click to jump')}</span>
               </div>
             );
           })()
         )}
 
-        {/* Tooltip */}
-        {hasAnalysisOverlay && hoveredMove && hoveredMove.x >= 0 && hoveredMove.y >= 0 && (
-          (() => {
-            const d = toDisplay(hoveredMove.x, hoveredMove.y);
-            const anchorX = originX + d.x * cellSize;
-            const anchorY = originY + d.y * cellSize;
-            const tooltipPlacement = getBoardTooltipPlacement({
-              anchorX,
-              anchorY,
-              boardWidth,
-              boardHeight,
-              cellSize,
-            });
-            return (
-              <div
-                className="absolute z-20 bg-[var(--ui-panel)]/50 backdrop-blur-[1px] text-[var(--ui-text)] text-xs p-2 rounded-lg shadow-xl pointer-events-none"
-                style={{
-                  left: tooltipPlacement.left,
-                  top: tooltipPlacement.top,
-                  transform: tooltipPlacement.transform,
-                  minWidth: tooltipPlacement.minWidth,
-                  maxWidth: tooltipPlacement.maxWidth,
-                }}
-              >
-                <div className="font-bold mb-1">{t('Move: {move}', { move: formatBoardMoveLabel(hoveredMove, boardSize) })}</div>
-                <div>{t('Win Rate: {rate}%', { rate: (hoveredMove.winRate * 100).toFixed(1) })}</div>
-                <div>{t('Score: {score}', { score: `${hoveredMove.scoreLead > 0 ? '+' : ''}${hoveredMove.scoreLead.toFixed(1)}` })}</div>
-                {typeof hoveredMove.scoreStdev === 'number' && (
-                  <div>{t('Score Stdev: {value}', { value: hoveredMove.scoreStdev.toFixed(1) })}</div>
-                )}
-                <div>{t('Points Lost: {value}', { value: hoveredMove.pointsLost.toFixed(1) })}</div>
-                {typeof hoveredMove.relativePointsLost === 'number' && (
-                  <div>{t('Rel. Points Lost: {value}', { value: hoveredMove.relativePointsLost.toFixed(1) })}</div>
-                )}
-                {typeof hoveredMove.winRateLost === 'number' && (
-                  <div>{t('Winrate Lost: {value}%', { value: (hoveredMove.winRateLost * 100).toFixed(1) })}</div>
-                )}
-                {typeof hoveredMove.lcb === 'number' && (
-                  <div title={t('Lower confidence bound: how bad this move could still turn out to be')}>
-                    {t('LCB: {value}%', { value: (hoveredMove.lcb * 100).toFixed(1) })}
-                  </div>
-                )}
-                {typeof hoveredMove.prior === 'number' && (
-                  <div>{t('Prior: {value}%', { value: (hoveredMove.prior * 100).toFixed(1) })}</div>
-                )}
-                {typeof hoveredMove.humanPrior === 'number' && (
-                  <div>{t('Human: {value}%', { value: (hoveredMove.humanPrior * 100).toFixed(1) })}</div>
-                )}
-                <div>{t('Visits: {value}', { value: hoveredMove.visits })}</div>
-                {hoveredMove.pv && hoveredMove.pv.length > 0 && (
-                  <div className="mt-1 whitespace-normal break-words">
-                    {t('PV: {pv}', { pv: hoveredMove.pv.join(' ') })}
-                  </div>
-                )}
-              </div>
-            );
-          })()
-        )}
 
       </div>
+      {hasAnalysisOverlay && hoverFromHoveringPointer && hoveredMove && hoveredMove.x >= 0 && hoveredMove.y >= 0 && (() => {
+        const point = toDisplay(hoveredMove.x, hoveredMove.y);
+        return <CandidateMoveTooltip boardRef={boardSnapshotRef} anchorX={originX + point.x * cellSize} anchorY={originY + point.y * cellSize} cellSize={cellSize} boardSize={boardSize} move={hoveredMove} pvScrollHint={pvScrollHint} />;
+      })()}
     </div>
   );
 };

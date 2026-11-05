@@ -6,18 +6,44 @@ const HI_THRESHOLD = 0.85;
 const MAX_UNKNOWN = 10;
 const maxDame = (boardSize: number) => 4 * (boardSize + boardSize);
 
+/**
+ * Nearest half point, rounding the margin rather than the signed lead:
+ * Math.round takes halves toward +infinity, so a lead of 0.75 was B+1.0 while
+ * the same lead for White was W+0.5, and -0.25 was Jigo where +0.25 was B+0.5.
+ */
 export function roundToHalf(x: number): number {
-  return Math.round(x * 2) / 2;
+  const rounded = Math.sign(x) * (Math.round(Math.abs(x) * 2) / 2);
+  return rounded === 0 ? 0 : rounded;
 }
 
 export function formatResultScoreLead(scoreLead: number, locale?: AppLocaleId): string {
-  const roundedScoreLead = Math.round(scoreLead * 10) / 10;
-  if (Object.is(roundedScoreLead, 0) || Object.is(roundedScoreLead, -0)) {
-    return locale ? translate(locale, 'Jigo') : 'Jigo';
-  }
+  // Round the margin, not the signed lead: Math.round takes halves toward
+  // +infinity, so the same lead read B+0.2 for Black and W+0.1 for White,
+  // and -0.05 was Jigo while +0.05 was B+0.1.
+  const roundedScoreLead = Math.sign(scoreLead) * (Math.round(Math.abs(scoreLead) * 10) / 10);
+  if (Object.is(roundedScoreLead, 0) || Object.is(roundedScoreLead, -0)) return locale ? translate(locale, 'Jigo') : 'Jigo';
 
   const leadingPlayer = roundedScoreLead > 0 ? 'B' : 'W';
   return `${leadingPlayer}+${Math.abs(roundedScoreLead).toFixed(1)}`;
+}
+
+/** SGF writes a draw as RE[0] (or RE[Draw]); 'Jigo' is only how we say it. */
+export function toSgfResult(result: string): string {
+  return /^\s*jigo\s*$/i.test(result) ? '0' : result;
+}
+
+/**
+ * A result the game records, as the result chip should show it, or null for
+ * no result. A draw -- RE[0], RE[Draw], or the Jigo a count once stored -- is
+ * a result too; accepting only strings with a '+' showed the engine's guess
+ * with a question mark over a recorded draw.
+ */
+export function readRecordedResult(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('+')) return trimmed;
+  if (/^(0|draw|jigo)$/i.test(trimmed)) return 'Jigo';
+  return null;
 }
 
 export function computeJapaneseManualScoreFromOwnership(args: {

@@ -7,9 +7,9 @@ import { emptyBoard, loadHarnessModel, runsEngineSuites } from './helpers/engine
 // Every board size KataGo supports.
 //
 // KataGo takes any square board from 2 up to 19 (cpp/game/board.h, MAX_LEN). This
-// app only offers 9, 13 and 19, but that is its own board size type talking -- the
-// engine underneath is written against a settable BOARD_SIZE and the recorded
-// goldens already exercise 5, 6, 7, 9 and 19.
+// app offers odd sizes from 5 through 19. The engine underneath is written
+// against a settable BOARD_SIZE, and the recorded goldens also exercise even
+// sizes such as 6.
 //
 // So this pins the engine's half of it: a search runs and reports something sane at
 // every size, which is also a guard against anyone reaching for a hardcoded 19 in
@@ -17,7 +17,9 @@ import { emptyBoard, loadHarnessModel, runsEngineSuites } from './helpers/engine
 // tables, the pass-alive regions and the ladder search are all sized from it.
 // ---------------------------------------------------------------------------
 
-const SIZES = Array.from({ length: 18 }, (_, i) => i + 2);
+// Paired so the `%ix%i` title has two arguments to consume: over a flat list
+// of numbers every case named itself "15xNaN".
+const SIZES = Array.from({ length: 18 }, (_, i) => [i + 2, i + 2] as const);
 
 describe.skipIf(!runsEngineSuites())('searching at every board size', () => {
   it.each(SIZES)('runs and reports sanely on %ix%i', async (size) => {

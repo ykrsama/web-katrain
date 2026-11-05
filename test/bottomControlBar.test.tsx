@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { normalizeLocalizedSource } from './helpers/localizedSource';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BottomControlBar } from '../src/components/layout/BottomControlBar';
@@ -38,6 +39,45 @@ const baseProps = {
 };
 
 describe('BottomControlBar', () => {
+  // The sheet's contents only exist once it is opened, and these render
+  // statically, so this reads the source the way the sibling sheet tests do.
+  it('offers play-on-from-here in the mobile sheet, labelled by the engine colour', () => {
+    const componentSource = normalizeLocalizedSource(readFileSync('src/components/layout/BottomControlBar.tsx', 'utf8'));
+
+    expect(componentSource).toContain('{onPlayFromHere && (');
+    expect(componentSource).toContain('aria-pressed={!!engineOpponent}');
+    // Labelled by the colour the engine holds, not by the side to move: while
+    // it is thinking those are the same and the label would lie. It lives in
+    // the title now -- see the length rule below.
+    expect(componentSource).toContain("`Stop the engine playing ${engineOpponent === 'black' ? 'Black' : 'White'}`");
+  });
+
+  it('keeps the sheet label short enough not to wrap its row', () => {
+    const componentSource = normalizeLocalizedSource(readFileSync('src/components/layout/BottomControlBar.tsx', 'utf8'));
+    const entry = /\{onPlayFromHere && \([\s\S]{0,1600}?<\/button>/.exec(componentSource)?.[0] ?? '';
+    const label = /\{engineOpponent \? '([^']+)' : '([^']+)'\}/.exec(entry);
+
+    expect(label, 'the sheet label moved').not.toBeNull();
+    /**
+     * This grid is two 169px columns at 360px wide, and the row is `min-h-12`,
+     * so a label that wraps to a second line grows its own row *and its row
+     * partner* from 48px to 60px -- which is what the viewport check calls a
+     * ragged sheet. Both states have to stay inside one line; the sentence
+     * belongs in the title, which is asserted above.
+     */
+    for (const text of [label![1]!, label![2]!]) {
+      expect(text.length, `"${text}" is long enough to wrap the row`).toBeLessThanOrEqual(18);
+    }
+    expect(entry).toContain('title={engineOpponent');
+  });
+
+  it('leaves the sheet entry out when the host does not supply the action', () => {
+    const componentSource = readFileSync('src/components/layout/BottomControlBar.tsx', 'utf8');
+    // Guarded like its neighbours, so a host that does not pass the action -- a
+    // problem or tsumego shell -- does not get a dead row.
+    expect(componentSource).toMatch(/\{onPlayFromHere && \([\s\S]{0,1400}Play from here/);
+  });
+
   it('shows Kaya-style branch navigation beside the desktop move counter', () => {
     const html = renderToStaticMarkup(<BottomControlBar {...baseProps} isMobile={false} />);
 
@@ -116,7 +156,7 @@ describe('BottomControlBar', () => {
     expect(componentSource).toMatch(/data-bottom-more-close="true"[\s\S]{0,220}min-h-11 min-w-11/);
     expect(componentSource).toContain("closeMoreControls(event.detail === 0 ? 'keyboard' : 'pointer')");
     expect(componentSource).toContain('const closeMoreControlsFromAction = React.useCallback');
-    expect(componentSource.match(/closeMoreControlsFromAction\(event\)/g) ?? []).toHaveLength(14);
+    expect(componentSource.match(/closeMoreControlsFromAction\(event\)/g) ?? []).toHaveLength(15);
     expect(componentSource.match(/setMoreOpen\(false\)/g) ?? []).toHaveLength(1);
     expect(componentSource).toContain("data-bottom-more-focus-origin={suppressMoreTriggerFocusRing ? 'pointer' : 'keyboard'}");
     expect(componentSource).toContain('suppressFocusTooltip={suppressMoreTriggerFocusRing}');
@@ -195,5 +235,34 @@ describe('BottomControlBar', () => {
     // unreachable by landmark navigation, where desktop had 0 of 51.
     expect(html).toContain('role="region"');
     expect(html).toContain('aria-label="Board controls"');
+  });
+
+  it('edits the branch number only in the full-size control, so the chip cannot steal and drop focus', () => {
+    const source = readFileSync('src/components/layout/BottomControlBar.tsx', 'utf8');
+
+    // Both call sites once swapped in an autofocused field; on phones the
+    // chip's hidden one took focus first and its blur closed the sheet's.
+    expect(source).toContain('if (isBranchIndexEditing && !compact) {');
+  });
+
+  it('hands focus back to the counter after Enter or Escape in a number field', () => {
+    const source = readFileSync('src/components/layout/BottomControlBar.tsx', 'utf8');
+
+    expect(source).toContain('restoreFocusIfUnclaimed(moveNumberButtonRef.current)');
+    expect(source).toContain('restoreFocusIfUnclaimed(branchIndexButtonRef.current)');
+    expect(source.match(/ref=\{moveNumberButtonRef\}/g) ?? []).toHaveLength(2);
+    expect(source).toContain('ref={compact ? undefined : branchIndexButtonRef}');
+  });
+
+  it('keeps the turn stone in view when the move strip overflows', () => {
+    const css = readFileSync('src/index.css', 'utf8');
+    const html = renderToStaticMarkup(<BottomControlBar {...baseProps} isMobile={true} />);
+
+    // Plain centring spilled the overflow off both ends, clipping the turn
+    // stone first; `safe` keeps the start edge in view.
+    expect(css.match(/justify-content: safe center;/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(css).toMatch(/@media \(max-height: 499px\) and \(max-width: 699px\)[\s\S]*?\.mobile-bottom-meta \[data-mobile-save-status='true'\] \{\s*display: none !important;/);
+    expect(css).toMatch(/\.mobile-bottom-move-hash,\s*\.mobile-bottom-move-button-total \{\s*display: none;/);
+    expect(html).toContain('<span class="mobile-bottom-move-button-total">/12</span>');
   });
 });

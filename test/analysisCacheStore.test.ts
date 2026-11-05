@@ -138,14 +138,14 @@ describe('analysis cache store actions', () => {
     root.analysis = analysis(50);
     useGameStore.setState({ analysisData: root.analysis, analysisCacheSize: 1 });
 
-    // 7.50 is the default komi (7.5) written with a different number of decimal
+    // 7.00 is the default komi (7) written with a different number of decimal
     // places: the text is normalized, but the value did not move, so the cached
     // analysis must survive.
-    useGameStore.getState().setRootProperty('KM', '7.50');
+    useGameStore.getState().setRootProperty('KM', '7.00');
     const changed = useGameStore.getState();
 
-    expect(changed.komi).toBe(7.5);
-    expect(changed.rootNode.properties?.KM).toEqual(['7.5']);
+    expect(changed.komi).toBe(7);
+    expect(changed.rootNode.properties?.KM).toEqual(['7']);
     expect(changed.rootNode.analysis).not.toBeNull();
     expect(changed.analysisData).not.toBeNull();
     expect(changed.analysisCacheSize).toBe(1);

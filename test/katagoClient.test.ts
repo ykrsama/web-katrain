@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getKataGoEngineClient, resetKataGoEngineClientForTests } from '../src/engine/katago/client';
+import { AnalysisQueue, AnalysisQueueSignal, type AnalysisQueueContext } from '../src/utils/analysisQueue';
+import { situationalKey } from '../src/utils/superko';
+import { tripleKoFixture } from './helpers/superkoFixture';
 
 const originalWorker = Object.getOwnPropertyDescriptor(globalThis, 'Worker');
 
@@ -46,9 +49,31 @@ function restoreWorker() {
   }
 }
 
+const analyzeArgs = (): Parameters<ReturnType<typeof getKataGoEngineClient>['analyze']>[0] => ({
+  modelUrl: '/models/katago-small.bin.gz', board: [[null]], currentPlayer: 'black', moveHistory: [], komi: 6.5,
+});
+
 describe('KataGo engine client', () => {
   afterEach(() => {
     restoreWorker();
+  });
+
+  it('preserves search history beyond the five neural feature moves', async () => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const worker = createdFakeWorkers[0]!;
+    const moveHistory = Array.from({ length: 80 }, (_, i) => ({
+      x: i % 2 === 0 ? (i / 2) % 9 : -1,
+      y: i % 2 === 0 ? Math.floor(i / 18) : -1,
+      player: i % 2 === 0 ? 'black' as const : 'white' as const,
+    }));
+    const pending = client.analyze({ ...analyzeArgs(), moveHistory });
+    // The worker needs the true turn number and at least seven recent moves
+    // for repeated-pass pruning; a neural input's five-move cap is insufficient.
+    const sent = vi.mocked(worker.postMessage).mock.calls[0]![0];
+    worker.onmessage?.({ data: { type: 'katago:analyze_result', id: 1, ok: true, analysis: { rootVisits: 8, moves: [] } } });
+    await pending;
+    expect(sent).toMatchObject({ type: 'katago:analyze', moveHistory });
   });
 
   it('reports a clear error when browser workers are unavailable', () => {
@@ -60,6 +85,106 @@ describe('KataGo engine client', () => {
     });
 
     expect(() => getKataGoEngineClient()).toThrow(/Browser Worker API is unavailable/);
+  });
+
+  it('keeps full repetition history for search, single eval and each batch position', async () => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const worker = createdFakeWorkers[0]!;
+    const {history, moves} = tripleKoFixture();
+    const repetitionHistory = history.map(p => situationalKey(p.board, p.playerToMove));
+    const args = {...analyzeArgs(), board:history.at(-1)!.board, currentPlayer:history.at(-1)!.playerToMove,
+      moveHistory:[...moves, {x:-1,y:-1,player:'white' as const}], repetitionHistory};
+    const search = client.analyze(args);
+    const single = client.evaluate(args);
+    const batch = client.evaluateBatch({modelUrl:args.modelUrl, positions:[args, {...args, repetitionHistory:repetitionHistory.slice(1)}]});
+    const sent = vi.mocked(worker.postMessage).mock.calls.map(call => call[0]);
+    expect(sent[0]).toMatchObject({repetitionHistory, moveHistory:args.moveHistory});
+    expect(sent[1]).toMatchObject({repetitionHistory, moveHistory:args.moveHistory.slice(-5)});
+    expect(sent[2]).toMatchObject({positions:[{repetitionHistory}, {repetitionHistory:repetitionHistory.slice(1)}]});
+    worker.onmessage?.({data:{type:'katago:analyze_result', id:1, ok:true, analysis:{rootVisits:8, moves:[]}}});
+    worker.onmessage?.({data:{type:'katago:eval_result', id:2, ok:true, eval:{rootWinRate:0.5, rootScoreLead:0}}});
+    worker.onmessage?.({data:{type:'katago:eval_batch_result', id:3, ok:true, evals:[]}});
+    await Promise.all([search, single, batch]);
+  });
+
+  it('does not send an already-canceled analysis to the worker', async () => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const signal = new AnalysisQueueSignal();
+    signal.abort('Stopped');
+    await expect(client.analyze({ ...analyzeArgs(), signal })).rejects.toMatchObject({ canceled: true });
+    expect(createdFakeWorkers[0]!.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('cancels one request promptly and ignores its late progress and result', async () => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const worker = createdFakeWorkers[0]!;
+    const signal = new AnalysisQueueSignal();
+    const onProgress = vi.fn();
+    const first = client.analyze({ ...analyzeArgs(), analysisGroup: 'interactive', signal, onProgress });
+    signal.abort('Stopped');
+    await expect(first).rejects.toMatchObject({ canceled: true });
+    expect(worker.postMessage).toHaveBeenLastCalledWith({ type: 'katago:cancel', id: 1, analysisGroup: 'interactive' });
+
+    const second = client.analyze(analyzeArgs());
+    const analysis = { rootVisits: 16, moves: [] };
+    worker.onmessage?.({ data: { type: 'katago:analyze_update', id: 1, ok: true, analysis } });
+    worker.onmessage?.({ data: { type: 'katago:analyze_result', id: 1, ok: true, analysis } });
+    expect(onProgress).not.toHaveBeenCalled();
+    worker.onmessage?.({ data: { type: 'katago:analyze_result', id: 2, ok: true, analysis } });
+    await expect(second).resolves.toEqual(analysis);
+  });
+
+  it('releases a stopped queue job without waiting for a worker acknowledgment', async () => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const worker = createdFakeWorkers[0]!;
+    const queue = new AnalysisQueue();
+    const run = (ctx: AnalysisQueueContext) => client.analyze({ ...analyzeArgs(), signal: ctx.signal });
+    const first = queue.enqueue({ group: 'study', priority: 1, run });
+    const second = queue.enqueue({ group: 'next', priority: 1, run });
+    expect(worker.postMessage).toHaveBeenCalledTimes(1);
+    queue.cancelGroup('study');
+    await expect(first).rejects.toMatchObject({ canceled: true });
+    await flushMicrotasks();
+    expect(worker.postMessage).toHaveBeenNthCalledWith(2, { type: 'katago:cancel', id: 1, analysisGroup: 'background' });
+    expect(worker.postMessage).toHaveBeenNthCalledWith(3, expect.objectContaining({ type: 'katago:analyze', id: 2 }));
+    worker.onmessage?.({ data: { type: 'katago:analyze_result', id: 2, ok: false, canceled: true } });
+    await expect(second).rejects.toMatchObject({ canceled: true });
+  });
+
+  it.each(['result', 'error', 'crash', 'dispose'] as const)('removes the abort listener after %s', async (ending) => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const worker = createdFakeWorkers[0]!;
+    const unsubscribe = vi.fn();
+    const signal = { aborted: false, addAbortListener: vi.fn(() => unsubscribe) };
+    const pending = client.analyze({ ...analyzeArgs(), signal });
+    const outcome = pending.catch(() => undefined);
+    if (ending === 'result') {
+      worker.onmessage?.({ data: { type: 'katago:analyze_result', id: 1, ok: true, analysis: { rootVisits: 16, moves: [] } } });
+    } else if (ending === 'error') {
+      worker.onmessage?.({ data: { type: 'katago:analyze_result', id: 1, ok: false, error: 'Search failed' } });
+    } else if (ending === 'crash') {
+      worker.onerror?.({ message: 'Worker died' });
+    } else {
+      client.dispose();
+    }
+    await outcome;
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('settles cancellation even if posting its control message fails', async () => {
+    installFakeWorker();
+    const client = getKataGoEngineClient();
+    const worker = createdFakeWorkers[0]!;
+    const signal = new AnalysisQueueSignal();
+    const pending = client.analyze({ ...analyzeArgs(), signal });
+    vi.mocked(worker.postMessage).mockImplementationOnce(() => { throw new Error('Worker unavailable'); });
+    expect(() => signal.abort('Stopped')).not.toThrow();
+    await expect(pending).rejects.toThrow('Worker unavailable');
   });
 
   it('does not wedge init state when worker postMessage fails', async () => {

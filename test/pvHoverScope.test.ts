@@ -41,15 +41,15 @@ describe('the workspace scopes the board hover to the current node', () => {
   const layout = readFileSync('src/components/Layout.tsx', 'utf8');
 
   it('stamps the hover with the node that was on the board', () => {
-    expect(layout).toContain('nodeId: useGameStore.getState().currentNode.id');
+    expect(layout).toContain('useState({ nodeId: currentNode.id })');
   });
 
   it('reads the hover back through the node it belongs to', () => {
-    expect(layout).toContain('hoveredMoveForNode(hoveredMove, currentNode.id)');
+    expect(layout).toContain('resolveCandidatePreview(hoveredSelection?.context === previewContext ? hoveredSelection : null, candidates)');
   });
 
-  it('hands both boards the scoping handler rather than the raw setter', () => {
-    expect(layout).toContain('onHoverMove={handleHoverMove}');
-    expect(layout).not.toContain('onHoverMove={setHoveredMove}');
+  it('hands both boards a handler scoped to this visit', () => {
+    expect(layout.match(/onHoverMove=\{setHoveredMove\}/g)).toHaveLength(2);
+    expect(layout).toContain('context: previewContext');
   });
 });

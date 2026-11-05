@@ -5,6 +5,23 @@ import { formatRootInfoText } from '../src/utils/gameInfoText';
 import { getHandicapPoints } from '../src/utils/boardSize';
 import { coordinateToSgf, generateSgfFromTree, parseSgf } from '../src/utils/sgf';
 
+/**
+ * Empties the notification queue.
+ *
+ * The visible `notification` is one slot in front of a module-level queue, and
+ * an error deliberately holds that slot so a later confirmation cannot push it
+ * off screen before it is read. That queue outlives `resetGame()`, so a test
+ * that leaves an error behind makes the next test read *its* message. Setting
+ * the slot to null promotes whatever was waiting, so drain until it stays null.
+ */
+const drainNotifications = () => {
+    for (let i = 0; i < 20; i += 1) {
+        if (useGameStore.getState().notification === null) return;
+        useGameStore.setState({ notification: null });
+    }
+    throw new Error('notification queue did not drain');
+};
+
 describe('GameStore loadGame', () => {
     it('loads a game from SGF data', () => {
         const store = useGameStore.getState();
@@ -214,6 +231,20 @@ describe('GameStore loadGame', () => {
         expect(state.rootNode.properties?.CR).toEqual(['dd']);
     });
 
+    it('keeps existing labels when a drag sweeps back over them', () => {
+        const store = useGameStore.getState();
+        store.resetGame();
+
+        useGameStore.getState().setEditTool('label-alpha');
+        useGameStore.getState().applyEditTool(0, 0);
+        useGameStore.getState().applyEditTool(1, 0);
+        useGameStore.getState().applyEditTool(2, 0);
+        useGameStore.getState().applyEditTool(1, 0, { paintOnly: true });
+        useGameStore.getState().applyEditTool(0, 0, { paintOnly: true });
+
+        expect(useGameStore.getState().rootNode.properties?.LB).toEqual(['aa:A', 'ba:B', 'ca:C']);
+    });
+
     it('supports right-click board marking with edit history', () => {
         const store = useGameStore.getState();
         store.resetGame();
@@ -325,9 +356,11 @@ describe('GameStore loadGame', () => {
         const firstBranch = firstMove.children[0]!;
         const activeBranch = firstMove.children[2]!;
         const emptyTerritory = Array.from({ length: 9 }, () => Array(9).fill(0));
+        // No root score, so points lost come from the candidate lists: a
+        // score of 0 on every position would say no move lost anything.
         const analyzed = (moves: AnalysisResult['moves']): AnalysisResult => ({
             rootWinRate: 0.5,
-            rootScoreLead: 0,
+            rootScoreLead: Number.NaN,
             moves,
             territory: emptyTerritory,
             ownershipMode: 'none',
@@ -376,6 +409,82 @@ describe('GameStore loadGame', () => {
         expect(insertedBlack.move).toEqual({ x: 1, y: 1, player: 'black' });
         expect(copiedActiveContinuation.move).toEqual({ x: 6, y: 6, player: 'white' });
         expect(copiedActiveContinuation.children[0]?.move).toEqual({ x: 7, y: 7, player: 'black' });
+    });
+
+    it('says so when an odd insert leaves the continuation behind', () => {
+        // Each copied move keeps its own colour, so an odd number of inserted
+        // moves puts the whole rest of the game on the other side and the copy
+        // is refused at the first move. That is defensible; saying nothing was
+        // not. Before this the success message was the only message, so the
+        // branch just stopped at the inserted move and the previous toast was
+        // left standing.
+        const store = useGameStore.getState();
+        store.resetGame();
+
+        store.loadGame(parseSgf('(;GM[1]SZ[9];B[dd];W[ee];B[ff];W[gg])'));
+        store.navigateToMove(1);
+        drainNotifications();
+        const anchor = useGameStore.getState().currentNode;
+
+        store.toggleInsertMode();
+        store.playMove(0, 0);
+        store.toggleInsertMode();
+
+        const inserted = anchor.children.at(-1)!;
+        expect(inserted.move).toEqual({ x: 0, y: 0, player: 'white' });
+        // Nothing followed it, and nothing was lost either -- the original line
+        // is still the anchor's first child.
+        expect(inserted.children).toHaveLength(0);
+        expect(anchor.children[0]?.move).toEqual({ x: 4, y: 4, player: 'white' });
+
+        const notification = useGameStore.getState().notification;
+        expect(notification?.type).toBe('error');
+        expect(notification?.message).toContain('1 inserted move puts the rest of the game on the other color');
+        expect(notification?.message).toContain('3 of 3 continuation moves could not follow');
+        expect(notification?.message).toContain('Insert in pairs');
+        // An error holds the visible slot until dismissed, so put it back.
+        drainNotifications();
+    });
+
+    it('reports the count when an even insert carries the continuation across', () => {
+        const store = useGameStore.getState();
+        store.resetGame();
+
+        store.loadGame(parseSgf('(;GM[1]SZ[9];B[dd];W[ee];B[ff];W[gg])'));
+        store.navigateToMove(1);
+        drainNotifications();
+        const anchor = useGameStore.getState().currentNode;
+
+        store.toggleInsertMode();
+        store.playMove(0, 0);
+        store.playMove(1, 1);
+        store.toggleInsertMode();
+
+        const inserted = anchor.children.at(-1)!;
+        expect(inserted.children[0]?.children[0]?.move).toEqual({ x: 4, y: 4, player: 'white' });
+        expect(useGameStore.getState().notification).toEqual({
+            message: 'Insert mode ended: copied 3 moves.',
+            type: 'info',
+        });
+        drainNotifications();
+    });
+
+    it('pluralises the odd-insert warning for more than one move', () => {
+        const store = useGameStore.getState();
+        store.resetGame();
+
+        store.loadGame(parseSgf('(;GM[1]SZ[9];B[dd];W[ee];B[ff];W[gg])'));
+        store.navigateToMove(1);
+        drainNotifications();
+
+        store.toggleInsertMode();
+        store.playMove(0, 0);
+        store.playMove(1, 1);
+        store.playMove(2, 2);
+        store.toggleInsertMode();
+
+        expect(useGameStore.getState().notification?.message).toContain('3 inserted moves put the rest');
+        drainNotifications();
     });
 
     it('copies and pastes branches at the current node', () => {
@@ -567,8 +676,8 @@ describe('GameStore loadGame', () => {
         expect(useGameStore.getState().komi).toBe(0);
 
         store.undoEdit();
-        // A fresh game uses the default komi (7.5, Chinese rules).
-        expect(useGameStore.getState().komi).toBe(7.5);
+        // A fresh game uses the default komi (7, Chinese rules).
+        expect(useGameStore.getState().komi).toBe(7);
         expect(useGameStore.getState().rootNode.properties?.KM).toBeUndefined();
 
         store.redoEdit();

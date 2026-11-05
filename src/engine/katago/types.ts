@@ -29,6 +29,8 @@ export interface KataGoAnalyzeRequest {
   previousPreviousBoard?: BoardState;
   currentPlayer: Player;
   moveHistory: Move[];
+  /** Full exact situational keys for superko, separate from the five NN history moves. */
+  repetitionHistory?: readonly string[];
   komi: number;
   rules?: GameRules;
   regionOfInterest?: RegionOfInterest | null;
@@ -157,6 +159,8 @@ export interface KataGoEvalRequest {
   previousPreviousBoard?: BoardState;
   currentPlayer: Player;
   moveHistory: Move[];
+  /** Full exact situational keys for superko, separate from the five NN history moves. */
+  repetitionHistory?: readonly string[];
   komi: number;
   rules?: GameRules;
   conservativePass?: boolean;
@@ -188,6 +192,8 @@ export interface KataGoEvalBatchRequest {
     previousPreviousBoard?: BoardState;
     currentPlayer: Player;
     moveHistory: Move[];
+    /** Full exact situational keys for superko, separate from the five NN history moves. */
+    repetitionHistory?: readonly string[];
     komi: number;
   }>;
   rules?: GameRules;
@@ -209,7 +215,13 @@ export interface KataGoEvalBatchResponse {
   error?: string;
 }
 
-export type KataGoWorkerRequest = KataGoInitRequest | KataGoAnalyzeRequest | KataGoEvalRequest | KataGoEvalBatchRequest;
+export interface KataGoCancelRequest {
+  type: 'katago:cancel';
+  id: number;
+  analysisGroup: 'interactive' | 'background';
+}
+
+export type KataGoWorkerRequest = KataGoInitRequest | KataGoAnalyzeRequest | KataGoCancelRequest | KataGoEvalRequest | KataGoEvalBatchRequest;
 /** A one-off diagnostic from the worker, such as why a backend fell back. */
 export interface KataGoNotice {
   type: 'katago:notice';

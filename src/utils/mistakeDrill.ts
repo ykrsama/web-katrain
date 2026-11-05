@@ -1,7 +1,7 @@
 import type { CandidateMove, GameNode, Player } from '../types';
 import { getActiveChild, type ActiveBranchMap } from './branchNavigation';
 import { computeNodePointsLost } from './nodeAnalysis';
-import { formatBoardMoveLabel } from './playedMoveQuality';
+import { formatBoardMoveLabel } from '../lib/gtp';
 
 /**
  * Walking your own mistakes and being asked to find the better move.
@@ -92,7 +92,12 @@ export function collectDrillMistakes(args: {
     if (!child) break;
     const move = child.move;
     const parentMoves = node.analysis?.moves;
-    if (move && move.x >= 0 && move.y >= 0 && parentMoves?.length && (side === 'both' || move.player === side)) {
+    const best = parentMoves?.length ? bestCandidate(parentMoves) : null;
+    // Nothing to find when the engine's move is the one played, and nothing
+    // the board can answer when it is a pass: every point then graded short
+    // of "solved", however well the player read the position.
+    const hasBoardAnswer = !!best && best.x >= 0 && best.y >= 0 && !(move && best.x === move.x && best.y === move.y);
+    if (move && move.x >= 0 && move.y >= 0 && hasBoardAnswer && (side === 'both' || move.player === side)) {
       const pointsLost = computeNodePointsLost(child);
       if (typeof pointsLost === 'number' && Number.isFinite(pointsLost) && pointsLost >= threshold) {
         mistakes.push({
@@ -140,7 +145,9 @@ export function findNodeOnLine(
 export function gradeDrillGuess(
   parentNode: GameNode,
   guess: { x: number; y: number },
-  playedPointsLost: number
+  playedPointsLost: number,
+  /** The move actually played, which is never the answer. */
+  played?: { x: number; y: number }
 ): DrillVerdict | null {
   const moves = parentNode.analysis?.moves;
   if (!moves?.length) return null;
@@ -151,6 +158,13 @@ export function gradeDrillGuess(
   const bestLabel = formatBoardMoveLabel(best, boardSize);
   const guessLabel = formatBoardMoveLabel(guess, boardSize);
 
+  // Playing the drilled move again is the mistake, whatever the candidate
+  // list says it costs: that figure is measured from the parent's search, the
+  // mistake's from the score change across the move, and the two differ --
+  // enough that replaying it read "better" or even "good enough".
+  if (played && played.x === guess.x && played.y === guess.y) {
+    return { kind: 'miss', guessLabel, bestLabel, guessPointsLost: playedPointsLost, playedPointsLost };
+  }
   if (best.x === guess.x && best.y === guess.y) {
     return { kind: 'best', guessLabel, bestLabel, guessPointsLost: 0, playedPointsLost };
   }
@@ -167,7 +181,10 @@ export function gradeDrillGuess(
     // measurement nobody made.
     return { kind: 'miss', guessLabel, bestLabel, guessPointsLost: null, playedPointsLost };
   }
-  if (guessPointsLost <= DRILL_CLOSE_ENOUGH_LOSS) {
+  // "Good enough" still has to beat the move being drilled: with the mistake
+  // threshold at its 0.5 minimum, a guess losing 0.95 against a played 0.6
+  // counted as solving the position.
+  if (guessPointsLost <= DRILL_CLOSE_ENOUGH_LOSS && guessPointsLost < playedPointsLost) {
     return { kind: 'good', guessLabel, bestLabel, guessPointsLost, playedPointsLost };
   }
   // "Better" has to mean better by enough to be a real difference; landing
@@ -211,6 +228,17 @@ export interface MistakeDrillSession {
  * hints are only the most obvious one, and a metric strip reading "BEST MOVE
  * G4" under the board answers the question just as completely.
  */
+/**
+ * Whether anything that would name the engine's move at `nodeId` must hold it
+ * back: a drill asking about the position, or a punish quiz armed on it.
+ */
+export function isAnswerHidden(
+  state: { mistakeDrill: MistakeDrillSession | null; punishQuizArmedNodeId?: string | null },
+  nodeId: string
+): boolean {
+  return isDrillHidingAnswer(state.mistakeDrill, nodeId) || state.punishQuizArmedNodeId === nodeId;
+}
+
 export function isDrillHidingAnswer(drill: MistakeDrillSession | null, nodeId: string): boolean {
   if (!drill || drill.phase !== 'asking') return false;
   return drill.mistakes[drill.index]?.parentNodeId === nodeId;

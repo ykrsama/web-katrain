@@ -52,6 +52,11 @@ describe('settings search index', () => {
 });
 
 describe('settings search', () => {
+  it('finds the board-size setting by a supported dimension', () => {
+    for (const query of ['5x5', '7×7', '11x11', '15×15', '17x17']) {
+      expect(searchSettings(query)[0]?.id, query).toBe('settings-default-board-size');
+    }
+  });
   it('finds a setting by a word from its label', () => {
     expect(searchSettings('komi').length + searchSettings('handicap').length).toBeGreaterThan(0);
     expect(searchSettings('handicap')[0]?.id).toBe('settings-default-handicap');
@@ -105,5 +110,80 @@ describe('settings search', () => {
     expect(source).toContain('aria-activedescendant={activeSettingsResult');
     expect(source).toContain('aria-selected={index === activeSettingsResult}');
     expect(source).toContain("if (event.pointerType !== 'touch') setActiveSettingsResult(index)");
+  });
+});
+
+describe('a setting whose meaning is in its options', () => {
+  // Only the label was searched, so a control could not be found by what it
+  // actually offers. Measured before this: "colorblind" returned nothing,
+  // while "Evaluation Theme" is exactly the control whose option reads
+  // "Red/Green colorblind".
+  const labels = (query: string) => searchSettings(query).map((entry) => entry.label);
+
+  it('finds the colorblind palette by its own name', () => {
+    // "colour blind" arrives through the shared dialect rewrite, so no
+    // British spelling has to live in src for it to be findable.
+    for (const query of ['colorblind', 'colour blind', 'color blind', 'red green', 'accessibility']) {
+      expect(labels(query), query).toContain('Evaluation Theme');
+    }
+  });
+
+  it('finds the UI theme by the option someone is looking for', () => {
+    expect(labels('dark')).toContain('UI Theme');
+    expect(labels('light')).toContain('UI Theme');
+  });
+
+  it('finds the clock settings by the name of the time system', () => {
+    for (const query of ['byo-yomi', 'byoyomi', 'overtime', 'time control', 'clock']) {
+      expect(labels(query), query).toEqual(
+        expect.arrayContaining(['Byo Length (sec)', 'Byo Periods']),
+      );
+    }
+  });
+
+  it('finds the engine backend by the backends it offers', () => {
+    for (const query of ['webgpu', 'gpu', 'wasm', 'cpu', 'engine']) {
+      expect(labels(query), query).toContain('Backend');
+    }
+  });
+
+  it('does not let a keyword widen an unrelated search', () => {
+    // Every term still has to match, so a keyword cannot drag in a control
+    // that has nothing to do with the query.
+    expect(labels('colorblind coordinates')).toEqual([]);
+    expect(labels('board size')).toEqual(['Default Board Size']);
+  });
+});
+
+describe('the rest of the controls whose meaning is in their options', () => {
+  const labels = (query: string) => searchSettings(query).map((entry) => entry.label);
+
+  it('finds the density control by the size it changes', () => {
+    // Its options are Compact / Comfortable / Large, and what they change is
+    // how big controls and text are -- none of which is in "UI Density".
+    for (const query of ['compact', 'comfortable', 'large', 'text size', 'spacing']) {
+      expect(labels(query), query).toContain('UI Density');
+    }
+  });
+
+  it('finds a board theme by the name of the theme', () => {
+    for (const query of ['hikaru', 'yunzi', 'shell', 'kifu', 'happy stones', 'baduktv', 'bamboo']) {
+      expect(labels(query), query).toContain('Board Theme');
+    }
+  });
+
+  it('finds the language control by the other word for it', () => {
+    expect(labels('locale')).toContain('Document language metadata');
+    expect(labels('translation')).toContain('Document language metadata');
+  });
+
+  it('offers both controls that have a Dark option, and only those', () => {
+    expect(labels('dark').sort()).toEqual(['Board Theme', 'UI Theme']);
+  });
+
+  it('has not widened the searches that were already narrow', () => {
+    expect(labels('board size')).toEqual(['Default Board Size']);
+    expect(labels('coordinates')).toEqual(['Show Coordinates']);
+    expect(labels('colorblind')).toEqual(['Evaluation Theme']);
   });
 });

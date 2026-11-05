@@ -91,6 +91,10 @@
 
   /* App shell */
   display: grid;
+  /* Long header messages must shrink within the window. An implicit auto
+     column instead grows to their minimum content width and pushes the
+     sidebar offscreen, even though the shell hides the resulting overflow. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: var(--header-h) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
@@ -111,7 +115,9 @@
 .wk-dashboard .tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 .wk-dashboard .mono { font-family: var(--mono); }
 
-.wk-dashboard ::selection { background: var(--ui-accent-soft); }
+/* ::selection moved to the base layer in index.css: it was scoped here, so
+   the mobile shell and every dialog outside this dashboard still highlighted
+   in the browser's own blue. */
 
 /* Eyebrow / section label */
 .wk-dashboard .eyebrow {
@@ -176,9 +182,11 @@
   border-color: var(--line-strong);
   color: var(--ink-soft);
 }
-.wk-dashboard .dashboard-language-switcher > button:hover {
-  background: var(--panel-soft);
-  color: var(--ink);
+@media (hover: hover) {
+  .wk-dashboard .dashboard-language-switcher > button:hover {
+    background: var(--panel-soft);
+    color: var(--ink);
+  }
 }
 .wk-dashboard .dashboard-language-switcher [data-language-switcher-menu="true"] {
   background: var(--canvas);
@@ -188,9 +196,11 @@
 .wk-dashboard .dashboard-language-switcher [data-language-option] {
   color: var(--muted);
 }
-.wk-dashboard .dashboard-language-switcher [data-language-option]:hover {
-  background: var(--panel-soft);
-  color: var(--ink);
+@media (hover: hover) {
+  .wk-dashboard .dashboard-language-switcher [data-language-option]:hover {
+    background: var(--panel-soft);
+    color: var(--ink);
+  }
 }
 .wk-dashboard .dashboard-language-switcher [data-language-option][aria-selected="true"] {
   background: var(--panel-soft);
@@ -208,7 +218,9 @@
   transition: background .12s ease, color .12s ease, border-color .12s ease;
   position: relative;
 }
-.wk-dashboard .iconbtn:hover { background: var(--panel-soft); color: var(--ink); }
+@media (hover: hover) {
+  .wk-dashboard .iconbtn:hover { background: var(--panel-soft); color: var(--ink); }
+}
 .wk-dashboard .iconbtn.active { background: var(--panel-soft); color: var(--ink); border-color: var(--line); }
 .wk-dashboard .iconbtn svg { width: 16px; height: 16px; }
 .wk-dashboard .iconbtn:focus-visible { outline: 2px solid color-mix(in srgb, var(--ui-accent) 55%, var(--ui-panel)); outline-offset: 2px; }
@@ -234,10 +246,28 @@
   white-space: nowrap;
   transition: background .12s ease, border-color .12s ease, color .12s ease;
 }
-.wk-dashboard .tbtn:hover { background: var(--panel-soft); border-color: var(--line-strong); }
+@media (hover: hover) {
+  .wk-dashboard .tbtn:hover:where(:not(:disabled)) { background: var(--panel-soft); border-color: var(--line-strong); }
+}
 .wk-dashboard .tbtn svg { width: 14px; height: 14px; }
+/* A tbtn that is a toggle rather than an action, matching .pbtn.on. Without
+   this, aria-pressed was the only trace of the engine being on -- true for a
+   screen reader and invisible to everyone else. */
+.wk-dashboard .tbtn.on { color: var(--ink); border-color: var(--ink); background: var(--panel-soft); font-weight: 600; }
 .wk-dashboard .tbtn.primary { background: var(--ink); border-color: var(--ink); color: var(--canvas); }
-.wk-dashboard .tbtn.primary:hover { background: var(--ink-strong); }
+/* The destructive action on this rail, in the same shape .pbtn.danger uses.
+   Resign carried its own `borderColor: '#f0c4c4'` inline instead: a pale pink
+   picked against a light mock, which on the three dark themes is far brighter
+   than the --line-strong every button beside it uses, and on the light one is
+   a wash. Mixing the border out of --red keeps it a red button on every theme
+   and a red the theme chose. */
+.wk-dashboard .tbtn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--panel)); }
+@media (hover: hover) {
+  .wk-dashboard .tbtn.danger:hover:where(:not(:disabled)) { background: var(--red-bg); }
+}
+@media (hover: hover) {
+  .wk-dashboard .tbtn.primary:hover:where(:not(:disabled)) { background: var(--ink-strong); }
+}
 .wk-dashboard .tbtn:focus-visible { outline: 2px solid color-mix(in srgb, var(--ui-accent) 55%, var(--ui-panel)); outline-offset: 2px; }
 .wk-dashboard .tbtn:disabled { opacity: .45; cursor: not-allowed; }
 
@@ -250,7 +280,10 @@
   background: var(--panel);
   color: var(--ink-soft);
   font-size: 13px; font-weight: 600;
-  transition: all .12s ease;
+  /* Named properties rather than `all`: these controls only ever change colour,
+     and `all` also caught the outline the global :focus-visible rule adds, so
+     the keyboard focus ring faded in over .12s instead of landing. */
+  transition: color .12s ease, background-color .12s ease, border-color .12s ease, opacity .12s ease;
 }
 .wk-dashboard .analyze-toggle .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .wk-dashboard .analyze-toggle[aria-pressed="true"] {
@@ -270,7 +303,9 @@
   white-space: nowrap;
   transition: background .12s ease, border-color .12s ease;
 }
-.wk-dashboard .engine-pill:hover { background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .engine-pill:hover { background: var(--panel-soft); }
+}
 .wk-dashboard .engine-pill .dot {
   width: 8px; height: 8px; border-radius: 50%; flex: none;
   background: var(--green);
@@ -370,11 +405,16 @@
 }
 .wk-dashboard .compact-start-actions {
   display: flex;
+  flex-wrap: wrap;
   flex: 1 1 auto;
   justify-content: center;
   gap: 6px;
   min-width: 0;
 }
+/* Five actions at the default 10px padding want 618px; a 1024px window gives
+   the strip 608, which left "From photo" alone on a second row and took 38px
+   from the board. Slightly tighter buttons keep it one row. */
+.wk-dashboard .compact-start-actions .tbtn { padding: 0 8px; }
 .wk-dashboard .compact-start-close {
   flex: none;
   width: 32px;
@@ -392,6 +432,9 @@
   content: 'to move'; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--ui-accent); background: var(--ui-accent-soft); border: 1px solid color-mix(in srgb, var(--ui-accent) 35%, var(--line));
   padding: 1px 5px; border-radius: var(--r-pill); margin-left: 2px;
+  /* A squeezed strip (1280px with the Library open) broke "to move" over two
+     lines inside its pill. */
+  white-space: nowrap; flex: none;
 }
 .wk-dashboard .gs-player .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; white-space: nowrap; }
 .wk-dashboard .gs-player .rk { color: var(--faint); font-family: var(--mono); font-size: 11px; }
@@ -431,8 +474,30 @@
   flex: 1 1 0; min-height: 0; min-width: 0;
   display: grid; place-items: center;
   padding: var(--stage-pad);
+  /* The install card is fixed to the bottom-right of this column, so with no
+     reserve the board simply grows underneath it. Measured on a 1440x900
+     desktop: 14 intersections in the bottom-right corner, N1 to T2, returned
+     the card from `elementFromPoint`, and a click on any of them did nothing at
+     all. Reserved the same way, and for the same reason, as the command bar
+     just below. */
+  --pwa-stage-reserve: 0px;
+  padding-bottom: calc(var(--stage-pad) + var(--pwa-stage-reserve));
+  /* The game-info handle is pinned to this stage's top edge and is 24px tall,
+     while the board starts one --stage-pad (12px) below it. On a tall stage the
+     board never reaches the top and the two never meet. At 1024x500 -- the
+     smallest desktop shell there is, since below either number the app switches
+     to the mobile one -- the board is height-bound, so its top row ran under the
+     handle: four intersections returned the button from elementFromPoint and a
+     click on any of them placed no stone. Reserving the handle's own height
+     costs nothing while the board is width-bound, which is most of the time,
+     and costs 12px of board exactly when it would otherwise be covered. */
+  --edge-toggle-reserve: 24px;
+  padding-top: max(var(--stage-pad), var(--edge-toggle-reserve));
   position: relative;
   overflow: hidden;
+}
+:root[data-pwa-banner] .wk-dashboard .board-stage {
+  --pwa-stage-reserve: var(--pwa-banner-height, 0px);
 }
 
 /* Analysis toggles constantly (Tab), and .board-stage is flex:1, so every
@@ -446,7 +511,7 @@
    focus mode both still hand the space back, since there the bigger board is
    exactly what was asked for. */
 .wk-dashboard[data-commandbar="reserved"]:not([data-focus="on"]) .board-stage {
-  padding-bottom: calc(var(--stage-pad) + var(--commandbar-reserve));
+  padding-bottom: calc(var(--stage-pad) + var(--commandbar-reserve) + var(--pwa-stage-reserve));
 }
 .wk-dashboard .board-wrap {
   position: relative; aspect-ratio: 1;
@@ -468,6 +533,15 @@
 .wk-dashboard .board-stage:has(.hero-card) {
   grid-template-rows: minmax(0, 1fr) auto;
 }
+/* The rail sits in the metrics bar's reserve rather than above it. Stacked,
+   the two held 102px under the board on the one screen with nothing else to
+   show -- a 331px board with an empty band below it at 1280x600. The reserve
+   exists so the board keeps its size across Tab, but the rail is only up on an
+   empty board and the board resizes anyway when it goes, so there the bigger
+   board is worth more. */
+.wk-dashboard[data-commandbar="reserved"]:not([data-focus="on"]) .board-stage:has(.hero-card) {
+  padding-bottom: calc(var(--stage-pad) + var(--pwa-stage-reserve));
+}
 
 .wk-dashboard .hero-card {
   position: relative;
@@ -481,7 +555,7 @@
   gap: 7px;
   align-items: center;
   justify-content: center;
-  width: min(100%, 660px);
+  width: min(100%, 780px);
   max-width: 100%;
   min-height: 46px;
   padding: 6px 42px 6px 10px;
@@ -498,7 +572,7 @@
 }
 .wk-dashboard .hero-card .hero-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 6px;
   margin-top: 0;
@@ -552,16 +626,13 @@
   padding-left: calc(var(--stage-pad) + 184px);
 }
 
-/* The rail cleared the 50px header but not the game strip under it, so its top
-   176px sat over both player entries: entering edit mode hid who is playing and
-   whose turn it is, for as long as it stayed open. --gamestrip-h is the strip's
-   42px min-height plus its 1px bottom border, and drops to 0 when the strip is
-   collapsed, so one rule covers both states. */
+/* The toolbar measures the board stage to clear the actual game strip. These
+   dimensions provide an initial fallback before its layout effect runs. */
 .wk-dashboard { --gamestrip-h: 43px; }
 .wk-dashboard[data-gamestrip="closed"] { --gamestrip-h: 0px; }
 
 .wk-dashboard .edit-toolbar-docked--active .edit-toolbar-panel--docked {
-  top: calc(60px + var(--gamestrip-h));
+  top: var(--desktop-edit-toolbar-top, calc(var(--header-h) + var(--gamestrip-h) + 10px));
   right: auto;
   bottom: 60px;
   left: calc(var(--library-w) + 16px);
@@ -705,10 +776,13 @@
 }
 .wk-dashboard .board-extra-tools .manual-score-panel.manual-score-docked .manual-score-breakdown {
   position: absolute;
-  top: calc(100% + 6px);
+  top: auto;
+  bottom: calc(100% + 6px);
   right: 0;
   z-index: 30;
   width: 230px;
+  max-height: calc(100dvh - 8rem);
+  overflow-y: auto;
   border: 1px solid var(--ui-border-strong);
   border-radius: 8px;
   background: var(--ui-panel);
@@ -740,9 +814,11 @@
   border: 1px solid var(--line); border-radius: var(--r-pill);
   background: var(--panel);
   font-size: 11.5px; font-weight: 600; color: var(--muted);
-  transition: all .12s ease;
+  transition: color .12s ease, background-color .12s ease, border-color .12s ease, opacity .12s ease;
 }
-.wk-dashboard .board-chip:hover:not(:disabled) { color: var(--ink); }
+@media (hover: hover) {
+  .wk-dashboard .board-chip:hover:where(:not(:disabled)) { color: var(--ink); }
+}
 .wk-dashboard .board-chip.on { color: var(--ink); border-color: var(--ink); background: var(--panel); }
 .wk-dashboard .board-chip:disabled { opacity: .45; cursor: not-allowed; }
 .wk-dashboard .board-chip svg { width: 13px; height: 13px; }
@@ -794,7 +870,9 @@
   background: transparent; color: var(--muted);
   transition: background .12s ease, color .12s ease, border-color .12s ease;
 }
-.wk-dashboard .navbtn:hover { background: var(--panel-soft); color: var(--ink); }
+@media (hover: hover) {
+  .wk-dashboard .navbtn:hover:where(:not(:disabled)) { background: var(--panel-soft); color: var(--ink); }
+}
 .wk-dashboard .navbtn svg { width: 15px; height: 15px; }
 /* Direction + dot pairs (previous/next mistake) need a wider hit area, and
    the chevron keeps its own width/height attributes so it reads as a modifier
@@ -806,7 +884,9 @@
    actions like Resign. */
 .wk-dashboard .mistake-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--eval-mistake); flex: none; }
 .wk-dashboard .navbtn.danger { color: var(--red); }
-.wk-dashboard .navbtn.danger:hover { background: var(--red-bg); }
+@media (hover: hover) {
+  .wk-dashboard .navbtn.danger:hover:where(:not(:disabled)) { background: var(--red-bg); }
+}
 .wk-dashboard .navbtn:disabled { opacity: .35; cursor: not-allowed; }
 .wk-dashboard .navbtn:focus-visible { outline: 2px solid color-mix(in srgb, var(--ui-accent) 55%, var(--ui-panel)); outline-offset: 1px; }
 
@@ -816,7 +896,9 @@
   background: var(--panel); color: var(--ink-soft); font-weight: 600; font-size: 13px;
   transition: background .12s ease;
 }
-.wk-dashboard .pass-btn:hover { background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .pass-btn:hover { background: var(--panel-soft); }
+}
 
 .wk-dashboard .move-counter {
   display: inline-flex; align-items: center; gap: 6px;
@@ -835,7 +917,9 @@
   font-family: var(--mono); font-size: 12.5px; color: var(--ink); text-align: right; font-weight: 600;
 }
 .wk-dashboard .move-counter:focus-within { border-color: var(--ui-accent); }
-.wk-dashboard .move-counter input:hover { border-bottom-color: var(--ink-soft); }
+@media (hover: hover) {
+  .wk-dashboard .move-counter input:hover { border-bottom-color: var(--ink-soft); }
+}
 .wk-dashboard .move-counter input:focus { border-bottom-style: solid; border-bottom-color: var(--ui-accent); }
 .wk-dashboard .move-counter input::-webkit-outer-spin-button,
 .wk-dashboard .move-counter input::-webkit-inner-spin-button {
@@ -847,9 +931,12 @@
   -moz-appearance: textfield;
 }
 .wk-dashboard .nav-divider { width: 1px; height: 20px; background: var(--line); margin: 0 2px; }
-.wk-dashboard .navbar-spacer { flex: 1 1 0; min-width: 0; }
 
-.wk-dashboard .playactions { display: flex; align-items: center; gap: 6px; }
+/* Pushed right by its own margin rather than by a <span class="navbar-spacer">
+   that existed only to grow. The rail wraps, and every flex item on it costs a
+   gap whether or not it draws anything -- a rail measured 3.2px over its
+   column was paying 1px for an empty element. */
+.wk-dashboard .playactions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 
 /* The board column owns its own responsive budget: as the library and sidebar
    squeeze it, the toolbars shed labels and tighten paddings so the game strip
@@ -886,6 +973,18 @@
 @container boardcol (max-width: 1000px) {
   .wk-dashboard .cb-metric .sub { display: none; }
 }
+
+/* A sixth chip (Teach) pushed this rail over: measured at 1280x800 it needed
+   936px of a 937px column and wrapped onto a second row, taking 38px of height
+   from the board. The width comes back from the row's own rhythm rather than
+   from its controls -- the navbar's 4px gap already existed at the 919 tier,
+   and the chips are the one group here that never tightened at all. Their 32px
+   min-width is deliberately left alone: the viewport check holds board actions
+   to a 32px floor, so this cannot be paid for out of target size. */
+@container boardcol (max-width: 1000px) {
+  .wk-dashboard .navbar { gap: 4px; }
+  .wk-dashboard .board-tools { gap: 4px; }
+}
 @container boardcol (max-width: 860px) {
   /* Names and turn state identify the players faster than capture totals. Hide
      the secondary counts before letting the strip wrap or truncating both
@@ -900,6 +999,13 @@
      strip that preserves players, result, save state and the clock. */
   .wk-dashboard .gs-sep-file,
   .wk-dashboard .gs-file { display: none; }
+}
+/* The move counter grows a character at move 10 and again at 100. At a 909px
+   column (1280px with the sidebar open) the rail had 7px to spare at move 9,
+   so the second digit wrapped it onto a second row and moved the board 21px
+   under the cursor mid-game. The "Move" label goes first; three digits fit. */
+@container boardcol (max-width: 940px) {
+  .wk-dashboard .move-counter .mc-label { display: none; }
 }
 @container boardcol (max-width: 919px) {
   .wk-dashboard .navbar { gap: 4px; }
@@ -936,14 +1042,23 @@
    the cheaper trade. */
 @container boardcol (max-width: 700px) {
   .wk-dashboard .nav-divider { display: none; }
-  .wk-dashboard .navbar { gap: 1px; padding: 8px 6px 12px; }
+  /* Measured with the library docked at 1280x800: an inner column of 596.8px
+     against a rail whose items summed to 592.0 plus eight 1px gaps -- 3.2px
+     over, so the play actions dropped to a second row and took ~33px of height
+     off the board. The two paddings here and the navbar-spacer removed above
+     give back 9px between them, and none of it comes out of a control: every
+     button, chip and digit is the size it was. ~5.8px of headroom left, which
+     is roughly what the tier had before the Teach chip landed -- and the same
+     probe that reported the overflow is `npm run test:viewport`. */
+  .wk-dashboard .navbar { gap: 1px; padding: 8px 4px 12px; }
   .wk-dashboard .navbar .navgroup { gap: 1px; }
   .wk-dashboard .playactions { gap: 2px; }
   .wk-dashboard .pass-btn { padding: 0 8px; }
+  .wk-dashboard .board-tools { gap: 1px; }
   /* 28px keeps every navigation button clear of the 24px WCAG floor; the chips
      and play actions are held to this app's denser 32px and are not touched. */
   .wk-dashboard .navbtn { width: 28px; }
-  .wk-dashboard .move-counter { padding: 0 6px; }
+  .wk-dashboard .move-counter { padding: 0 4px; }
   .wk-dashboard .move-counter input { width: 30px; }
 }
 
@@ -967,10 +1082,24 @@
   font-size: 13px; font-weight: 600; color: var(--faint);
   transition: color .12s ease;
 }
-.wk-dashboard .mode-tab:hover { color: var(--ink-soft); }
+@media (hover: hover) {
+  .wk-dashboard .mode-tab:hover { color: var(--ink-soft); }
+}
 .wk-dashboard .mode-tab.active { color: var(--ink); border-bottom-color: var(--ui-accent); }
 
-.wk-dashboard .sidebar-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+/* The gutter is reserved whether or not it is needed. This column's content
+   changes size constantly -- analysis fills the candidate list, sections open
+   and close, the tree grows -- and each crossing of the overflow threshold
+   moved everything in the panel sideways by the scrollbar's width. Measured in
+   headless Chrome at 1280x800: 9px with the scrollbar, 0 without. Where the
+   platform draws overlay scrollbars this property does nothing, which is the
+   right answer there too. */
+.wk-dashboard .sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-gutter: stable;
+}
 
 /* collapsible section */
 .wk-dashboard .section { border-bottom: 1px solid var(--line); }
@@ -986,7 +1115,9 @@
   background: transparent; border: none;
   transition: background .12s ease;
 }
-.wk-dashboard .section-head-toggle:hover { background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .section-head-toggle:hover { background: var(--panel-soft); }
+}
 .wk-dashboard .section-head .chev { color: var(--faint); transition: transform .15s ease; display: inline-flex; }
 .wk-dashboard .section.open .section-head .chev { transform: rotate(90deg); }
 .wk-dashboard .section-head .stitle { flex: 1; text-align: left; }
@@ -1007,13 +1138,17 @@
   border: 1px solid var(--line); border-radius: var(--r-sm);
   background: var(--panel); color: var(--muted);
   font-size: 11.5px; font-weight: 500; white-space: nowrap;
-  transition: all .12s ease;
+  transition: color .12s ease, background-color .12s ease, border-color .12s ease, opacity .12s ease;
 }
-.wk-dashboard .pbtn:hover { color: var(--ink); background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .pbtn:hover:where(:not(:disabled)) { color: var(--ink); background: var(--panel-soft); }
+}
 .wk-dashboard .pbtn.on { color: var(--ink); border-color: var(--ink); background: var(--panel); }
 .wk-dashboard .pbtn svg { width: 12px; height: 12px; }
 .wk-dashboard .pbtn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--panel)); }
-.wk-dashboard .pbtn.danger:hover { background: var(--red-bg); }
+@media (hover: hover) {
+  .wk-dashboard .pbtn.danger:hover:where(:not(:disabled)) { background: var(--red-bg); }
+}
 .wk-dashboard .pbtn:disabled { opacity: .4; cursor: not-allowed; }
 .wk-dashboard .pico {
   width: 28px; height: 28px; padding: 0; justify-content: center;
@@ -1032,7 +1167,13 @@
 .wk-dashboard .stone-mini.w { background: radial-gradient(circle at 32% 28%, #ffffff 0%, #f1f1f1 42%, #cfcfcf 100%); border: 1px solid rgba(17,24,39,.35); }
 
 /* Move tree (list view) */
-.wk-dashboard .tree-region { padding: 8px 10px; max-height: 240px; overflow: auto; }
+/* The tree scrolls inside its own scroller, which is what "Center current
+   move", the minimap and culling all act on. A capped region with auto height
+   left that scroller as tall as the whole tree, so the region scrolled instead
+   and Center could not move anything: a node 500px down stayed off-screen.
+   Capping the tree itself keeps short trees short. */
+.wk-dashboard .tree-region { padding: 8px 10px; overflow: hidden; }
+.wk-dashboard .tree-region .move-tree-shell { max-height: 224px; }
 .wk-dashboard .tree-list { max-height: 240px; overflow: auto; }
 .wk-dashboard .tl-item {
   display: flex; align-items: center; gap: 9px;
@@ -1041,7 +1182,9 @@
   border-bottom: 1px solid var(--line-faint);
   transition: background .12s ease;
 }
-.wk-dashboard .tl-item:hover { background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .tl-item:hover { background: var(--panel-soft); }
+}
 .wk-dashboard .tl-item.current { background: var(--panel-soft); box-shadow: inset 2px 0 0 var(--ink); }
 .wk-dashboard .tl-num { width: 26px; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 .wk-dashboard .tl-chip { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: var(--r-xs); }
@@ -1060,7 +1203,9 @@
    already used; section heads (40px) and the mode tabs (43px) stay their own
    tier. Same reasoning as the More Controls sheet's one-rhythm fix. */
 .wk-dashboard .graph-legend .lg { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; white-space: nowrap; background: transparent; border: 1px solid transparent; border-radius: var(--r-xs); cursor: pointer; padding: 0 5px; color: inherit; font-size: inherit; }
-.wk-dashboard .graph-legend .lg:hover { background: var(--panel-soft); color: var(--ink-soft); }
+@media (hover: hover) {
+  .wk-dashboard .graph-legend .lg:hover { background: var(--panel-soft); color: var(--ink-soft); }
+}
 .wk-dashboard .graph-legend .lg.on { background: var(--panel-soft); border-color: var(--line); color: var(--ink); }
 .wk-dashboard .graph-legend .lg-check { display: inline-flex; opacity: 0; color: var(--ink); }
 .wk-dashboard .graph-legend .lg.on .lg-check { opacity: 1; }
@@ -1092,6 +1237,10 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+
+/* The tenuki row is shared with the mobile panel and carries no inset of its
+   own; here it sits under the padded overlay rows, so give it their 14px. */
+.wk-dashboard .tenuki-row { margin-left: 14px; margin-right: 14px; margin-top: 8px; }
 
 /* Quality legend */
 .wk-dashboard .qlegend { padding: 10px 14px 0; }
@@ -1167,7 +1316,9 @@
   text-decoration: none;
   transition: background .12s ease;
 }
-.wk-dashboard .menu-item:hover { background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .menu-item:hover { background: var(--panel-soft); }
+}
 .wk-dashboard .menu-item svg { width: 14px; height: 14px; color: var(--muted); flex: none; }
 .wk-dashboard .menu-item .mi-label { flex: 1; }
 .wk-dashboard .menu-item .mi-kbd { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
@@ -1187,7 +1338,9 @@
   font-size: 10.5px;
   text-decoration: none;
 }
-.wk-dashboard .menu-build:hover { background: var(--panel-soft); color: var(--ink); }
+@media (hover: hover) {
+  .wk-dashboard .menu-build:hover { background: var(--panel-soft); color: var(--ink); }
+}
 .wk-dashboard .menu-build svg { flex: none; width: 12px; height: 12px; color: currentColor; }
 .wk-dashboard .menu-build-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1202,9 +1355,11 @@
 .wk-dashboard .depth-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; }
 .wk-dashboard .depth-preset {
   text-align: left; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--r-sm);
-  background: var(--panel); transition: all .12s ease;
+  background: var(--panel); transition: color .12s ease, background-color .12s ease, border-color .12s ease, opacity .12s ease;
 }
-.wk-dashboard .depth-preset:hover { background: var(--panel-soft); }
+@media (hover: hover) {
+  .wk-dashboard .depth-preset:hover:where(:not(:disabled)) { background: var(--panel-soft); }
+}
 .wk-dashboard .depth-preset.on { border-color: var(--ink); }
 .wk-dashboard .depth-preset:disabled { cursor: not-allowed; opacity: .45; }
 .wk-dashboard .depth-preset .dp-v { display: block; font-family: var(--mono); font-weight: 600; font-size: 13px; }
@@ -1224,7 +1379,9 @@
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); box-shadow: var(--shadow-card);
 }
-.wk-dashboard .edge-toggle:hover { color: var(--ink); }
+@media (hover: hover) {
+  .wk-dashboard .edge-toggle:hover { color: var(--ink); }
+}
 .wk-dashboard .edge-toggle svg { width: 13px; height: 13px; }
 .wk-dashboard .edge-toggle.left { left: 0; border-left: none; border-radius: 0 var(--r-sm) var(--r-sm) 0; }
 .wk-dashboard .edge-toggle.right { right: 0; border-right: none; border-radius: var(--r-sm) 0 0 var(--r-sm); }
@@ -1266,7 +1423,9 @@
   transform: none;
   white-space: nowrap;
 }
-.wk-dashboard .edge-toggle:hover .edge-toggle-label { color: var(--ink-soft); }
+@media (hover: hover) {
+  .wk-dashboard .edge-toggle:hover .edge-toggle-label { color: var(--ink-soft); }
+}
 .wk-dashboard .edge-toggle.top,
 .wk-dashboard .edge-toggle.bottom {
   left: 50%; transform: translateX(-50%);

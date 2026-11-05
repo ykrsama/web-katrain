@@ -11,7 +11,8 @@ freemium), so it was scanned via its public pages (/, /about, /faq, /games, /pla
 
 - **Kaya** is our closest analog: a free, open-source, client-side Go app (React 19 + TS,
   KataGo via ONNX Runtime, Tauri desktop). We already match or exceed most of it. The real
-  gaps: **working i18n**, **pattern/joseki recognition**, **native desktop builds**, and a
+  gaps: **working i18n** (13 locales offered, none translated), **joseki sequences by
+  name** (fuseki and shape recognition are built — see #2), **native desktop builds**, and a
   **trained-model board scanner with a calibration UI**.
 - **Kifubara** is a server-backed service; its headline features (141K-game pro database,
   accounts + cloud sync, auto-sync from OGS/Fox/Pandanet/KGS, cloud KataGo, native scanner
@@ -52,11 +53,11 @@ analysis pages, printable PDFs.
 
 | # | Feature | Details | Effort/notes |
 |---|---------|---------|--------------|
-| 1 | **Real i18n** | Kaya ships full UI translations in EN/ZH/KO/JA/FR/DE/ES/IT (i18next; confirmed in the bundle: French/German/Spanish/Italian string tables). **We advertise the same 8 languages but our `locales.ts` only sets `<html lang>` — every UI string is hardcoded English.** | Our biggest truth-in-advertising gap. Add a message-lookup layer and extract strings. |
-| 2 | **Pattern / joseki / shape recognition** | Recognizes named openings (Low/High Chinese, Sanrensei, Kobayashi, Orthodox…), approaches, enclosures, and shapes (Tiger's Mouth, Bamboo Joint, Empty Triangle, Table Shape…) as they appear on the board, each linked to its Sensei's Library page. Ships as a JSON pattern DB with anchor-point matching; toggleable. Kaya's single most-praised feature on the OGS forums. | Pure client-side; the matching algorithm is simple anchor/vertex comparison. High study value. |
+| 1 | **Real i18n** | Kaya ships full UI translations in EN/ZH/KO/JA/FR/DE/ES/IT (i18next; confirmed in the bundle: French/German/Spanish/Italian string tables). We offer **13** locales and translate none of them: `locales.ts` sets `<html lang>` and the switcher chip, every UI string is hardcoded English (verified 2026-09-04 — switching to uk/ja/zh leaves Pass, Analyze, View, Black, White untouched). **The truth-in-advertising half is already fixed**: both surfaces say "document language metadata", not interface language, and three tests pin that wording. | Still the biggest gap, but it is now a missing feature rather than a false claim. Needs a message-lookup layer, ~680 keys extracted, and native speakers — not machine translation. |
+| 2 | ✅ **Pattern / shape recognition — BUILT** | `src/data/boardPatternLibrary.ts` ships 11 `FUSEKI_PATTERNS` (Low/High/Small/Micro Chinese, Orthodox, Enclosure, Kobayashi, Sanrensei, Nirensei, Shūsaku, 3-3 invasion), 11 `NAMED_SHAPE_PATTERNS` and 2 contact-move patterns, matched by `findBoardPattern` and surfaced through `getMoveInsight` with Sensei's Library links; approaches and enclosures come from `moveInsight.ts`. Verified live 2026-09-04 and covered by `test/boardPatterns.test.ts` (12 tests, including rotation, mirroring and colour inversion). | **Do not rebuild.** The one part still missing is joseki *sequences* by name, which needs a real joseki database — hand-encoding a few risks teaching a wrong name beside a matching reference link. |
 | 3 | **Native desktop apps + auto-update** | Tauri v2 builds for Windows/macOS/Linux with an in-app updater ("Check for Updates…", skip version, remind later) and native ONNX/PyTorch GPU inference. | Strategic choice. Tauri wrap of our PWA is cheap; native inference is not. |
-| 4 | **ONNX Runtime multi-backend inference** | Backend picker: Native GPU/CPU (desktop), WebGPU, **WebNN (Chrome ML API)**, WASM; auto-selects best per device; FP16/FP32 model guidance; batch-size setting; model quality tiers ("Full Quality / Balanced / Smallest download") + custom model upload. | We use TensorFlow.js (WebGPU→WASM→CPU) and support custom KataGo weights. WebNN and a user-facing backend/quality picker are the gaps. |
-| 5 | **Trained-model board scanner + calibration UI** | Moku v3 (RT-DETR) detection with: draggable corner alignment, per-stone calibration ("click intersections to correct misdetections"), sensitivity slider, custom `.onnx` detection model upload, "show differences with current board", and import as new SGF **or** apply onto the current board / add as a move. | Our `photoBoardRecognition.ts` is classical-heuristic with no correction UI. The calibration UX alone would materially improve our scan accuracy. |
+| 4 | **ONNX Runtime multi-backend inference** | Backend picker: Native GPU/CPU (desktop), WebGPU, **WebNN (Chrome ML API)**, WASM; auto-selects best per device; FP16/FP32 model guidance; batch-size setting; model quality tiers ("Full Quality / Balanced / Smallest download") + custom model upload. | We use TensorFlow.js and already ship a **user-facing backend picker** (`katagoBackend`: WebGPU / WASM / CPU, with the live backend shown beside the requested one) plus **custom KataGo weight upload**. The real gaps are narrower: **WebNN**, which appears only as a status label and is not selectable, and **model quality tiers** (Full / Balanced / Smallest download). |
+| 5 | **Trained-model board scanner + calibration UI** | Moku v3 (RT-DETR) detection with: draggable corner alignment, per-stone calibration ("click intersections to correct misdetections"), sensitivity slider, custom `.onnx` detection model upload, "show differences with current board", and import as new SGF **or** apply onto the current board / add as a move. | `photoBoardRecognition.ts` is classical-heuristic, but **we do have a correction UI**: the trace board paints stones per intersection by click or drag (`traceIndexFromPoint` → `setStoneAt`), with an auto-trace sensitivity slider, orientation correction, colour swap, a differences-against-the-current-board summary and all four import modes including exact-one-diff add-as-move — covered by `test/photoBoard.test.ts` and exercised end to end by the viewport suite. The gaps are **draggable corner alignment** and the **trained (ONNX) detector** itself. |
 | 6 | **Markdown comments** | Node comments support markdown, Ctrl/Cmd+S save, comment text-size controls. | Small; our notes are plain text. |
 | 7 | **Game-tree minimap & layout toggle** | Tree minimap, vertical/horizontal tree layout switch, "center on current position", click-to-set branch ID. | Small–medium polish on our `MoveTree`. |
 | 8 | **Problem-mode spoiler guard** | In problem mode, opens at the starting position instead of the last move "so tsumego solutions stay hidden until you play them". | Tiny; our `problemMode.ts` should do the same if it doesn't. |
@@ -115,16 +116,22 @@ was used for behavioral reference only).
 4. ✅ **Markdown notes & problem spoiler guard** (Kaya #6/#8) — verified already at parity:
    `notePreview.ts` renders markdown notes, and `loadSgfRewind` (default on) opens SGFs at
    the start position with problem-collection detection.
-5. **Real i18n** (Kaya #1) — still the biggest gap; we advertise 8 languages but only the
-   language picker is localized. Kaya's reference: flat i18next namespace, ~680 keys,
-   en.json first, 8 locale files kept in parity.
-6. **Board-scan calibration UI** (Kaya #5) — corner drag + click-to-correct; consider an
-   ONNX detection model later (Kaya's Moku is RT-DETR at 640×640 with corner classes).
-7. **Persona bots + mid-game score quizzes** (Kifubara #7/#10) — packaging, not new tech.
+5. **Real i18n** (Kaya #1) — still the biggest gap, though not the one this list used to
+   describe. We now offer 13 locales and translate none of them; what changed is that the
+   UI no longer claims otherwise (both pickers read "document language metadata", pinned by
+   tests in topControlBar, menuDrawer and settingsModal). Kaya's reference: flat i18next
+   namespace, ~680 keys, en.json first, locale files kept in parity. Wants native speakers.
+6. **Board-scan corner alignment** (Kaya #5) — click-to-correct already exists on the trace
+   board; what is missing is draggable corner alignment, and an ONNX detection model later
+   (Kaya's Moku is RT-DETR at 640×640 with corner classes).
+7. ✅ **Persona bots + mid-game score quizzes** (Kifubara #7/#10) — shipped: twelve named
+   bots with style tags, blurbs and trait bars, sorted weakest-first in the New Game dialog
+   (`src/data/botPersonas.ts`, `BotPersonaPicker.tsx`), and a score quiz modal wired into
+   Layout (`ScoreQuizModal.tsx`).
 8. **Remote-engine (KataGo WebSocket) option** (Kifubara #4) — strong analysis on weak devices.
-9. Longer-term/strategic: Tauri desktop builds with auto-update; larger pro-game corpus;
-   tree minimap (Kaya: reactflow + worker layout, main line straight, variations offset
-   per depth).
+9. Longer-term/strategic: Tauri desktop builds with auto-update; larger pro-game corpus.
+   (The tree minimap that used to sit here is shipped — `MoveTree.tsx` has one behind a
+   `toggle-minimap` command, with its open state persisted.)
 
 ## Beyond the competitors (2026-08-31)
 
@@ -138,6 +145,22 @@ chess tooling does rather than at what other Go apps do:
   The care is in what the file cannot say -- a byo-yomi phase records the same
   reading every move, so differencing it would draw a flat run of "instant
   moves" across the most pressured stretch of the game.
+- **The swing map.** (`src/utils/territorySwing.ts`.) Chess engines answer "how
+  much" and leave "where" to the board, because in chess the board *is* the
+  answer -- the material is visible. Go's equivalent is ownership, which every
+  tool draws as a wash of who owns what *now*. None of them draws the
+  difference between two positions, even though that is the question review
+  asks: not "who owns this" but "what did that move change". KaTrain, Kaya and
+  kifubara all show ownership; none subtracts.
+
+  Two things had to be got right. The map reports no score, because ownership
+  and score are separate heads of the net: measured on the bundled test net over
+  eight consecutive 9x9 positions, the change in ownership sum and the change in
+  score lead differed by 8 to 25 points, so a total printed from ownership would
+  sometimes have contradicted the score lead beside it. And the raw difference
+  is unreadable -- on a real move it painted 325 of 441 intersections, because
+  subtracting two whole-board estimates leaves a haze everywhere. Gated at 0.25
+  ownership it paints 24, which is the answer.
 - **"Play elsewhere?"** (`src/utils/tenukiValue.ts`, `src/components/TenukiRow.tsx`).
   Lichess's `x` shows the opponent's threat by handing them the move. Go can
   express it more cleanly, because passing is legal: evaluate the position

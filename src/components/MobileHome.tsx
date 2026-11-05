@@ -1,3 +1,4 @@
+import { getQuickNewGameWarning } from '../utils/quickNewGame';
 import React from 'react';
 import {
   FaBook,
@@ -8,13 +9,14 @@ import {
   FaCopy,
   FaFolderOpen,
   FaGamepad,
+  FaGraduationCap,
   FaPlay,
   FaBolt,
   FaSave,
   FaTimes,
   FaThLarge,
 } from 'react-icons/fa';
-import { formatLibrarySize, formatLibraryTimestamp, type LibraryFile } from '../utils/library';
+import { formatRecentLibraryFileDetail, type LibraryFile } from '../utils/library';
 import { formatGamepadLabel } from '../utils/gamepadLabel';
 import type { BoardSize } from '../types';
 import { isInsideOtherDialog } from '../utils/keyboardTarget';
@@ -33,11 +35,15 @@ interface MobileHomeProps {
   gamepadName?: string | null;
   gamepadCount?: number;
   recentItems: LibraryFile[];
+  /** 'featured' when the list is the bundled games, not the player's own. */
+  recentKind?: 'recent' | 'featured';
   onClose: () => void;
   onGamepadNavigationDisable?: () => void;
   quickNewGameBoardSize?: BoardSize;
+  quickNewGameHandicap?: number;
   onQuickNewGame: () => void;
   onNewGame: () => void;
+  onLessons?: () => void;
   onOpenSgf: () => void;
   onScanBoard: () => void;
   onSaveToLibrary: () => void;
@@ -88,7 +94,7 @@ const HomeAction: React.FC<HomeActionProps> = ({ label, compactLabel, icon, onCl
       {compactLabel ? (
         <span className="mobile-home-action-label-compact hidden text-xs font-semibold">{compactLabel}</span>
       ) : null}
-      {hint ? <span className="mobile-home-action-hint mt-0.5 block truncate text-[0.6875rem] opacity-75">{hint}</span> : null}
+      {hint ? <span className="mobile-home-action-hint mt-0.5 block truncate text-[0.6875rem]">{hint}</span> : null}
     </span>
   </button>
 );
@@ -104,11 +110,14 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   gamepadName,
   gamepadCount = 0,
   recentItems,
+  recentKind = 'recent',
   onClose,
   onGamepadNavigationDisable,
   quickNewGameBoardSize = 19,
+  quickNewGameHandicap = 0,
   onQuickNewGame,
   onNewGame,
+  onLessons,
   onOpenSgf,
   onScanBoard,
   onSaveToLibrary,
@@ -214,7 +223,7 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
   const gamepadStatusText = hasMultipleGamepads
     ? t('Gamepad navigation connected: {name}. {count} controllers connected; using the most recently active. Tap to disable.', { name: gamepadStatusName, count: gamepadCount })
     : t('Gamepad navigation connected: {name}. Tap to disable.', { name: gamepadStatusName });
-  const quickNewGameWarning = t('Quick new game ({size}×{size}): uses your saved defaults and replaces the current game after the unsaved-changes check.', { size: quickNewGameBoardSize });
+  const quickNewGameWarning = getQuickNewGameWarning(quickNewGameBoardSize, quickNewGameHandicap);
 
   return (
     <div
@@ -229,7 +238,7 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
         <header className="ui-bar border-b border-[var(--ui-border)] px-3 py-2">
           <div className="flex min-h-11 items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 id="mobile-home-title" className="truncate text-base font-bold text-[var(--ui-text)]">Web KaTrain</h2>
+              <h2 id="mobile-home-title" className="truncate text-base font-bold text-[var(--ui-text)]">{t('Web KaTrain')}</h2>
               <div className="truncate text-xs ui-text-muted">
                 {t('{black} vs {white}', { black: blackName, white: whiteName })}
               </div>
@@ -260,7 +269,7 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
                 ref={closeButtonRef}
                 className="ui-control grid place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
                 onClick={onClose}
-                aria-label={t('Open board')}
+                aria-label={t('Return to board')}
                 title={t('Return to board')}
               >
                 <FaTimes aria-hidden="true" />
@@ -269,7 +278,8 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
           </div>
         </header>
 
-        <main
+        {/* A div: the app's own <main> is behind this dialog, and a page gets one. */}
+        <div
           className="mobile-home-main flex-1 overflow-y-auto px-3 py-3"
           style={{
             paddingBottom: 'calc(0.75rem + var(--pwa-banner-height, 0px))',
@@ -301,15 +311,15 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
             aria-label={t('Start or continue')}
           >
             <HomeAction
-              label={hasGameToContinue ? t('Continue Board') : t('Open Board')}
+              label={hasGameToContinue ? t('Continue board') : t('Open board')}
               compactLabel={hasGameToContinue ? t('Continue') : t('Board')}
               icon={<FaThLarge />}
               onClick={onClose}
               primary={hasGameToContinue}
             />
             <HomeAction
-              label={t('Quick New Game')}
-              compactLabel={t('Quick Game')}
+              label={t('Quick new game')}
+              compactLabel={t('Quick game')}
               icon={<FaBolt />}
               onClick={onQuickNewGame}
               hint={t('{size}×{size} defaults', { size: quickNewGameBoardSize })}
@@ -317,15 +327,18 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
               ariaLabel={quickNewGameWarning}
               primary={!hasGameToContinue}
             />
-            <HomeAction label={t('New Game')} compactLabel={t('New Game')} icon={<FaPlay />} onClick={onNewGame} />
-            <HomeAction label={t('Open SGF / Model')} compactLabel={t('Open SGF')} icon={<FaFolderOpen />} onClick={onOpenSgf} />
+            <HomeAction label={t('New game')} compactLabel={t('New game')} icon={<FaPlay />} onClick={onNewGame} />
+            {onLessons && (
+              <HomeAction label={t('Learn Go')} compactLabel={t('Learn Go')} icon={<FaGraduationCap />} onClick={onLessons} hint={t('Captures, life and openings')} />
+            )}
+            <HomeAction label={t('Open game / model')} compactLabel={t('Open game')} icon={<FaFolderOpen />} onClick={onOpenSgf} />
             <HomeAction label={t('Photo Board')} compactLabel={t('Photo Board')} icon={<FaCamera />} onClick={onScanBoard} hint={t('Camera or image')} />
             <HomeAction label={t('Paste SGF / OGS')} compactLabel={t('Paste SGF')} icon={<FaClipboard />} onClick={onPasteSgf} />
           </section>
 
           {recentItems.length > 0 && (
             <section className="mobile-home-recent mt-4">
-              <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide ui-text-faint">{t('Recent')}</div>
+              <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide ui-text-faint">{recentKind === 'featured' ? t('Famous games') : t('Recent')}</div>
               <div className="space-y-2">
                 {recentItems.slice(0, 3).map((item) => (
                   <button
@@ -341,7 +354,7 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
                         covers the rest, and a pointer that can hover. */}
                     <div className="line-clamp-2 text-sm font-semibold text-[var(--ui-text)]" title={item.name}>{item.name}</div>
                     <div className="mt-1 truncate text-xs ui-text-faint">
-                      {t('{count} moves', { count: item.moveCount })} · {formatLibrarySize(item.size)} · {formatLibraryTimestamp(item.updatedAt)}
+                      {formatRecentLibraryFileDetail(item, recentKind)}
                     </div>
                   </button>
                 ))}
@@ -355,14 +368,14 @@ export const MobileHome: React.FC<MobileHomeProps> = ({
               className="mobile-home-actions mobile-home-actions--secondary border-y border-[var(--ui-border)]"
               aria-label={t('Manage game and app')}
             >
-              <HomeAction label={t('Save Copy to Library')} compactLabel={t('Save Copy')} icon={<FaSave />} onClick={onSaveToLibrary} />
+              <HomeAction label={t('Save copy to library')} compactLabel={t('Save copy')} icon={<FaSave />} onClick={onSaveToLibrary} />
               <HomeAction label={t('Copy SGF')} compactLabel={t('Copy SGF')} icon={<FaCopy />} onClick={onCopySgf} />
-              <HomeAction label={t('Game Library')} compactLabel={t('Library')} icon={<FaBook />} onClick={onOpenLibrary} />
-              <HomeAction label={t('Game Report')} compactLabel={t('Report')} icon={<FaChartLine />} onClick={onOpenReport} />
+              <HomeAction label={t('Game library')} compactLabel={t('Library')} icon={<FaBook />} onClick={onOpenLibrary} />
+              <HomeAction label={t('Game report')} compactLabel={t('Report')} icon={<FaChartLine />} onClick={onOpenReport} />
               <HomeAction label={t('Settings')} compactLabel={t('Settings')} icon={<FaCog />} onClick={onOpenSettings} />
             </div>
           </section>
-        </main>
+        </div>
       </div>
     </div>
   );

@@ -77,11 +77,13 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
   const node = cursor ?? start;
   const hasMoves = !!start && start.children.length > 0;
   const sideToMove = node ? problemSideToMove(node) : 'black';
+  // Whose problem it is: the side to move at the start, not at the cursor.
+  const solver = start ? problemSideToMove(start) : undefined;
 
   // Resolves the position if it carries an explicit verdict or ends a line.
   // Returns true when the round is decided, false when play should continue.
   const settleAt = (next: GameNode): boolean => {
-    const verdict = classifyProblemNode(next);
+    const verdict = classifyProblemNode(next, solver);
     if (verdict === 'correct') {
       setStatus('correct');
       setMessage(t('Correct — that solves it!'));
@@ -135,10 +137,10 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
   const handleShowSolution = () => {
     if (!start) return;
     clearReplyTimer();
-    const path = findSolutionPath(start);
+    const path = findSolutionPath(start, solver);
     const last = path[path.length - 1] ?? start;
     setCursor(last);
-    const verdict = classifyProblemNode(last);
+    const verdict = classifyProblemNode(last, solver);
     setStatus(verdict === 'correct' ? 'correct' : 'end');
     setMessage(verdict === 'correct' ? t('Solution shown.') : t('Main line shown.'));
   };
@@ -246,7 +248,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                       type="button"
                       onClick={() => goToProblem(safeIndex - 1)}
                       disabled={safeIndex === 0}
-                      className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
+                      className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] not-disabled:hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
                       aria-label={t('Previous problem')}
                     >
                       <FaArrowLeft aria-hidden="true" />
@@ -255,7 +257,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({ onClose, onOpenSgf }
                       type="button"
                       onClick={() => goToProblem(safeIndex + 1)}
                       disabled={safeIndex >= problems.length - 1}
-                      className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
+                      className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm font-semibold text-[var(--ui-text)] not-disabled:hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
                       aria-label={t('Next problem')}
                     >
                       <FaArrowRight aria-hidden="true" />

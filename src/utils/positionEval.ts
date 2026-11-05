@@ -1,4 +1,6 @@
 import { getEngineClient } from '../engine/client';
+import { engineHistoryBoards } from './positionHistory';
+import { repetitionHistoryForNode } from './treeSuperko';
 import type { GameNode, GameSettings } from '../types';
 import { komiWithHandicapBonus } from './handicap';
 
@@ -42,10 +44,10 @@ export async function evaluateNode(node: GameNode, settings: GameSettings): Prom
     modelUrl,
     backend: settings.katagoBackend,
     board: node.gameState.board,
-    previousBoard: node.parent?.gameState.board,
-    previousPreviousBoard: node.parent?.parent?.gameState.board,
+    ...engineHistoryBoards(node),
     currentPlayer: node.gameState.currentPlayer,
     moveHistory: node.gameState.moveHistory,
+    repetitionHistory: repetitionHistoryForNode(node, settings.gameRules),
     komi: komiWithHandicapBonus(rootBoardOf(node), settings.gameRules, node.gameState.komi),
     rules: settings.gameRules,
     conservativePass: settings.katagoConservativePass,

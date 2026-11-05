@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
-import { isDrillHidingAnswer } from '../utils/mistakeDrill';
+import { isAnswerHidden } from '../utils/mistakeDrill';
 import type { CandidateMove } from '../types';
-import { getEvaluationClass } from '../utils/nodeAnalysis';
+import { DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from '../utils/nodeAnalysis';
 import { evalColorToCss, getKaTrainEvalColors } from '../utils/katrainTheme';
-import { t, useT } from '../i18n';
+import { useT } from '../i18n';
+import { formatBoardMoveLabel } from '../lib/gtp';
 
 interface CandidatePvTilesProps {
   /** `${x},${y}` of the currently pinned candidate, or null. */
@@ -16,12 +17,6 @@ interface CandidatePvTilesProps {
 
 const moveKey = (move: CandidateMove) => `${move.x},${move.y}`;
 
-function moveLabel(move: CandidateMove, boardSize: number): string {
-  if (move.x < 0 || move.y < 0) return t('Pass');
-  const col = String.fromCharCode(65 + (move.x >= 8 ? move.x + 1 : move.x));
-  return `${col}${boardSize - move.y}`;
-}
-
 /**
  * Touch-friendly alternative to hovering candidate moves: a row of tiles that,
  * when tapped, pin that move's principal variation onto the board as a numbered
@@ -30,16 +25,19 @@ function moveLabel(move: CandidateMove, boardSize: number): string {
 export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, onPin }) => {
   const stripRef = useRef<HTMLDivElement>(null);
   const [scrollEdges, setScrollEdges] = useState({ overflow: false, atStart: true, atEnd: true });
-  const { moves, boardSize, nodeId, trainerTheme, addPvVariation } = useGameStore(
+  const { moves, boardSize, nodeId, trainerTheme, evalThresholds, addPvVariation } = useGameStore(
     (state) => ({
       // These tiles are the engine's candidate moves, which is the answer a
       // drill is asking for; show nothing while it is asking.
-      moves: isDrillHidingAnswer(state.mistakeDrill, state.currentNode.id)
+      moves: isAnswerHidden(state, state.currentNode.id)
         ? null
         : state.currentNode.analysis?.moves ?? null,
       boardSize: state.currentNode.gameState.board.length,
       nodeId: state.currentNode.id,
       trainerTheme: state.settings.trainerTheme,
+      // The board, list and graph colour a loss by the player's thresholds;
+      // with the defaults here, one move showed two colours side by side.
+      evalThresholds: state.settings.trainerEvalThresholds,
       addPvVariation: state.addPvVariation,
     }),
     shallow
@@ -51,7 +49,7 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
   const tiles = useMemo(
     () =>
       (moves ?? [])
-        .filter((m) => m.x >= 0 && m.y >= 0 && m.pv && m.pv.length > 0)
+        .filter(m => ((m.x >= 0 && m.y >= 0) || (m.x === -1 && m.y === -1)) && m.pv && m.pv.length > 0)
         .slice(0, 12),
     [moves]
   );
@@ -112,7 +110,11 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
       {tiles.map((move) => {
         const key = moveKey(move);
         const active = pinnedKey === key;
-        const cls = getEvaluationClass(move.pointsLost, undefined, evalColors.length);
+        const cls = getEvaluationClass(
+          move.pointsLost,
+          evalThresholds?.length ? evalThresholds : DEFAULT_EVAL_THRESHOLDS,
+          evalColors.length
+        );
         const dot = evalColorToCss(evalColors[cls] ?? evalColors[evalColors.length - 1]!);
         return (
           <button
@@ -126,10 +128,10 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
                 ? 'border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] text-[var(--ui-text)]'
                 : 'border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)]',
             ].join(' ')}
-            title={t('Preview {label} continuation ({count} moves)', { label: moveLabel(move, boardSize), count: move.pv?.length ?? 0 })}
+            title={t('Preview {label} continuation ({count} moves)', { label: t(formatBoardMoveLabel(move, boardSize)), count: move.pv?.length ?? 0 })}
           >
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: dot }} aria-hidden="true" />
-            <span>{moveLabel(move, boardSize)}</span>
+            <span>{formatBoardMoveLabel(move, boardSize)}</span>
           </button>
         );
       })}
@@ -138,7 +140,7 @@ export const CandidatePvTiles: React.FC<CandidatePvTilesProps> = ({ pinnedKey, o
           type="button"
           onClick={() => addPvVariation(pinnedMove.pv ?? [])}
           className="candidate-pv-tile shrink-0 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft)] px-2 py-1 text-xs font-semibold text-[var(--ui-accent)] hover:brightness-110 touch-manipulation"
-          title={t('Add the {label} continuation to the move tree', { label: moveLabel(pinnedMove, boardSize) })}
+          title={t('Add the {label} continuation to the move tree', { label: t(formatBoardMoveLabel(pinnedMove, boardSize)) })}
         >
           {t('Keep in tree')}
         </button>

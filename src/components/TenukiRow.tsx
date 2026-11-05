@@ -26,6 +26,7 @@ import { useT } from '../i18n';
  */
 export const TenukiRow: React.FC<{ className?: string }> = ({ className }) => {
   const t = useT();
+  const tenukiDescriptionId = React.useId();
   const currentNode = useGameStore((state) => state.currentNode);
   const treeVersion = useGameStore((state) => state.treeVersion);
   const tenukiAnalysis = useGameStore((state) => state.tenukiAnalysis);
@@ -70,11 +71,11 @@ export const TenukiRow: React.FC<{ className?: string }> = ({ className }) => {
           onClick={() => analyzeTenuki()}
           disabled={row.disabled}
           title={row.disabledReason ?? t('Evaluate the position again after a pass, to price the point here')}
-          aria-label={t('Ask what playing elsewhere would cost')}
+          aria-describedby={tenukiDescriptionId}
         >
           {row.buttonLabel}
         </button>
-        <div className="min-w-0 flex-1 text-[0.6875rem] ui-text-faint">{row.summary}</div>
+        <div id={tenukiDescriptionId} className="min-w-0 flex-1 text-[0.6875rem] ui-text-faint">{row.summary}</div>
       </div>
       <div className="flex min-w-[13rem] flex-1 items-center gap-2">
         <button
@@ -83,10 +84,10 @@ export const TenukiRow: React.FC<{ className?: string }> = ({ className }) => {
           onClick={() => findTrickMoves()}
           title={
             isTrickScanRunning
-              ? 'Stop looking for trick moves.'
-              : 'Look for moves that leave the opponent one reply that does not lose points, with their second choice worse for them than now. Uses the fast-review depth and the framed region.'
+              ? t('Stop looking for trick moves.')
+              : t('Look for moves that leave the opponent one reply that does not lose points, with their second choice worse for them than now. Uses the fast-review depth and the framed region.')
           }
-          aria-label={isTrickScanRunning ? 'Stop looking for trick moves' : 'Trick moves'}
+          aria-label={isTrickScanRunning ? t('Stop looking for trick moves') : t('Trick moves')}
         >
           {trickRow.buttonLabel}
         </button>

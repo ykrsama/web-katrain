@@ -8,6 +8,7 @@ import {
 } from '../engine/katago/chosenMove';
 import type { AppLocaleId, CandidateMove, FloatArray } from '../types';
 import { translate } from '../i18n/translate';
+import { formatGtpMove } from '../lib/gtp';
 
 /**
  * Picking a move the way a human of a given rank would, following KataGo's own
@@ -135,8 +136,7 @@ export function describeHumanBotPick(pick: HumanBotPick, profile: string, boardS
     const template = `Human ({profile}) passed, following the engine's judgement.`;
     return locale ? translate(locale, template, { profile }) : `Human (${profile}) passed, following the engine's judgement.`;
   }
-  const column = String.fromCharCode(65 + (pick.x >= 8 ? pick.x + 1 : pick.x));
-  const label = `${column}${boardSize - pick.y}`;
+  const label = formatGtpMove(pick.x, pick.y, boardSize);
   const template = `Human ({profile}) played {label}, which players of that rank pick {prob}% of the time.`;
   const prob = (pick.prob * 100).toFixed(1);
   return locale ? translate(locale, template, { profile, label, prob }) : `Human (${profile}) played ${label}, which players of that rank pick ${prob}% of the time.`;

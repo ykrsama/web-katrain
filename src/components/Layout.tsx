@@ -10,7 +10,10 @@ import { ManualScorePanel } from './ManualScorePanel';
 import type { GameInfoValues, AiConfigValues, TimerConfigValues } from './NewGameModal';
 import { downloadSgfFromTree, formatSgfDate, generateSgfFromTree, getImportedSgfNameFromProperties, parseSgf, type KaTrainSgfExportOptions } from '../utils/sgf';
 import { copyBoardImage, downloadBoardImage } from '../utils/boardImageExport';
-import { buildShareUrl, decodeSgfFromFragment, MAX_SHARE_URL_LENGTH } from '../utils/shareLink';
+import { buildShareUrl, decodeSgfFromFragment, hasSgfFragment, MAX_SHARE_FRAGMENT_LENGTH, MAX_SHARE_URL_LENGTH } from '../utils/shareLink';
+import { readLibraryPosition, writeLibraryPosition } from '../utils/libraryPositions';
+import { NOTHING_TO_TAKE_BACK_MESSAGE, getPlayerUndoSteps } from '../utils/playerUndo';
+import { getNodePath, resolveNodePath } from '../utils/pinnedVariations';
 import { pickSharedImportText, readSharedFromQuery } from '../utils/pwaOpen';
 import { AUTO_SAVE_MAX_LABEL, clearAutoSavedGame, readAutoSavedGame, writeAutoSavedGame, type AutoSavedGame } from '../utils/autoSave';
 import type { AutoSaveStatus } from '../utils/saveStatusDisplay';
@@ -21,25 +24,36 @@ import {
   getLibrarySaveTargetFolderId,
   getUniqueLibraryItemName,
   loadLibrary,
-  saveLibrary,
+  updateStoredLibrary,
+  nextLibraryGameSaveRequestId,
   suggestLibraryItemNameFromSgf,
   updateLibraryFileSgf,
   type LibraryFile,
   type LibraryFolderOption,
+  nextUntitledGameName,
+  selectRecentLibraryFiles,
+  type RecentLibraryFiles,
 } from '../utils/library';
 import { loadSgfOrOgs } from '../utils/ogs';
-import type { CandidateMove, EditTool, GameNode, Player } from '../types';
+import type { BoardSize, CandidateMove, EditTool, GameNode, Player } from '../types';
 import { DEFAULT_BOARD_SIZE, KOMI } from '../types';
 import { parseGtpMove } from '../lib/gtp';
-import { computeJapaneseManualScoreFromOwnership, formatResultScoreLead, roundToHalf } from '../utils/manualScore';
+import { computeJapaneseManualScoreFromOwnership, formatResultScoreLead, readRecordedResult, roundToHalf } from '../utils/manualScore';
 import { computeManualScoreEstimate, estimateDeadStonesByPlayout, estimateDeadStonesFromOwnership, NO_MANUAL_SCORE_ESTIMATE, toggleDeadStoneChain } from '../utils/scoring';
-import { isDrillHidingAnswer } from '../utils/mistakeDrill';
+import { isAnswerHidden } from '../utils/mistakeDrill';
 import { summarizePointsLost } from '../utils/analysisSummary';
 import { getKaTrainEvalColors } from '../utils/katrainTheme';
 import { getEngineModelLabel } from '../utils/engineLabel';
 import { getEngineActivityPresentation, getEngineStatusSummary } from '../utils/engineStatusSummary';
-import { normalizeBoardSize, unsupportedSgfBoardSize } from '../utils/boardSize';
-import { LazyModalBoundary } from './LazyModalBoundary';
+import { BOARD_SIZES, normalizeBoardSize, unsupportedSgfBoardSize } from '../utils/boardSize';
+import { LazyModalBoundary, LazyModalFallback } from './LazyModalBoundary';
+import {
+  createIdleScheduler,
+  shouldWarmChunks,
+  warmChunksWhenIdle,
+  type ChunkWarmer,
+} from '../utils/idleChunkWarming';
+import { createWarmableLazy } from '../utils/warmableLazy';
 import { isStaleBuildError } from '../utils/errorReporting';
 import {
   PHOTO_BOARD_IMAGE_ACCEPT,
@@ -48,7 +62,9 @@ import {
   isPhotoBoardImageFile,
   isUnsupportedPhotoBoardImageFile,
 } from '../utils/photoBoard';
+import { countRootHandicapStones } from '../utils/handicapAi';
 import { shouldIgnoreGlobalPasteTarget, shouldIgnoreShortcutForKey } from '../utils/keyboardTarget';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
 import { getMoveInsight } from '../utils/moveInsight';
 import {
   createUploadedModelUrl,
@@ -94,17 +110,21 @@ import { useTournamentStore } from '../store/tournamentStore';
 import { formatKyuRank, type LadderState } from '../utils/tournament';
 import { currentGauntletOpponentKyu, type GauntletState } from '../utils/gauntlet';
 import { UnsavedChangesModal, type UnsavedChangesChoice } from './UnsavedChangesModal';
-import { getActiveChild, getBranchInfo, getCurrentLineMoveCount, getCurrentLineMoveNumber, getCurrentLineNodes } from '../utils/branchNavigation';
+import { getActiveChild, getBranchInfo, getCurrentLineMoveCount, getCurrentLineMoveNumber, getCurrentLineNodes, isOnMainLine } from '../utils/branchNavigation';
 import { computeMoveTimes, hasMoveTimeData } from '../utils/moveTimes';
 import { getMistakeNavigationAvailability } from '../utils/mistakeNavigation';
 import { ResignConfirmModal } from './ResignConfirmModal';
+import { GameReviewConfirmModal } from './GameReviewConfirmModal';
 import { AnalysisCacheClearConfirmModal } from './AnalysisCacheClearConfirmModal';
 import { getResignResult } from '../utils/resign';
 import { DESKTOP_LAYOUT_MEDIA, isDesktopLayoutSize, isDesktopLayoutViewport, isMobileLayoutViewport, shouldShowMobileMatchStrip } from '../utils/responsiveLayout';
 import { readLocalStorage, writeLocalStorage } from '../utils/storage';
 import { getMediaQueryList, subscribeMediaQueryList } from '../utils/mediaQuery';
 import { PREFERS_DARK_MEDIA_QUERY, getResolvedUiTheme } from '../utils/uiThemes';
+import { syncThemeColorMeta } from '../utils/themeColor';
+import { buildDocumentTitle } from '../utils/documentTitle';
 import { copyTextToClipboard, readClipboardText } from '../utils/clipboard';
+import { formatBoardTextDiagram } from '../utils/boardTextDiagram';
 import { FIRST_RUN_LIBRARY_MIN_WIDTH, getInitialLibraryOpen, LIBRARY_OPEN_STORAGE_KEY } from '../utils/layoutPreferences';
 import { saveSettingsActiveTab } from '../utils/settingsTabs';
 import { nextPolicyHeatmapMetric } from '../utils/topMoveMetric';
@@ -113,57 +133,129 @@ import { dispatchMoveTreeCommand, type MoveTreeCommand } from '../utils/moveTree
 import { ANALYSIS_VISIT_PRESETS, formatVisitCount, visitPresetDescription, visitPresetLabel } from '../utils/visitPresets';
 import { getDroppedSgfOrOgsText, getFirstDraggedFile, hasDraggedFiles, hasPotentialGameImportDrag } from '../utils/dragImport';
 import { BOARD_THEME_OPTIONS } from '../utils/boardThemes';
-import { appendRestoredAnalysisSummary } from '../utils/importSummary';
+import { appendRestoredAnalysisSummary, withFailureReason } from '../utils/importSummary';
 import { getResizeObserverConstructor } from '../utils/resizeObserver';
-import { installSoundUnlockHandlers } from '../utils/sound';
+import { toggleAppFullscreen } from '../utils/fullscreen';
+import { countInsertedMoves, describeInsertProgress } from '../utils/insertMode';
+import { installSoundUnlockHandlers, warmAudioContext } from '../utils/sound';
 import { getSgfImportSizeError } from '../utils/sgfImportLimits';
-import { getPvAnimationProgress, hoveredMoveForNode, type ScopedCandidateHover } from '../utils/pvAnimation';
+import { GAME_RECORD_ACCEPT, GAME_RECORD_EXTENSION, isGameRecordFile, readGameRecordFile } from '../utils/gameRecordImport';
+import { getPvAnimationProgress } from '../utils/pvAnimation';
+import { resolveCandidatePreview } from '../utils/candidatePreview';
+import { commitPendingGameDrafts, GAME_DRAFT_COMMITTED_EVENT } from '../utils/gameDrafts';
 
-const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ default: module.SettingsModal })));
-const GameAnalysisModal = lazy(() => import('./GameAnalysisModal').then((module) => ({ default: module.GameAnalysisModal })));
-const TsumegoFrameModal = lazy(() => import('./TsumegoFrameModal').then((module) => ({ default: module.TsumegoFrameModal })));
-const GameReportModal = lazy(() => import('./GameReportModal').then((module) => ({ default: module.GameReportModal })));
-const CommandPaletteModal = lazy(() => import('./CommandPaletteModal').then((module) => ({ default: module.CommandPaletteModal })));
-const KeyboardHelpModal = lazy(() => import('./KeyboardHelpModal').then((module) => ({ default: module.KeyboardHelpModal })));
-const NewGameModal = lazy(() => import('./NewGameModal').then((module) => ({ default: module.NewGameModal })));
-const PhotoBoardModal = lazy(() => import('./PhotoBoardModal').then((module) => ({ default: module.PhotoBoardModal })));
-const PasteSgfModal = lazy(() => import('./PasteSgfModal').then((module) => ({ default: module.PasteSgfModal })));
-const SaveToLibraryDialog = lazy(() => import('./SaveToLibraryDialog').then((module) => ({ default: module.SaveToLibraryDialog })));
-const ScoreQuizModal = lazy(() => import('./ScoreQuizModal').then((module) => ({ default: module.ScoreQuizModal })));
-const TournamentModal = lazy(() => import('./TournamentModal').then((module) => ({ default: module.TournamentModal })));
-const ProGamesModal = lazy(() => import('./ProGamesModal').then((module) => ({ default: module.ProGamesModal })));
-const LessonsModal = lazy(() => import('./LessonsModal').then((module) => ({ default: module.LessonsModal })));
-const GuessMoveModal = lazy(() => import('./GuessMoveModal').then((module) => ({ default: module.GuessMoveModal })));
-const ProblemModal = lazy(() => import('./ProblemModal').then((module) => ({ default: module.ProblemModal })));
-const KifuPrintModal = lazy(() => import('./KifuPrintModal').then((module) => ({ default: module.KifuPrintModal })));
+const settingsModalChunk = createWarmableLazy(() => import('./SettingsModal'), (module) => module.SettingsModal);
+const SettingsModal = settingsModalChunk.Component;
+const gameAnalysisModalChunk = createWarmableLazy(() => import('./GameAnalysisModal'), (module) => module.GameAnalysisModal);
+const GameAnalysisModal = gameAnalysisModalChunk.Component;
+const tsumegoFrameModalChunk = createWarmableLazy(() => import('./TsumegoFrameModal'), (module) => module.TsumegoFrameModal);
+const TsumegoFrameModal = tsumegoFrameModalChunk.Component;
+const gameReportModalChunk = createWarmableLazy(() => import('./GameReportModal'), (module) => module.GameReportModal);
+const GameReportModal = gameReportModalChunk.Component;
+const commandPaletteModalChunk = createWarmableLazy(() => import('./CommandPaletteModal'), (module) => module.CommandPaletteModal);
+const CommandPaletteModal = commandPaletteModalChunk.Component;
+const gameNotesSearchModalChunk = createWarmableLazy(() => import('./GameNotesSearchModal'), (module) => module.GameNotesSearchModal);
+const GameNotesSearchModal = gameNotesSearchModalChunk.Component;
+const keyboardHelpModalChunk = createWarmableLazy(() => import('./KeyboardHelpModal'), (module) => module.KeyboardHelpModal);
+const KeyboardHelpModal = keyboardHelpModalChunk.Component;
+const newGameModalChunk = createWarmableLazy(() => import('./NewGameModal'), (module) => module.NewGameModal);
+const NewGameModal = newGameModalChunk.Component;
+const photoBoardModalChunk = createWarmableLazy(() => import('./PhotoBoardModal'), (module) => module.PhotoBoardModal);
+const PhotoBoardModal = photoBoardModalChunk.Component;
+const pasteSgfModalChunk = createWarmableLazy(() => import('./PasteSgfModal'), (module) => module.PasteSgfModal);
+const PasteSgfModal = pasteSgfModalChunk.Component;
+const saveToLibraryDialogChunk = createWarmableLazy(() => import('./SaveToLibraryDialog'), (module) => module.SaveToLibraryDialog);
+const SaveToLibraryDialog = saveToLibraryDialogChunk.Component;
+const scoreQuizModalChunk = createWarmableLazy(() => import('./ScoreQuizModal'), (module) => module.ScoreQuizModal);
+const ScoreQuizModal = scoreQuizModalChunk.Component;
+const tournamentModalChunk = createWarmableLazy(() => import('./TournamentModal'), (module) => module.TournamentModal);
+const TournamentModal = tournamentModalChunk.Component;
+const proGamesModalChunk = createWarmableLazy(() => import('./ProGamesModal'), (module) => module.ProGamesModal);
+const ProGamesModal = proGamesModalChunk.Component;
+const lessonsModalChunk = createWarmableLazy(() => import('./LessonsModal'), (module) => module.LessonsModal);
+const LessonsModal = lessonsModalChunk.Component;
+const guessMoveModalChunk = createWarmableLazy(() => import('./GuessMoveModal'), (module) => module.GuessMoveModal);
+const GuessMoveModal = guessMoveModalChunk.Component;
+const problemModalChunk = createWarmableLazy(() => import('./ProblemModal'), (module) => module.ProblemModal);
+const ProblemModal = problemModalChunk.Component;
+const kifuPrintModalChunk = createWarmableLazy(() => import('./KifuPrintModal'), (module) => module.KifuPrintModal);
+const KifuPrintModal = kifuPrintModalChunk.Component;
 const BlindfoldModal = lazy(() => import('./BlindfoldModal').then((module) => ({ default: module.BlindfoldModal })));
 const LibraryPanel = lazy(() => import('./LibraryPanel').then((module) => ({ default: module.LibraryPanel })));
 const DesktopDashboard = lazy(() => import('./dashboard/DesktopDashboard').then((module) => ({ default: module.DesktopDashboard })));
 
+/**
+ * Every dialog, pulled in while nothing else is happening.
+ *
+ * A dialog that has to load when it is clicked does not cost what its size
+ * suggests. Measured on the production preview, cold: Paste SGF is 4.8KB, its
+ * chunk finished downloading 7ms after the click, no long task ran anywhere --
+ * and the dialog appeared 319ms after the click. The main thread sat idle for
+ * the other 312ms because React was holding a Suspense fallback. A dialog that
+ * never suspends skips all of it: the four warmed before this list grew opened
+ * in 14-23ms.
+ *
+ * So the size of a chunk is close to irrelevant to what it costs to open cold,
+ * which is why this list is now all of them rather than a chosen few. The
+ * whole set is about 106KB gzipped. The service worker already precaches 4.9MB
+ * before anyone asks for anything -- the 3.7MB model and 1.1MB of WASM -- so
+ * this is roughly 2% on top of what the app already commits to.
+ *
+ * Ordered cheapest first. Idle time is not guaranteed to last, and stopping
+ * partway should leave the most dialogs ready, not the most bytes fetched. The
+ * command palette leading is deliberate beyond that: it exists to be quicker
+ * than hunting through menus, and a third of a second spent opening it is the
+ * whole of what it was meant to save.
+ *
+ * Not here: LibraryPanel, which already opens in 14.6ms and carries its own
+ * loading state, and DesktopDashboard, which the build preloads and which
+ * mounts immediately on desktop anyway.
+ */
+const WARMED_DIALOG_CHUNKS: readonly ChunkWarmer[] = [
+  { name: 'TsumegoFrameModal', load: tsumegoFrameModalChunk.warm },
+  { name: 'PasteSgfModal', load: pasteSgfModalChunk.warm },
+  { name: 'KeyboardHelpModal', load: keyboardHelpModalChunk.warm },
+  { name: 'GameAnalysisModal', load: gameAnalysisModalChunk.warm },
+  { name: 'GuessMoveModal', load: guessMoveModalChunk.warm },
+  { name: 'ProblemModal', load: problemModalChunk.warm },
+  { name: 'KifuPrintModal', load: kifuPrintModalChunk.warm },
+  { name: 'CommandPaletteModal', load: commandPaletteModalChunk.warm },
+  { name: 'GameNotesSearchModal', load: gameNotesSearchModalChunk.warm },
+  { name: 'TournamentModal', load: tournamentModalChunk.warm },
+  { name: 'ScoreQuizModal', load: scoreQuizModalChunk.warm },
+  { name: 'LessonsModal', load: lessonsModalChunk.warm },
+  { name: 'ProGamesModal', load: proGamesModalChunk.warm },
+  { name: 'SaveToLibraryDialog', load: saveToLibraryDialogChunk.warm },
+  { name: 'NewGameModal', load: newGameModalChunk.warm },
+  { name: 'PhotoBoardModal', load: photoBoardModalChunk.warm },
+  { name: 'GameReportModal', load: gameReportModalChunk.warm },
+  { name: 'SettingsModal', load: settingsModalChunk.warm },
+];
+
 const LibraryPanelLoading: React.FC<{ isMobile?: boolean }> = ({ isMobile = false }) => {
   const t = useT();
   return (
-    <div
-      {...(isMobile
-        ? { role: 'tabpanel', id: MOBILE_TAB_PANEL_IDS.library, 'aria-labelledby': mobileTabId('library') }
-        : { 'aria-label': t('Game library') })}
-      className={[
-        'library-panel ui-panel border-r flex flex-col overflow-hidden relative',
-        isMobile ? 'fixed inset-0 z-40 mobile-safe-bottom mobile-safe-inset' : 'h-full w-full',
-      ].join(' ')}
-    >
-      <div className="ui-bar ui-bar-height ui-bar-pad border-b border-[var(--ui-border)] flex items-center">
-        <div className="text-sm font-semibold text-[var(--ui-text)]">{t('Library')}</div>
-      </div>
-      <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--ui-text-muted)]" role="status">
-        {t('Loading game library…')}
-      </div>
+  <div
+    {...(isMobile
+      ? { role: 'tabpanel', id: MOBILE_TAB_PANEL_IDS.library, 'aria-labelledby': mobileTabId('library') }
+      : { 'aria-label': t('Game library') })}
+    className={[
+      'library-panel ui-panel border-r flex flex-col overflow-hidden relative',
+      isMobile ? 'fixed inset-0 z-40 mobile-safe-bottom mobile-safe-inset' : 'h-full w-full',
+    ].join(' ')}
+  >
+    <div className="ui-bar ui-bar-height ui-bar-pad border-b border-[var(--ui-border)] flex items-center">
+      <div className="text-sm font-semibold text-[var(--ui-text)]">{t('Library')}</div>
     </div>
+    <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--ui-text-muted)]" role="status">
+      {t('Loading game library…')}
+    </div>
+  </div>
   );
 };
 
 const MOBILE_HOME_DISMISSED_KEY = 'web-katrain:mobile_home_dismissed:v1';
-const mainFileInputAccept = ['.sgf', PHOTO_BOARD_IMAGE_ACCEPT, MODEL_UPLOAD_ACCEPT].join(',');
+const mainFileInputAccept = [GAME_RECORD_ACCEPT, PHOTO_BOARD_IMAGE_ACCEPT, MODEL_UPLOAD_ACCEPT].join(',');
 const LAYOUT_SHORTCUT_IDS = [
   'toggle-library',
   'toggle-sidebar',
@@ -199,11 +291,18 @@ function computePointsLost(args: { currentNode: GameNode }): number | null {
   return candidate?.pointsLost ?? null;
 }
 
+const UNREADABLE_SHARE_LINK_MESSAGE =
+  'Could not open this share link: it is incomplete, damaged or too large. Ask for the SGF file instead.';
+
+/** How often, at most, a streaming tree change re-checks for unsaved changes. */
+const DIRTY_CHECK_INTERVAL_MS = 1500;
+
 export const Layout: React.FC = () => {
   const {
     startNewGame,
     passTurn,
     resign,
+    recordCountedResult,
     playMove,
     makeAiMove,
     isAiPlaying,
@@ -214,6 +313,7 @@ export const Layout: React.FC = () => {
     pinnedVariations,
     pinCurrentVariation,
     recallVariation,
+    unpinVariation,
     clearPinnedVariations,
     navigateStart,
     navigateEnd,
@@ -224,6 +324,7 @@ export const Layout: React.FC = () => {
     makeCurrentNodeMainBranch,
     findMistake,
     mistakeDrill,
+    punishQuizArmedNodeId,
     startMistakeDrill,
     stopMistakeDrill,
     loadGame,
@@ -245,6 +346,7 @@ export const Layout: React.FC = () => {
     cancelSelectRegionOfInterest,
     setRegionOfInterest,
     isInsertMode,
+    insertAnchorNodeId,
     isEditMode,
     toggleInsertMode,
     toggleEditMode,
@@ -289,6 +391,7 @@ export const Layout: React.FC = () => {
       startNewGame: state.startNewGame,
       passTurn: state.passTurn,
       resign: state.resign,
+      recordCountedResult: state.recordCountedResult,
       playMove: state.playMove,
       makeAiMove: state.makeAiMove,
       isAiPlaying: state.isAiPlaying,
@@ -299,6 +402,7 @@ export const Layout: React.FC = () => {
       pinnedVariations: state.pinnedVariations,
       pinCurrentVariation: state.pinCurrentVariation,
       recallVariation: state.recallVariation,
+      unpinVariation: state.unpinVariation,
       clearPinnedVariations: state.clearPinnedVariations,
       navigateStart: state.navigateStart,
       navigateEnd: state.navigateEnd,
@@ -309,6 +413,7 @@ export const Layout: React.FC = () => {
       makeCurrentNodeMainBranch: state.makeCurrentNodeMainBranch,
       findMistake: state.findMistake,
       mistakeDrill: state.mistakeDrill,
+      punishQuizArmedNodeId: state.punishQuizArmedNodeId,
       startMistakeDrill: state.startMistakeDrill,
       stopMistakeDrill: state.stopMistakeDrill,
       loadGame: state.loadGame,
@@ -330,6 +435,7 @@ export const Layout: React.FC = () => {
       cancelSelectRegionOfInterest: state.cancelSelectRegionOfInterest,
       setRegionOfInterest: state.setRegionOfInterest,
       isInsertMode: state.isInsertMode,
+      insertAnchorNodeId: state.insertAnchorNodeId,
       isEditMode: state.isEditMode,
       toggleInsertMode: state.toggleInsertMode,
       toggleEditMode: state.toggleEditMode,
@@ -362,10 +468,10 @@ export const Layout: React.FC = () => {
       gameAnalysisType: state.gameAnalysisType,
       gameAnalysisDone: state.gameAnalysisDone,
       gameAnalysisTotal: state.gameAnalysisTotal,
-      startQuickGameAnalysis: state.startQuickGameAnalysis,
+      startQuickGameAnalysis: state.requestQuickGameAnalysis,
       frameAsTsumego: state.frameAsTsumego,
       generateSetupPosition: state.generateSetupPosition,
-      startFastGameAnalysis: state.startFastGameAnalysis,
+      startFastGameAnalysis: state.requestFastGameAnalysis,
       stopGameAnalysis: state.stopGameAnalysis,
       rotateBoard: state.rotateBoard,
     }),
@@ -376,39 +482,59 @@ export const Layout: React.FC = () => {
   const boardSize = normalizeBoardSize(board.length, DEFAULT_BOARD_SIZE);
   // Surfaces that would name the engine's move have to withhold it while a
   // drill is asking about the position they are describing.
-  const drillHidesAnswer = isDrillHidingAnswer(mistakeDrill, currentNode.id);
-  const handicap = useMemo(() => {
-    const raw = rootNode.properties?.HA?.[0];
-    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-    if (Number.isFinite(parsed)) return Math.max(0, parsed);
-    const abCount = rootNode.properties?.AB?.length ?? 0;
-    return abCount > 0 ? abCount : 0;
-  }, [rootNode.properties]);
+  const drillHidesAnswer = isAnswerHidden({ mistakeDrill, punishQuizArmedNodeId }, currentNode.id);
+  // Shared with the handicap AI strategy, which reads the same number to decide
+  // how much search advantage to hand Black. Two copies of this had already
+  // drifted: this one consulted HA first, the engine's did not.
+  // Root metadata can change without replacing the node. This reads only HA
+  // and setup-array lengths, so caching it would risk a stale handicap count.
+  const handicap = countRootHandicapStones(rootNode);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const boardShellRef = useRef<HTMLDivElement>(null);
   const analysisCommandBarRef = useRef<HTMLDivElement>(null);
   const modalReturnFocusRef = useRef<HTMLElement | null>(null);
-  // The node comes along with the hover: a candidate and its variation describe
-  // one position only, so playing a stone drops the stale hover rather than
-  // redrawing the old variation on the new board (see `hoveredMoveForNode`).
-  const [hoveredMove, setHoveredMove] = useState<ScopedCandidateHover | null>(null);
-  const handleHoverMove = useCallback((move: CandidateMove | null) => {
-    setHoveredMove(move ? { nodeId: useGameStore.getState().currentNode.id, move } : null);
+  // Each visit is distinct: returning to a node must not revive an old hover.
+  const [previewContext, setPreviewContext] = useState({ nodeId: currentNode.id });
+  if (previewContext.nodeId !== currentNode.id) setPreviewContext({ nodeId: currentNode.id });
+  const previewContextRef = useRef(previewContext);
+  React.useLayoutEffect(() => { previewContextRef.current = previewContext; }, [previewContext]);
+  const [hoveredSelection, setHoveredSelection] = useState<(Pick<CandidateMove, 'x' | 'y'> & { context: typeof previewContext }) | null>(null);
+  const setHoveredMove = useCallback((move: CandidateMove | null) => {
+    setHoveredSelection(previous => {
+      if (!move) return previous?.context === previewContext ? null : previous;
+      return previous?.context === previewContext && previous.x === move.x && previous.y === move.y ? previous : { context: previewContext, x: move.x, y: move.y };
+    });
+  }, [previewContext]);
+  const [reportHoverSelection, setReportHoverSelection] = useState<{ context: typeof previewContext; move: CandidateMove } | null>(null);
+  const reportHoverMove = reportHoverSelection?.context === previewContext ? reportHoverSelection.move : null;
+  // Historical-report callbacks stay stable while its review queue navigates.
+  const setReportHoverMove = useCallback((move: CandidateMove | null) => {
+    setReportHoverSelection(move ? { context: previewContextRef.current, move } : null);
   }, []);
-  const [reportHoverMove, setReportHoverMove] = useState<CandidateMove | null>(null);
-  const [pvAnim, setPvAnim] = useState<{ key: string; startMs: number; upToMove: number } | null>(null);
+  // Candidate events belong to the position that rendered their control. An
+  // event queued before navigation cannot revive a preview in the next one.
+  const setCandidateHoverMove = useCallback((move: CandidateMove | null) => {
+    setReportHoverSelection(previous => {
+      if (!move) return previous?.context === previewContext ? null : previous;
+      return previous?.context === previewContext && previous.move === move ? previous : { context: previewContext, move };
+    });
+  }, [previewContext]);
+  const [pvAnim, setPvAnim] = useState<{ key: string; startMs: number; upToMove: number; manual?: boolean } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsFocusModel, setSettingsFocusModel] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isGameAnalysisOpen, setIsGameAnalysisOpen] = useState(false);
   const [isTsumegoFrameOpen, setIsTsumegoFrameOpen] = useState(false);
   const [isGameReportOpen, setIsGameReportOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isGameNotesSearchOpen, setIsGameNotesSearchOpen] = useState(false);
   const [isKeyboardHelpOpen, setIsKeyboardHelpOpen] = useState(false);
   const [isScoreQuizOpen, setIsScoreQuizOpen] = useState(false);
   const [isTournamentOpen, setIsTournamentOpen] = useState(false);
   const [isProGamesOpen, setIsProGamesOpen] = useState(false);
   const [isLessonsOpen, setIsLessonsOpen] = useState(false);
+  const [lessonsReturnHome, setLessonsReturnHome] = useState(false);
   const [isGuessMoveOpen, setIsGuessMoveOpen] = useState(false);
   const [isProblemOpen, setIsProblemOpen] = useState(false);
   const [isKifuPrintOpen, setIsKifuPrintOpen] = useState(false);
@@ -469,8 +595,39 @@ export const Layout: React.FC = () => {
   const layoutShortcutLabels = useShortcutLabels(LAYOUT_SHORTCUT_IDS);
   const [mobileHomeOpen, setMobileHomeOpen] = useState(() => {
     if (typeof window === 'undefined') return false;
+    // Embedded studies should open on the board, with the menu still available.
+    if (window.self !== window.top) return false;
     return isMobileLayoutViewport() && readLocalStorage(MOBILE_HOME_DISMISSED_KEY) !== 'true';
   });
+
+  // Same idea for the audio device: building it cost 89ms inside the click
+  // that placed the first stone. Only when sound is actually on.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !settings.soundEnabled) return;
+    return createIdleScheduler(window)(() => warmAudioContext());
+  }, [settings.soundEnabled]);
+
+  // Pull the dialogs listed above into memory while nothing else is going on,
+  // so the first click on one is not the click that pays for the chunk.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || typeof window === 'undefined') return;
+    let cancelWarming: (() => void) | undefined;
+    const refreshWarming = () => {
+      cancelWarming?.();
+      cancelWarming = undefined;
+      if (shouldWarmChunks(navigator as unknown as Parameters<typeof shouldWarmChunks>[0])) {
+        cancelWarming = warmChunksWhenIdle(WARMED_DIALOG_CHUNKS, createIdleScheduler(window));
+      }
+    };
+    refreshWarming();
+    window.addEventListener('online', refreshWarming);
+    window.addEventListener('offline', refreshWarming);
+    return () => {
+      cancelWarming?.();
+      window.removeEventListener('online', refreshWarming);
+      window.removeEventListener('offline', refreshWarming);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -478,17 +635,25 @@ export const Layout: React.FC = () => {
     document.documentElement.dataset.uiDensity = settings.uiDensity;
     document.documentElement.dataset.locale = settings.appLocale;
     document.documentElement.lang = getAppLocaleHtmlLang(settings.appLocale);
+    syncThemeColorMeta();
     if (settings.uiTheme !== 'system') return;
     const mediaQueryList = getMediaQueryList(PREFERS_DARK_MEDIA_QUERY);
     if (!mediaQueryList) return;
     return subscribeMediaQueryList(mediaQueryList, () => {
       document.documentElement.dataset.uiTheme = getResolvedUiTheme('system');
+      syncThemeColorMeta();
     });
   }, [settings.appLocale, settings.uiDensity, settings.uiTheme]);
   const [isDesktop, setIsDesktop] = useState(() => {
     return isDesktopLayoutViewport();
   });
   const isMobile = !isDesktop;
+  const openGameNotesSearch = useCallback((returnFocus?: HTMLElement | null) => {
+    modalReturnFocusRef.current = returnFocus ?? (isMobile
+      ? document.getElementById(mobileTabId(mobileTab))
+      : document.querySelector<HTMLElement>('[aria-label="Command palette"]'));
+    setIsGameNotesSearchOpen(true);
+  }, [isMobile, mobileTab]);
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
     const raw = readLocalStorage('web-katrain:left_panel_width:v1');
     const parsed = raw ? Number.parseInt(raw, 10) : NaN;
@@ -500,11 +665,12 @@ export const Layout: React.FC = () => {
     return Number.isFinite(parsed) ? parsed : 360;
   });
   const [libraryVersion, setLibraryVersion] = useState(0);
-  const [recentLibraryItems, setRecentLibraryItems] = useState<LibraryFile[]>([]);
+  const [recentLibraryItems, setRecentLibraryItems] = useState<RecentLibraryFiles>({ kind: 'recent', files: [] });
   const [loadedLibraryFileId, setLoadedLibraryFileId] = useState<string | null>(null);
   const [loadedLibraryFileName, setLoadedLibraryFileName] = useState<string | null>(null);
   const [loadedExternalFile, setLoadedExternalFile] = useState<LoadedExternalFile | null>(null);
   const [externalLibraryFileUpdate, setExternalLibraryFileUpdate] = useState<{
+    requestId: number;
     id: string;
     sgf: string;
     updatedAt: number;
@@ -523,6 +689,14 @@ export const Layout: React.FC = () => {
   const unsavedChangesResolveRef = useRef<((choice: UnsavedChangesChoice) => void) | null>(null);
   const autoSaveRecoveryCheckedRef = useRef(false);
   const autoSaveTooLargeToastShownRef = useRef(false);
+  /**
+   * The recovery copy failing outright -- storage full, or blocked -- is
+   * reported by the save-status badge, which only the mobile bottom dock
+   * renders. On a desktop window nothing said anything at all, so the safety net
+   * could be gone for a whole session without a word. Toast it the way the
+   * too-large case already does, once per run of failures.
+   */
+  const autoSaveFailedToastShownRef = useRef(false);
   const uploadedModelRestorePromiseRef = useRef<ReturnType<typeof restorePersistedUploadedModelUrl> | null>(null);
   const uploadedModelRestoreHandledRef = useRef(false);
   const [autoSaveRecovery, setAutoSaveRecovery] = useState<AutoSavedGame | null>(null);
@@ -538,7 +712,11 @@ export const Layout: React.FC = () => {
   });
 
   const mode = uiState.mode;
-  const boardUiMode = reportHoverMove ? 'analyze' : mode;
+  const candidates = analysisData?.moves ?? currentNode.analysis?.moves;
+  // The report can preview an earlier position. Board and candidate-panel
+  // hovers instead select a coordinate in the current position's live search.
+  const activeReportHoverMove = isGameReportOpen ? reportHoverMove : resolveCandidatePreview(reportHoverMove, candidates);
+  const boardUiMode = activeReportHoverMove ? 'analyze' : mode;
   const shapeCoachEnabled = settings.showShapeCoach;
   const modeControls = uiState.analysisControls[mode];
   const modePanels = uiState.panels[mode];
@@ -574,10 +752,10 @@ export const Layout: React.FC = () => {
   ]);
 
   const endResult = (() => {
-    const nodeEnd = currentNode.endState;
-    if (nodeEnd && nodeEnd.includes('+')) return nodeEnd;
-    const rootEnd = rootNode.properties?.RE?.[0];
-    if (rootEnd && rootEnd.includes('+')) return rootEnd;
+    const nodeEnd = readRecordedResult(currentNode.endState);
+    if (nodeEnd) return nodeEnd;
+    const rootEnd = readRecordedResult(rootNode.properties?.RE?.[0]);
+    if (rootEnd) return rootEnd;
     const pass = (n: GameNode | null | undefined) => !!n?.move && (n.move.x < 0 || n.move.y < 0);
     if (pass(currentNode) && pass(currentNode.parent)) {
       if (settings.gameRules === 'japanese') {
@@ -612,7 +790,10 @@ export const Layout: React.FC = () => {
   })();
 
   useEffect(() => {
-    setManualDeadStones(new Set());
+    // Keep the same empty set when there is nothing to clear: a new one on
+    // every move re-rendered the whole app a second time per step (80
+    // components and a second stone redraw).
+    setManualDeadStones((prev) => (prev.size === 0 ? prev : new Set()));
     setManualScoreMode('manual');
   }, [boardSize, currentNode.id]);
 
@@ -629,9 +810,11 @@ export const Layout: React.FC = () => {
             capturedBlack,
             capturedWhite,
             deadStones: manualDeadStones,
+            rules: settings.gameRules,
+            handicapStones: handicap,
           })
         : NO_MANUAL_SCORE_ESTIMATE,
-    [board, capturedBlack, capturedWhite, komi, manualDeadStones, scoringMode]
+    [board, capturedBlack, capturedWhite, handicap, komi, manualDeadStones, scoringMode, settings.gameRules]
   );
   const manualScoreOwnership = useMemo(() => {
     if (!currentNode.analysis || (currentNode.analysis.ownershipMode ?? 'root') === 'none') return null;
@@ -718,9 +901,22 @@ export const Layout: React.FC = () => {
   // read and promotes anything queued behind them; the flat 2500ms timer that
   // used to live here cut errors short while their "Copy details" button was
   // still the reason they were shown.
-  const toast = useCallback((message: string, type: 'info' | 'error' | 'success' = 'info', copyText?: string) => {
-    useGameStore.setState({ notification: { message, type, ...(copyText ? { copyText } : {}) } });
+  const toast = useCallback((message: string, type: 'info' | 'error' | 'success' = 'info', copyText?: string, operationId?: string) => {
+    useGameStore.setState({ notification: { message, type, ...(copyText ? { copyText } : {}), ...(operationId ? { operationId } : {}) } });
   }, []);
+
+  // The dashboard's navigation buttons, refused while inserting as the
+  // keyboard, side panel and palette already refuse them. Unguarded, To start
+  // mid-insert moved to the root with insert still on, and finishing grafted
+  // the rest of the game onto the new moves there.
+  const insertGuarded = <Args extends unknown[]>(action: (...args: Args) => void) =>
+    (...args: Args) => {
+      if (isInsertMode) {
+        toast(t("Finish inserting before navigating."), 'error');
+        return;
+      }
+      action(...args);
+    };
 
   // Board edits fire from a single click and are easy to make by accident, so
   // the toast reporting one offers to take it straight back. Undoing replaces
@@ -729,6 +925,21 @@ export const Layout: React.FC = () => {
   const undoEditFromToast = useCallback(() => {
     useGameStore.getState().undoEdit();
   }, []);
+
+  /**
+   * An SGF can hold a move this ruleset will not play, and the loader stops the
+   * line there -- so a 250-move record can arrive as a seven-move game. Every
+   * caller of `loadGame` toasts its own "Loaded..." success straight afterwards,
+   * which is why the store records this separately instead of raising a
+   * notification: this effect runs after that toast and replaces it, because a
+   * load that dropped moves is not a success worth confirming.
+   */
+  const sgfLoadWarning = useGameStore((state) => state.sgfLoadWarning);
+  useEffect(() => {
+    if (!sgfLoadWarning) return;
+    toast(sgfLoadWarning, 'error');
+    useGameStore.setState({ sgfLoadWarning: null });
+  }, [sgfLoadWarning, toast]);
 
   useEffect(() => {
     if (settings.soundEnabled) return installSoundUnlockHandlers();
@@ -740,11 +951,61 @@ export const Layout: React.FC = () => {
       return;
     }
     setScoringMode((prev) => !prev);
-  }, [isEditMode, isInsertMode, isSelectingRegionOfInterest, scoringMode, toast]);
+  }, [isEditMode, isInsertMode, isSelectingRegionOfInterest, scoringMode, t, toast]);
 
-  // On-demand "AI move" / "Play best" buttons: play one engine move for the
-  // side to move, even when not in a game vs AI or when it's the human's turn.
+  // On-demand "AI move" button: play one engine move for the side to move, even
+  // when not in a game vs AI or when it's the human's turn. It follows the
+  // configured AI strategy, which is the point -- it is the bot moving.
   const requestAiMove = useCallback(() => makeAiMove({ force: true }), [makeAiMove]);
+
+  /**
+   * "Play best": the move the analysis ranked first, played as a variation.
+   *
+   * This used to call `requestAiMove`, so review mode carried two adjacent
+   * buttons -- "AI move" and "Play best" -- that did exactly the same thing.
+   * They are not the same thing. `makeAiMove` follows `settings.aiStrategy`, so
+   * for anyone who had configured a weak bot to play against, a button labelled
+   * "Play best" played that bot's deliberately weak move. Here it means the
+   * engine's own pick, which is also what the swing map needs to compare
+   * against.
+   */
+  const playBestAnalysisMove = useCallback(() => {
+    const node = useGameStore.getState().currentNode;
+    const best = node.analysis?.moves?.find((move) => move.order === 0);
+    if (!best) {
+      toast(t("Analyze this position first, so there is a best move to play."), 'info');
+      return;
+    }
+    // The engine ranks passing like any other move, and it is the right move at
+    // the end of a game; playing it as a stone at (-1,-1) would not be.
+    if (best.x < 0 || best.y < 0) {
+      passTurn();
+      return;
+    }
+    playMove(best.x, best.y);
+  }, [passTurn, playMove, t, toast]);
+
+  /**
+   * Closing the score panel on a finished game writes the result down.
+   *
+   * Resigning recorded `RE`; counting did not, so the ordinary way to finish a
+   * Go game was the one whose result vanished -- the panel said W+7.0 and the
+   * exported SGF carried nothing. Records the string the panel showed, not a
+   * recomputation of it, so the file agrees with what was on screen.
+   *
+   * The store ignores this unless the position really is a two-pass end, so
+   * closing a mid-game estimate stays a no-op.
+   */
+  const finishScoring = useCallback(() => {
+    // Resigning announces its result; counting -- the ordinary way a game ends
+    // -- said nothing at all, so the panel closed and the only sign the result
+    // had been kept was a chip appearing in the game strip. Only when it really
+    // was recorded: the same panel estimates mid-game, and an estimate is not a
+    // result to announce.
+    const recorded = recordCountedResult(manualScoreEstimate.result);
+    if (recorded) toast(t("Result: {value1}", { value1: manualScoreEstimate.result }), 'info');
+    setScoringMode(false);
+  }, [manualScoreEstimate.result, recordCountedResult, t, toast]);
 
   const clearManualDeadStones = useCallback(() => {
     setManualDeadStones(new Set());
@@ -770,7 +1031,7 @@ export const Layout: React.FC = () => {
         : t('No dead stones found from {source}.', { source: sourceLabel }),
       'info'
     );
-  }, [board, canEstimateFromBoardShape, currentPlayer, manualScoreOwnership, toast]);
+  }, [board, canEstimateFromBoardShape, currentPlayer, manualScoreOwnership, t, toast]);
 
   const toggleManualDeadStone = useCallback((x: number, y: number) => {
     setManualScoreMode('manual');
@@ -780,7 +1041,7 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     if (!scoringMode) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreShortcutForKey(event.key, event.target, document.activeElement)) return;
+      if (isComposingKeyEvent(event) || shouldIgnoreShortcutForKey(event.key, event.target, document.activeElement)) return;
       if (event.key === 'Escape') setScoringMode(false);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -791,7 +1052,7 @@ export const Layout: React.FC = () => {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreShortcutForKey(event.key, event.target, document.activeElement)) return;
+      if (isComposingKeyEvent(event) || shouldIgnoreShortcutForKey(event.key, event.target, document.activeElement)) return;
       if (eventMatchesShortcut(event, 'toggle-focus-mode')) {
         event.preventDefault();
         toggleFocusMode();
@@ -840,15 +1101,31 @@ export const Layout: React.FC = () => {
     [sgfExportOptions]
   );
 
+  // Whether the game differs from its last saved form. Kept in state rather
+  // than read during render: the read serializes the whole tree, and analysis
+  // bumps treeVersion twice a second, so every progress update rebuilt the SGF
+  // -- 3-4 ms and a 570 KB string of garbage per update on an analysed
+  // 231-move game, several times that on a phone. Refreshed at once after an
+  // idle spell (a move shows "Unsaved" immediately) and then at most every
+  // DIRTY_CHECK_INTERVAL_MS while updates stream, with a trailing check.
+  const [currentGameDirty, setCurrentGameDirty] = useState(false);
+  const currentGameDirtyRef = useRef(currentGameDirty);
+  currentGameDirtyRef.current = currentGameDirty;
+
   const markCurrentGameClean = useCallback((sgf?: string) => {
     cleanGameSgfRef.current = sgf ?? generateCurrentSgf();
+    setCurrentGameDirty(cleanGameSgfRef.current !== generateCurrentSgf());
   }, [generateCurrentSgf]);
 
   const markCurrentGameCleanAndClearAutoSave = useCallback((sgf?: string) => {
+    // Async saves can finish after another edit or game replacement. Only
+    // the snapshot that still matches the current game may clear recovery
+    // or replace its clean baseline.
+    if (sgf !== undefined && sgf !== generateCurrentSgf()) return;
     markCurrentGameClean(sgf);
     clearAutoSavedGame();
     setAutoSaveStatus(null);
-  }, [markCurrentGameClean]);
+  }, [generateCurrentSgf, markCurrentGameClean]);
 
   const setLoadedLibraryFile = useCallback((id: string | null, name?: string | null) => {
     setLoadedLibraryFileId(id);
@@ -858,23 +1135,29 @@ export const Layout: React.FC = () => {
 
   const saveLoadedLibraryFile = useCallback(async (sgf: string): Promise<boolean> => {
     if (!loadedLibraryFileId) return false;
+    const requestId = nextLibraryGameSaveRequestId();
     try {
-      const items = await loadLibrary();
-      const loadedItem = items.find((item) => item.id === loadedLibraryFileId);
-      if (!loadedItem || loadedItem.type !== 'file') {
+      const saved = await updateStoredLibrary((items) => {
+        const loadedItem = items.find((item) => item.id === loadedLibraryFileId);
+        if (!loadedItem || loadedItem.type !== 'file') return { items, result: null };
+        const updatedAt = Date.now();
+        return {
+          items: updateLibraryFileSgf(items, loadedLibraryFileId, sgf, updatedAt),
+          result: { name: loadedItem.name, updatedAt },
+        };
+      });
+      if (!saved) {
         setLoadedLibraryFile(null);
         toast(t('Loaded library file was not found. Downloading SGF instead.'), 'info');
         return false;
       }
-      const updatedAt = Date.now();
-      await saveLibrary(updateLibraryFileSgf(items, loadedLibraryFileId, sgf, updatedAt));
-      setExternalLibraryFileUpdate({ id: loadedLibraryFileId, sgf, updatedAt });
+      setExternalLibraryFileUpdate({ id: loadedLibraryFileId, sgf, updatedAt: saved.updatedAt, requestId });
       setLibraryVersion((prev) => prev + 1);
       markCurrentGameCleanAndClearAutoSave(sgf);
-      toast(t('Updated "{name}" in Library.', { name: loadedItem.name }), 'success');
+      toast(t('Updated "{name}" in Library.', { name: saved.name }), 'success');
       return true;
-    } catch {
-      toast(t('Failed to update loaded library file. Downloading SGF instead.'), 'error');
+    } catch (error) {
+      toast(withFailureReason(t('Failed to update loaded library file. Downloading SGF instead.'), error), 'error');
       return false;
     }
   }, [loadedLibraryFileId, markCurrentGameCleanAndClearAutoSave, setLoadedLibraryFile, t, toast]);
@@ -892,6 +1175,24 @@ export const Layout: React.FC = () => {
       return false;
     }
   }, [generateCurrentSgf]);
+
+  const lastDirtyCheckRef = useRef(0);
+  useEffect(() => {
+    const check = () => {
+      lastDirtyCheckRef.current = Date.now();
+      setCurrentGameDirty(hasUnsavedChanges());
+    };
+    // A clean game is checked every time: turning dirty is the change the
+    // player waits to see. Only a game already dirty -- one whose analysis
+    // is streaming in -- waits its turn.
+    const wait = DIRTY_CHECK_INTERVAL_MS - (Date.now() - lastDirtyCheckRef.current);
+    if (wait <= 0 || !currentGameDirtyRef.current) {
+      check();
+      return;
+    }
+    const timer = window.setTimeout(check, wait);
+    return () => window.clearTimeout(timer);
+  }, [hasUnsavedChanges, treeVersion]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -919,10 +1220,27 @@ export const Layout: React.FC = () => {
     if (typeof window === 'undefined') return;
 
     // The shared/opened content is the intended state, so skip the recovery
-    // prompt (auto-save itself stays active for subsequent edits).
+    // prompt (auto-save itself stays active for subsequent edits). Skipping the
+    // question must not drop the answer, though: the snapshot is the only copy
+    // of last session's unsaved game, and the load that follows overwrites or
+    // clears it. Keep it in the Library first and say where it went.
     const suppressRecoveryPrompt = () => {
+      if (autoSaveRecoveryCheckedRef.current) return;
       autoSaveRecoveryCheckedRef.current = true;
       setAutoSaveRecoveryChecked(true);
+      const snapshot = readAutoSavedGame();
+      if (!snapshot) return;
+      void updateStoredLibrary((items) => {
+        const name = getUniqueLibraryItemName('Recovered unsaved game', items, null);
+        const item = createLibraryItem(name, snapshot.sgf, null);
+        return { items: [item, ...items], result: item };
+      }).then((item) => {
+        setExternalLibraryItemCreate({ item, updatedAt: item.updatedAt });
+        setLibraryVersion((prev) => prev + 1);
+        toast(t("Your unsaved game from last time is in the Library as \"{value1}\".", { value1: item.name }), 'info');
+      }).catch((error) => {
+        toast(withFailureReason(t("Could not keep your unsaved game from last time."), error), 'error');
+      });
     };
 
     // 1) Share link — full SGF compressed into the URL fragment (#sgf=...).
@@ -930,13 +1248,15 @@ export const Layout: React.FC = () => {
     if (sharedSgf) {
       try {
         const parsed = parseSgf(sharedSgf);
+        suppressRecoveryPrompt();
         loadGame(parsed);
         setLoadedLibraryFile(null);
         navigateEnd();
-        suppressRecoveryPrompt();
-        toast(t('Loaded shared game from link.'), 'success');
-      } catch {
-        toast(t('Could not load the shared game from this link.'), 'error');
+        // Opened, not edited: clean, as a shared text or launched file is.
+        markCurrentGameCleanAndClearAutoSave();
+        toast(t("Loaded shared game from link."), 'success');
+      } catch (error) {
+        toast(withFailureReason(t("Could not load the shared game from this link."), error), 'error');
       } finally {
         try {
           window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -945,6 +1265,16 @@ export const Layout: React.FC = () => {
         }
       }
     } else {
+      if (hasSgfFragment(window.location.hash)) {
+        // A link that is cut short, damaged or too large used to do nothing
+        // and leave itself in the address bar.
+        toast(UNREADABLE_SHARE_LINK_MESSAGE, 'error');
+        try {
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        } catch {
+          // Ignore environments without the History API.
+        }
+      }
       // 2) Web Share Target (GET) — shared text / URL appended as query params.
       const shared = readSharedFromQuery(window.location.search);
       const sharedText = shared ? pickSharedImportText(shared) : null;
@@ -973,14 +1303,14 @@ export const Layout: React.FC = () => {
             try {
               const file = await handle.getFile();
               await pwaOpenHandlersRef.current?.openFile(file);
-            } catch {
-              toast(t('Could not open the file.'), 'error');
+            } catch (error) {
+              toast(withFailureReason(t("Could not open the file."), error), 'error');
             }
           }
         })();
       });
     }
-  }, [loadGame, navigateEnd, setLoadedLibraryFile, toast]);
+  }, [loadGame, markCurrentGameCleanAndClearAutoSave, navigateEnd, setLoadedLibraryFile, t, toast]);
 
   useEffect(() => {
     if (autoSaveRecoveryCheckedRef.current) return;
@@ -992,20 +1322,33 @@ export const Layout: React.FC = () => {
     setAutoSaveRecoveryChecked(true);
   }, [generateCurrentSgf]);
 
+  // Whether there is anything to write is decided when the write is due, not
+  // on every tree change: asking serializes the tree, and during analysis the
+  // tree changes twice a second.
   useEffect(() => {
     if (!autoSaveRecoveryChecked || autoSaveRecovery) return;
-    if (!hasUnsavedChanges()) {
-      clearAutoSavedGame();
-      setAutoSaveStatus(null);
-      autoSaveTooLargeToastShownRef.current = false;
-      return;
+    if (currentGameDirtyRef.current) {
+      setAutoSaveStatus((current) => (current?.state === 'pending' ? current : { state: 'pending' }));
     }
-    setAutoSaveStatus((current) => (current?.state === 'pending' ? current : { state: 'pending' }));
-    const timeout = window.setTimeout(() => {
+    let writtenTreeVersion: number | null = null;
+    const writeNow = () => {
+      // Page-exit capture listeners may commit a note after this version's
+      // debounce already ran. Always consider the store's latest revision.
+      const currentTreeVersion = useGameStore.getState().treeVersion;
+      if (writtenTreeVersion === currentTreeVersion) return;
+      writtenTreeVersion = currentTreeVersion;
+      if (!hasUnsavedChanges()) {
+        clearAutoSavedGame();
+        setAutoSaveStatus(null);
+        autoSaveTooLargeToastShownRef.current = false;
+        autoSaveFailedToastShownRef.current = false;
+        return;
+      }
       const savedAt = Date.now();
       const result = writeAutoSavedGame(generateCurrentSgf(), undefined, savedAt);
       if (result === 'saved') {
         autoSaveTooLargeToastShownRef.current = false;
+        autoSaveFailedToastShownRef.current = false;
         setAutoSaveStatus({ state: 'saved', savedAt });
       } else if (result === 'too-large') {
         setAutoSaveStatus({ state: 'too-large' });
@@ -1015,10 +1358,29 @@ export const Layout: React.FC = () => {
         }
       } else {
         setAutoSaveStatus({ state: 'failed' });
+        if (!autoSaveFailedToastShownRef.current) {
+          autoSaveFailedToastShownRef.current = true;
+          toast(t("Recovery auto-save failed, so this game will not come back after a reload. Save to Library or download SGF to keep changes."), 'error');
+        }
       }
-    }, 500);
-    return () => window.clearTimeout(timeout);
-  }, [autoSaveRecovery, autoSaveRecoveryChecked, generateCurrentSgf, hasUnsavedChanges, toast, treeVersion]);
+    };
+    const timeout = window.setTimeout(writeNow, 500);
+    // A phone or installed app can be put away, and then killed, inside that
+    // half second; the edit made just before would never reach recovery.
+    // Leaving the page writes it at once.
+    const writeOnHide = () => {
+      if (document.visibilityState === 'hidden') writeNow();
+    };
+    window.addEventListener('pagehide', writeNow);
+    window.addEventListener(GAME_DRAFT_COMMITTED_EVENT, writeNow);
+    document.addEventListener('visibilitychange', writeOnHide);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener('pagehide', writeNow);
+      window.removeEventListener(GAME_DRAFT_COMMITTED_EVENT, writeNow);
+      document.removeEventListener('visibilitychange', writeOnHide);
+    };
+  }, [autoSaveRecovery, autoSaveRecoveryChecked, generateCurrentSgf, hasUnsavedChanges, t, toast, treeVersion]);
 
   const discardAutoSaveRecovery = useCallback(() => {
     clearAutoSavedGame();
@@ -1042,20 +1404,25 @@ export const Layout: React.FC = () => {
     }
   }, [autoSaveRecovery, loadGame, navigateEnd, setLoadedLibraryFile, t, toast]);
 
-  const handleSaveCurrentSgf = useCallback(async () => {
+  /** Whether the game is now saved. `false` means the game is still only here. */
+  const handleSaveCurrentSgf = useCallback(async (): Promise<boolean> => {
+    commitPendingGameDrafts();
     const sgf = generateCurrentSgf();
-    if (await saveLoadedLibraryFile(sgf)) return;
+    if (await saveLoadedLibraryFile(sgf)) return true;
     try {
       const saved = downloadSgfFromTree(useGameStore.getState().rootNode, sgfExportOptions);
       markCurrentGameCleanAndClearAutoSave(saved);
-      toast(t('Downloaded SGF.'), 'success');
+      toast(t("Downloaded SGF."), 'success');
+      return true;
     } catch (error) {
-      toast(error instanceof Error ? error.message : t('Failed to download SGF.'), 'error');
+      toast(error instanceof Error ? error.message : 'Failed to download SGF.', 'error');
+      return false;
     }
   }, [generateCurrentSgf, markCurrentGameCleanAndClearAutoSave, saveLoadedLibraryFile, sgfExportOptions, t, toast]);
 
   const openSaveToLibraryDialog = useCallback(async (returnFocus?: HTMLElement | null) => {
     modalReturnFocusRef.current = returnFocus ?? null;
+    commitPendingGameDrafts();
     const sgf = generateCurrentSgf();
     try {
       const items = await loadLibrary();
@@ -1064,16 +1431,15 @@ export const Layout: React.FC = () => {
         loadedLibraryFileId,
         preferredFolderId: readLocalStorage(LIBRARY_CURRENT_FOLDER_STORAGE_KEY),
       });
-      const fileCount = items.filter((item): item is LibraryFile => item.type === 'file').length;
-      const fallbackName = loadedLibraryFileName ?? loadedExternalFile?.name ?? t('Game {n}', { n: fileCount + 1 });
+      const fallbackName = loadedLibraryFileName ?? loadedExternalFile?.name ?? nextUntitledGameName(items);
       setSaveToLibraryDialog({
         sgf,
         initialName: suggestLibraryItemNameFromSgf(sgf, fallbackName),
         initialFolderId,
         folderOptions: getLibraryFolderOptions(items),
       });
-    } catch {
-      toast(t('Failed to open Library save dialog.'), 'error');
+    } catch (error) {
+      toast(withFailureReason(t("Failed to open Library save dialog."), error), 'error');
       if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
     }
   }, [generateCurrentSgf, loadedExternalFile?.name, loadedLibraryFileId, loadedLibraryFileName, t, toast]);
@@ -1084,29 +1450,30 @@ export const Layout: React.FC = () => {
 
   const handleSaveCopyToLibrary = useCallback(async (name: string, folderId: string | null): Promise<boolean> => {
     const sgf = saveToLibraryDialog?.sgf ?? generateCurrentSgf();
-    const itemName = name.trim().replace(/\.sgf$/i, '').trim() || t('Untitled');
+    const itemName = name.trim().replace(GAME_RECORD_EXTENSION, '').trim() || 'Untitled';
     try {
-      const items = await loadLibrary();
-      const targetFolderId =
-        folderId && items.some((item) => item.type === 'folder' && item.id === folderId) ? folderId : null;
-      const updatedAt = Date.now();
-      const uniqueName = getUniqueLibraryItemName(itemName, items, targetFolderId);
-      const newItem = createLibraryItem(uniqueName, sgf, targetFolderId, updatedAt);
-      await saveLibrary([newItem, ...items]);
+      const newItem = await updateStoredLibrary((items) => {
+        const targetFolderId =
+          folderId && items.some((item) => item.type === 'folder' && item.id === folderId) ? folderId : null;
+        const uniqueName = getUniqueLibraryItemName(itemName, items, targetFolderId);
+        const item = createLibraryItem(uniqueName, sgf, targetFolderId);
+        return { items: [item, ...items], result: item };
+      });
       setLoadedLibraryFile(newItem.id, newItem.name);
-      setExternalLibraryItemCreate({ item: newItem, updatedAt });
+      setExternalLibraryItemCreate({ item: newItem, updatedAt: newItem.updatedAt });
       setLibraryVersion((prev) => prev + 1);
       markCurrentGameCleanAndClearAutoSave(sgf);
       toast(t('Saved "{name}" to Library.', { name: newItem.name }), 'success');
       setSaveToLibraryDialog(null);
       return true;
-    } catch {
-      toast(t('Failed to save game to Library.'), 'error');
+    } catch (error) {
+      toast(withFailureReason(t("Failed to save game to Library."), error), 'error');
       return false;
     }
   }, [generateCurrentSgf, markCurrentGameCleanAndClearAutoSave, saveToLibraryDialog?.sgf, setLoadedLibraryFile, t, toast]);
 
   const confirmReplaceCurrentGame = useCallback(async (): Promise<UnsavedChangesChoice> => {
+    commitPendingGameDrafts();
     if (!hasUnsavedChanges()) return 'discard';
     setIsUnsavedChangesOpen(true);
     return new Promise((resolve) => {
@@ -1117,7 +1484,12 @@ export const Layout: React.FC = () => {
   const prepareForGameReplacement = useCallback(async () => {
     const choice = await confirmReplaceCurrentGame();
     if (choice === 'cancel') return false;
-    if (choice === 'save') await handleSaveCurrentSgf();
+    // Choosing Save and having it fail is not consent to lose the game. The
+    // save reported its failure in a toast and the replacement went ahead
+    // regardless, so the one answer that means "keep this" destroyed it.
+    // Stopping here leaves the board untouched and the reason on screen, with
+    // Discard still there for anyone who meant it.
+    if (choice === 'save' && !(await handleSaveCurrentSgf())) return false;
     return true;
   }, [confirmReplaceCurrentGame, handleSaveCurrentSgf]);
 
@@ -1234,6 +1606,7 @@ export const Layout: React.FC = () => {
           analysisShowHints: settings.analysisShowHints,
           analysisShowPolicy: settings.analysisShowPolicy,
           analysisShowOwnership: settings.analysisShowOwnership,
+          analysisShowSwing: settings.analysisShowSwing,
         },
       },
     }));
@@ -1243,13 +1616,14 @@ export const Layout: React.FC = () => {
     settings.analysisShowHints,
     settings.analysisShowPolicy,
     settings.analysisShowOwnership,
+    settings.analysisShowSwing,
   ]);
 
   // Auto-run analysis when in analysis mode
   useEffect(() => {
     if (!isAnalysisMode) return;
-    void runAnalysis();
-  }, [currentNode.id, isAnalysisMode, settings.analysisShowOwnership, runAnalysis]);
+    void runAnalysis({ ifIdle: true });
+  }, [currentNode.id, isAnalysisMode, runAnalysis]);
 
   // Fast reviews may have scores/candidates without ownership. Showing the
   // overlay must fill that gap even when live analysis is switched off.
@@ -1260,10 +1634,7 @@ export const Layout: React.FC = () => {
     isEditMode, scoringMode, isSelectingRegionOfInterest, runAnalysis]);
 
   // PV animation
-  // A hover read off another position is not a hover any more: the current node
-  // is the one the board is drawing, and the PV overlay colours its first move
-  // with that node's side to move.
-  const activeHoverMove = reportHoverMove ?? hoveredMoveForNode(hoveredMove, currentNode.id);
+  const activeHoverMove = activeReportHoverMove ?? resolveCandidatePreview(hoveredSelection?.context === previewContext ? hoveredSelection : null, candidates);
   // Candidate tiles follow the same ownership rule as the board canvases: a
   // temporary board tool gets a quiet targeting surface without switching the
   // user's analysis preference off. As on the board, an analysis that is
@@ -1271,19 +1642,21 @@ export const Layout: React.FC = () => {
   const hasCurrentAnalysis = analysisData !== null || currentNode.analysis !== null;
   const boardAnalysisOverlaysActive =
     (isAnalysisMode || hasCurrentAnalysis) && !isEditMode && !scoringMode && !isSelectingRegionOfInterest;
-  const pvOverlayEnabled = boardAnalysisOverlaysActive || !!reportHoverMove;
+  const allowExplicitPvPreview = !isEditMode && !scoringMode && !isSelectingRegionOfInterest;
+  const pvOverlayEnabled = boardAnalysisOverlaysActive || (!!activeReportHoverMove && allowExplicitPvPreview);
   const pvKey = useMemo(() => {
     const pv = activeHoverMove?.pv;
     if (!pvOverlayEnabled || !pv || pv.length === 0) return null;
-    return `${currentNode.id}|${pv.join(' ')}`;
+    // Refining a line must not restart the reveal on every engine update.
+    return `${currentNode.id}|${activeHoverMove.x},${activeHoverMove.y}`;
   }, [currentNode.id, activeHoverMove, pvOverlayEnabled]);
 
   const evalColors = useMemo(() => getKaTrainEvalColors(settings.trainerTheme), [settings.trainerTheme]);
   const pvAnimTimeS = useMemo(() => {
-    if (reportHoverMove) return 0;
+    if (activeReportHoverMove) return 0;
     const t = settings.animPvTimeSeconds;
     return typeof t === 'number' && Number.isFinite(t) ? t : 0.5;
-  }, [reportHoverMove, settings.animPvTimeSeconds]);
+  }, [activeReportHoverMove, settings.animPvTimeSeconds]);
 
   useEffect(() => {
     if (!pvKey || pvAnimTimeS <= 0) {
@@ -1296,7 +1669,7 @@ export const Layout: React.FC = () => {
 
   const pvLen = activeHoverMove?.pv?.length ?? 0;
   useEffect(() => {
-    if (!pvAnim) return;
+    if (!pvAnim || pvAnim.manual) return;
     if (!pvKey || pvKey !== pvAnim.key) return;
     if (pvLen <= 0) return;
 
@@ -1306,7 +1679,7 @@ export const Layout: React.FC = () => {
       const now = getAnimationNow();
       const progress = getPvAnimationProgress(now - pvAnim.startMs, delayMs, pvLen);
       setPvAnim((current) => {
-        if (!current || current.key !== pvAnim.key || current.upToMove === progress.upToMove) return current;
+        if (!current || current.manual || current.key !== pvAnim.key || current.upToMove === progress.upToMove) return current;
         return { ...current, upToMove: progress.upToMove };
       });
       if (progress.nextDelayMs !== null) timer = window.setTimeout(tick, progress.nextDelayMs);
@@ -1320,10 +1693,31 @@ export const Layout: React.FC = () => {
   const pvUpToMove = useMemo(() => {
     const pv = activeHoverMove?.pv;
     if (!pvOverlayEnabled || !pv || pv.length === 0) return null;
+    if (pvAnim?.key === pvKey && pvAnim.manual) return Math.min(pv.length - 1, pvAnim.upToMove);
     if (pvAnimTimeS <= 0) return pv.length;
     if (!pvAnim || pvAnim.key !== pvKey) return 0;
     return pvAnim.upToMove;
   }, [activeHoverMove, pvOverlayEnabled, pvAnim, pvAnimTimeS, pvKey]);
+
+  const handlePvScroll = useCallback((direction: 1 | -1) => {
+    if (!pvKey || pvLen === 0 || previewContextRef.current !== previewContext) return;
+    setPvAnim(previous => {
+      const lastIndex = pvLen - 1;
+      const shownIndex = previous?.key === pvKey ? Math.min(lastIndex, previous.upToMove) : lastIndex;
+      return { key: pvKey, startMs: getAnimationNow(), upToMove: Math.max(0, Math.min(lastIndex, shownIndex + direction)), manual: true };
+    });
+  }, [pvKey, pvLen, previewContext]);
+
+  const handlePvCommit = useCallback(() => {
+    const pv = activeHoverMove?.pv;
+    if (!pvOverlayEnabled || !pv?.length || previewContextRef.current !== previewContext) return;
+    // The board uses a zero-based last index; the tree action takes a count.
+    useGameStore.getState().addPvVariation(pv, Math.min(pv.length, (pvUpToMove ?? pv.length - 1) + 1));
+  }, [activeHoverMove, pvOverlayEnabled, pvUpToMove, previewContext]);
+
+  const pvScrollHint = pvKey && pvAnim?.key === pvKey && pvAnim.manual && pvUpToMove !== null
+    ? { shown: pvUpToMove + 1, total: pvLen }
+    : null;
 
   const passPv = useMemo(() => {
     const pv = activeHoverMove?.pv;
@@ -1394,6 +1788,8 @@ export const Layout: React.FC = () => {
     isGameAnalysisRunning,
     isContinuousAnalysis,
     isAnalysisMode,
+    modelUrl: settings.katagoModelUrl,
+    modelName: engineModelName,
   });
 
   const statusText = engineError
@@ -1505,9 +1901,7 @@ export const Layout: React.FC = () => {
     void treeVersion;
     return getCurrentLineMoveNumber(currentNode);
   }, [currentNode, treeVersion]);
-  const boardAnnouncement = useMemo(() => {
-    void treeVersion;
-    return formatBoardAnnouncement({
+  const boardAnnouncement = formatBoardAnnouncement({
       move: currentNode.move,
       moveNumber: currentMoveNumber,
       totalMoves: totalMovesInCurrentLine,
@@ -1515,7 +1909,6 @@ export const Layout: React.FC = () => {
       winRate,
       scoreLead,
     });
-  }, [boardSize, currentMoveNumber, currentNode, scoreLead, settings.appLocale, totalMovesInCurrentLine, treeVersion, winRate]);
 
   const branchInfo = useMemo(() => {
     void treeVersion;
@@ -1709,6 +2102,11 @@ export const Layout: React.FC = () => {
     setIsSettingsOpen(true);
   }, []);
 
+  const openModelSettings = useCallback(() => {
+    setSettingsFocusModel(true);
+    setIsSettingsOpen(true);
+  }, []);
+
   const handleLoadClick = () => fileInputRef.current?.click();
 
   useEffect(() => {
@@ -1786,10 +2184,10 @@ export const Layout: React.FC = () => {
     toast,
   ]);
 
-  // Only 9, 13 and 19 are supported, so any other declared size quietly became
-  // a 19x19 board with the stones scattered across it. Call after loadGame:
+  // Unsupported sizes fall back to 19x19 with the stones scattered across
+  // it. Call after loadGame:
   // it reports what the file asked for and what it actually opened at.
-  const boardSizeCoercionNotice = (sgfText: string): string => {
+  const boardSizeCoercionNotice = useCallback((sgfText: string): string => {
     const declared = unsupportedSgfBoardSize(sgfText);
     if (!declared) return '';
     const opened = normalizeBoardSize(
@@ -1797,7 +2195,7 @@ export const Layout: React.FC = () => {
       DEFAULT_BOARD_SIZE
     );
     return t('Board size {declared} is not supported, so it opened as {opened}×{opened}.', { declared, opened });
-  };
+  }, [t]);
 
   const loadLocalSgfText = async (text: string, sourceName: string): Promise<boolean> => {
     const parsed = parseSgf(text);
@@ -1833,8 +2231,8 @@ export const Layout: React.FC = () => {
         toast(PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE, 'error');
         return;
       }
-      if (!file.name.toLowerCase().endsWith('.sgf')) {
-        toast(t('Choose an SGF file, board photo, or KataGo model weights.'), 'error');
+      if (!isGameRecordFile(file)) {
+        toast(t("Choose an SGF, GIB, or NGF game, board photo, or KataGo model weights."), 'error');
         return;
       }
       const sizeError = getSgfImportSizeError(file.size);
@@ -1842,38 +2240,72 @@ export const Layout: React.FC = () => {
         toast(sizeError, 'error');
         return;
       }
-      const text = await file.text();
+      const text = await readGameRecordFile(file, settings.legacyGameEncoding);
       await loadLocalSgfText(text, file.name);
-    } catch {
-      toast(t('Failed to parse SGF file.'), 'error');
+    } catch (error) {
+      toast(withFailureReason(t("Could not open \"{value1}\".", { value1: file.name }), error), 'error');
     } finally {
       e.target.value = '';
     }
   };
 
-  const handleLoadFromLibrary = async (sgfText: string): Promise<boolean> => {
+  // Remember where each Library game is left, a moment after it settles, so
+  // reopening it comes back there (see libraryPositions).
+  useEffect(() => {
+    if (!loadedLibraryFileId) return;
+    const id = loadedLibraryFileId;
+    const path = getNodePath(currentNode);
+    const timer = window.setTimeout(() => writeLibraryPosition(id, path), 400);
+    return () => window.clearTimeout(timer);
+  }, [currentNode, loadedLibraryFileId]);
+
+  const handleLoadFromLibrary = async (sgfText: string, itemId?: string): Promise<boolean> => {
     try {
       const parsed = parseSgf(sgfText);
       if (!(await prepareForGameReplacement())) return false;
       loadGame(parsed);
+      // Back to where this game was left, not move 0.
+      const savedPath = itemId ? readLibraryPosition(itemId) : null;
+      if (savedPath && savedPath.length > 0) {
+        const store = useGameStore.getState();
+        const node = resolveNodePath(store.rootNode, savedPath);
+        if (node) store.jumpToNode(node);
+      }
       markCurrentGameCleanAndClearAutoSave();
       const sizeNotice = boardSizeCoercionNotice(sgfText);
       if (sizeNotice) toast(sizeNotice, 'info');
       return true;
-    } catch {
-      toast(t('Failed to load SGF from library.'), 'error');
+    } catch (error) {
+      toast(withFailureReason(t("Could not load that game from the library."), error), 'error');
       return false;
     }
   };
 
   const handleCopySgf = async () => {
-    const sgf = generateSgfFromTree(rootNode, sgfExportOptions);
+    commitPendingGameDrafts();
+    const sgf = generateCurrentSgf();
     if (await copyTextToClipboard(sgf)) {
       toast(t('Copied SGF to clipboard.'), 'success');
       return;
     }
 
     toast(t('Copy failed (clipboard unavailable).'), 'error');
+  };
+
+  const handleCopyBoardText = async () => {
+    const node = useGameStore.getState().currentNode;
+    const text = formatBoardTextDiagram({
+      board: node.gameState.board,
+      lastMove: node.move,
+      toPlay: currentPlayer,
+      komi,
+      captured: { black: capturedBlack, white: capturedWhite },
+    });
+    if (await copyTextToClipboard(text)) {
+      toast(t("Copied the position as text."), 'success');
+      return;
+    }
+    toast(t("Copy failed (clipboard unavailable)."), 'error');
   };
 
   const handleExportBoardImage = async () => {
@@ -1894,8 +2326,18 @@ export const Layout: React.FC = () => {
   };
 
   const handleCopyShareLink = async () => {
-    const sgf = generateSgfFromTree(rootNode, sgfExportOptions);
+    // The game, not its analysis: saved KT/KA blobs made a 200-move reviewed
+    // game a 385,000-character link, past what an opening app will read.
+    commitPendingGameDrafts();
+    const sgf = generateSgfFromTree(useGameStore.getState().rootNode, {
+      ...sgfExportOptions,
+      trainer: { ...sgfExportOptions.trainer, saveAnalysis: false },
+    });
     const url = buildShareUrl(sgf, window.location);
+    if (url.length - url.indexOf('#sgf=') - '#sgf='.length > MAX_SHARE_FRAGMENT_LENGTH) {
+      toast(t("This game is too large for a share link. Save it to the Library or download the SGF instead."), 'error');
+      return;
+    }
     if (!(await copyTextToClipboard(url))) {
       toast(t('Copy failed (clipboard unavailable).'), 'error');
       return;
@@ -1906,6 +2348,37 @@ export const Layout: React.FC = () => {
       toast(t('Copied share link to clipboard.'), 'success');
     }
   };
+
+  // A share link opened in a tab already on the app is a same-document
+  // navigation: nothing remounts, so the startup read never saw it and the
+  // link did nothing. Pasting one into this tab's address bar is the usual way.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onHashChange = () => {
+      const hash = window.location.hash;
+      if (!hasSgfFragment(hash)) return;
+      const sgf = decodeSgfFromFragment(hash);
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch {
+        // Ignore environments without the History API.
+      }
+      if (!sgf) {
+        toast(UNREADABLE_SHARE_LINK_MESSAGE, 'error');
+        return;
+      }
+      void (async () => {
+        if (!(await prepareForGameReplacement())) return;
+        loadGame(parseSgf(sgf));
+        setLoadedLibraryFile(null);
+        navigateEnd();
+        markCurrentGameCleanAndClearAutoSave();
+        toast(t("Loaded shared game from link."), 'success');
+      })();
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [loadGame, markCurrentGameCleanAndClearAutoSave, navigateEnd, prepareForGameReplacement, setLoadedLibraryFile, t, toast]);
 
   const handlePasteSgf = (returnFocus?: HTMLElement | null) => {
     modalReturnFocusRef.current = returnFocus ?? null;
@@ -1936,9 +2409,9 @@ export const Layout: React.FC = () => {
       markCurrentGameCleanAndClearAutoSave();
       setIsProGamesOpen(false);
       navigateEnd();
-      toast(appendRestoredAnalysisSummary(t('Loaded {name}.', { name }), restoredAnalysisCount), 'success');
-    } catch {
-      toast(t('Failed to load pro game.'), 'error');
+      toast(appendRestoredAnalysisSummary(t("Loaded {value1}.", { value1: name }), restoredAnalysisCount), 'success');
+    } catch (error) {
+      toast(withFailureReason(t("Failed to load pro game."), error), 'error');
     }
   }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, navigateEnd, t, toast]);
 
@@ -1957,23 +2430,35 @@ export const Layout: React.FC = () => {
       setLoadedExternalFile(
         result.source === 'ogs'
           ? { kind: 'ogs', name: `ogs-${result.gameId ?? 'game'}.sgf` }
-          : { kind: 'pasted', name: getImportedSgfNameFromProperties(parsed.tree?.props, t('Pasted SGF')) }
+          : {
+              kind: 'pasted',
+              name: getImportedSgfNameFromProperties(
+                parsed.tree?.props,
+                result.source === 'diagram' ? 'Pasted position' : 'Pasted SGF'
+              ),
+            }
       );
       markCurrentGameCleanAndClearAutoSave();
       const sizeNotice = boardSizeCoercionNotice(result.sgf);
       toast(
         appendRestoredAnalysisSummary(
-          result.source === 'ogs' ? t('Downloaded OGS game {id}.', { id: result.gameId ?? '' }) : t('Loaded SGF.'),
+          result.source === 'ogs'
+            ? `Downloaded OGS game ${result.gameId ?? ''}.`
+            : result.source === 'diagram'
+              ? 'Loaded the position from the pasted diagram.'
+              : 'Loaded SGF.',
           restoredAnalysisCount
         ) + (sizeNotice ? ` ${sizeNotice}` : ''),
         sizeNotice ? 'info' : 'success'
       );
       return 'loaded';
-    } catch {
-      if (options.notifyFailure !== false) toast(t('Failed to load SGF or OGS URL.'), 'error');
+    } catch (error) {
+      if (options.notifyFailure !== false) {
+        toast(withFailureReason(t("Could not load that SGF or OGS link."), error), 'error');
+      }
       return 'failed';
     }
-  }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, t, toast]);
+  }, [boardSizeCoercionNotice, markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, loadGame, setLoadedLibraryFile, t, toast]);
 
   // Plain function (not memoised): only consumed via the handler ref assigned
   // below during render, so it never feeds an effect/callback dependency list.
@@ -1983,21 +2468,21 @@ export const Layout: React.FC = () => {
       toast(t('Opened photo board from shared image.'), 'info');
       return;
     }
-    if (file.name.toLowerCase().endsWith('.sgf') || file.type === 'application/x-go-sgf') {
+    if (isGameRecordFile(file)) {
       try {
         const sizeError = getSgfImportSizeError(file.size);
         if (sizeError) {
           toast(sizeError, 'error');
           return;
         }
-        const text = await file.text();
+        const text = await readGameRecordFile(file, settings.legacyGameEncoding);
         await loadLocalSgfText(text, file.name);
-      } catch {
-        toast(t('Failed to open the SGF file.'), 'error');
+      } catch (error) {
+        toast(withFailureReason(t("Failed to open the game file."), error), 'error');
       }
       return;
     }
-    toast(t('Unsupported file type. Open an SGF file or board image.'), 'error');
+    toast(t("Unsupported file type. Open an SGF, GIB, or NGF game or board image."), 'error');
   };
 
   // Keep the startup-effect handler ref pointed at the current callbacks.
@@ -2031,7 +2516,7 @@ export const Layout: React.FC = () => {
 
     document.addEventListener('paste', handlePasteEvent);
     return () => document.removeEventListener('paste', handlePasteEvent);
-  }, [handleOpenSgfFromText, openPhotoBoard, toast]);
+  }, [handleOpenSgfFromText, openPhotoBoard, t, toast]);
 
   const handlePasteSgfShortcut = useCallback(async () => {
     setViewMenuOpen(false);
@@ -2056,9 +2541,9 @@ export const Layout: React.FC = () => {
       navigateStart();
       markCurrentGameCleanAndClearAutoSave();
       closePhotoBoard();
-      toast(t('Imported board position.'), 'success');
-    } catch {
-      toast(t('Failed to import board position.'), 'error');
+      toast(t("Imported board position."), 'success');
+    } catch (error) {
+      toast(withFailureReason(t("Failed to import board position."), error), 'error');
     }
   };
 
@@ -2196,8 +2681,8 @@ export const Layout: React.FC = () => {
       toast(PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE, 'error');
       return;
     }
-    if (!file.name.toLowerCase().endsWith('.sgf')) {
-      toast(t('Drop an SGF file, OGS URL, board photo, or KataGo model weights here.'), 'error');
+    if (!isGameRecordFile(file)) {
+      toast(t("Drop an SGF, GIB, or NGF game, OGS URL, board photo, or KataGo model weights here."), 'error');
       return;
     }
     try {
@@ -2206,10 +2691,10 @@ export const Layout: React.FC = () => {
         toast(sizeError, 'error');
         return;
       }
-      const text = await file.text();
+      const text = await readGameRecordFile(file, settings.legacyGameEncoding);
       await loadLocalSgfText(text, file.name);
-    } catch {
-      toast(t('Failed to load the dropped SGF file.'), 'error');
+    } catch (error) {
+      toast(withFailureReason(t("Failed to load the dropped game file."), error), 'error');
     }
   };
 
@@ -2225,14 +2710,11 @@ export const Layout: React.FC = () => {
       .then((libraryItems) => {
         if (cancelled) return;
         setRecentLibraryItems(
-          libraryItems
-            .filter((item): item is LibraryFile => item.type === 'file')
-            .sort((a, b) => b.updatedAt - a.updatedAt)
-            .slice(0, 6)
+          selectRecentLibraryFiles(libraryItems, 6, (id) => readLibraryPosition(id) !== null)
         );
       })
       .catch(() => {
-        if (!cancelled) setRecentLibraryItems([]);
+        if (!cancelled) setRecentLibraryItems({ kind: 'recent', files: [] });
       });
     return () => {
       cancelled = true;
@@ -2332,7 +2814,7 @@ export const Layout: React.FC = () => {
         category: t('Game'),
         shortcutId: 'new-game',
         run: () => { void openNewGameWithGuard(); },
-        keywords: ['board size', 'handicap', 'players'],
+        keywords: ['board size', 'handicap', 'komi', 'rules', 'players', ...BOARD_SIZES.flatMap(size => [`${size}x${size}`, `${size}×${size}`])],
       },
       {
         id: 'save-sgf',
@@ -2352,11 +2834,11 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'load-sgf',
-        label: t('Load SGF / photo / model'),
-        category: t('File'),
+        label: t('Load game / photo / model'),
+        category: 'File',
         shortcutId: 'open-sgf',
         run: handleLoadClick,
-        keywords: ['open', 'import', 'weights'],
+        keywords: ['open', 'import', 'sgf', 'gib', 'ngf', 'weights'],
       },
       {
         id: 'photo-board',
@@ -2403,11 +2885,25 @@ export const Layout: React.FC = () => {
         keywords: ['png', 'screenshot', 'diagram', 'clipboard', 'picture', 'share'],
       },
       {
+        id: 'copy-board-text',
+        label: t('Copy position as text'),
+        category: 'File',
+        run: () => { void handleCopyBoardText(); },
+        keywords: ['ascii', 'diagram', 'plain text', 'clipboard', 'forum', 'paste', 'share', 'chat'],
+      },
+      {
         id: 'copy-share-link',
         label: t('Copy share link'),
         category: t('File'),
         run: () => { void handleCopyShareLink(); },
         keywords: ['url', 'link', 'share', 'sgf', 'send', 'position'],
+      },
+      {
+        id: 'find-notes',
+        label: t('Find notes in this game'),
+        category: 'Navigation',
+        run: () => openSimpleModal(() => openGameNotesSearch()),
+        keywords: ['search', 'comments', 'annotations', 'text', 'named positions', 'variations'],
       },
       {
         id: 'nav-back',
@@ -2495,7 +2991,7 @@ export const Layout: React.FC = () => {
         label: t('Undo to main branch'),
         category: t('Navigation'),
         shortcutId: 'undo-main-branch',
-        disabledReason: branchInfo.hasBranches && branchInfo.currentIndex > 1 ? undefined : t('Already on the main branch'),
+        disabledReason: isOnMainLine(currentNode) ? t('Already on the main branch') : undefined,
         run: () => guardNavigation(undoToMainBranch),
         keywords: ['variation', 'main line'],
       },
@@ -2504,7 +3000,7 @@ export const Layout: React.FC = () => {
         label: t('Make current branch main'),
         category: t('Navigation'),
         shortcutId: 'make-main-branch',
-        disabledReason: branchInfo.hasBranches && branchInfo.currentIndex > 1 ? undefined : t('Current line is already main'),
+        disabledReason: isOnMainLine(currentNode) ? t('Current line is already main') : undefined,
         run: () => guardNavigation(makeCurrentNodeMainBranch),
         keywords: ['variation', 'main line'],
       },
@@ -2554,6 +3050,18 @@ export const Layout: React.FC = () => {
         shortcutId: 'toggle-library',
         run: handleToggleLibrary,
         keywords: ['games', 'collection'],
+      },
+      {
+        // Reachable by shortcut and by a button in the top bar, but searching
+        // the palette for "fullscreen" found nothing at all. `run` is called
+        // straight out of the click handler, so the user gesture the
+        // Fullscreen API needs is still live here.
+        id: 'toggle-fullscreen',
+        label: t('Toggle fullscreen'),
+        category: 'View',
+        shortcutId: 'fullscreen',
+        run: () => { void toggleAppFullscreen().catch(() => {}); },
+        keywords: ['full screen', 'maximise', 'maximize', 'presentation', 'zen'],
       },
       {
         id: 'toggle-sidebar',
@@ -2608,16 +3116,33 @@ export const Layout: React.FC = () => {
         },
         keywords: ['bookmark', 'save variation', 'recall', 'pinned'],
       },
-      ...pinnedVariations.map((pin) => ({
-        id: `recall-variation-${pin.id}`,
-        label: t('Recall pinned: {label}', { label: pin.label }),
-        category: t('Navigation'),
-        run: () => {
-          closeFloatingMenus();
-          recallVariation(pin.id);
+      ...pinnedVariations.flatMap((pin) => [
+        {
+          id: `recall-variation-${pin.id}`,
+          label: t('Recall pinned: {label}', { label: pin.label }),
+          category: t('Navigation'),
+          run: () => {
+            closeFloatingMenus();
+            recallVariation(pin.id);
+          },
+          keywords: ['pinned', 'variation', 'jump', 'bookmark'],
         },
-        keywords: ['pinned', 'variation', 'jump', 'bookmark'],
-      })),
+        // Dropping one pin used to mean dropping all of them: the only removal
+        // on offer was "Clear pinned lines", so a fifth pin you regretted cost
+        // you the four you wanted. The store has had unpinVariation(id) and a
+        // test for it the whole time; nothing called it.
+        {
+          id: `unpin-variation-${pin.id}`,
+          label: t('Unpin: {value1}', { value1: pin.label }),
+          category: 'Navigation',
+          run: () => {
+            closeFloatingMenus();
+            unpinVariation(pin.id);
+            toast(t("Unpinned \"{value1}\".", { value1: pin.label }), 'success');
+          },
+          keywords: ['pinned', 'variation', 'remove', 'forget', 'bookmark'],
+        },
+      ]),
       ...(pinnedVariations.length > 0
         ? [
             {
@@ -2763,6 +3288,63 @@ export const Layout: React.FC = () => {
         keywords: ['ownership', 'area'],
       },
       {
+        id: 'toggle-swing',
+        label: settings.analysisShowSwing ? t('Hide what this move changed') : t('Show what this move changed'),
+        category: 'Analysis',
+        run: () => updateControls({ analysisShowSwing: !settings.analysisShowSwing }),
+        disabledReason:
+          currentNode.analysis && currentNode.parent?.analysis
+            ? undefined
+            : t('Analyze this move and the one before it, so there are two territory maps to compare.'),
+        keywords: ['swing', 'ownership', 'territory', 'difference', 'where', 'lost points', 'delta'],
+      },
+      {
+        id: 'swing-compare',
+        /**
+         * The map is more useful held against the engine's move than against
+         * the move before, but that needs the engine's move played out as a
+         * variation: ownership for a position nobody evaluated does not exist.
+         * "Play best" at the previous move is what creates it, and the chip
+         * says so when it is missing.
+         */
+        label: settings.analysisSwingCompare === 'best'
+          ? t('Swing map: compare with the move before')
+          : t("Swing map: compare with the engine's move"),
+        category: 'Analysis',
+        run: () => {
+          const next = settings.analysisSwingCompare === 'best' ? 'previous' : 'best';
+          updateSettings({ analysisSwingCompare: next });
+          toast(
+            next === 'best'
+              ? "The swing map now measures against the engine's move, once that move exists as a variation."
+              : 'The swing map now measures against the move before this one.',
+            'info'
+          );
+        },
+        keywords: ['swing', 'compare', 'baseline', 'best move', 'alternative', 'what it cost'],
+      },
+      {
+        id: 'toggle-teach-mode',
+        /**
+         * Until now this had one control in the whole app, in the mobile tools
+         * sheet, so on the desktop shell teach mode could be configured in
+         * Settings -- thresholds, undo prompts, dots, save-sgf -- and never
+         * switched on.
+         */
+        label: isTeachMode ? t('Turn off teach mode') : t('Turn on teach mode'),
+        category: 'Game',
+        run: () => {
+          toggleTeachMode();
+          toast(
+            isTeachMode
+              ? 'Teach mode off.'
+              : 'Teach mode on: a move that costs too much will offer to be taken back.',
+            'info'
+          );
+        },
+        keywords: ['teach', 'learn', 'beginner', 'undo prompt', 'coach', 'take back', 'katrain'],
+      },
+      {
         id: 'toggle-shape-coach',
         label: shapeCoachEnabled ? t('Hide Shape Coach') : t('Show Shape Coach'),
         category: t('Analysis'),
@@ -2885,6 +3467,26 @@ export const Layout: React.FC = () => {
         shortcutId: 'ai-move',
         run: requestAiMove,
         keywords: ['engine', 'play for me', 'computer'],
+      },
+      {
+        id: 'play-from-here',
+        /**
+         * Continue the position in front of you against the engine.
+         *
+         * Every other path to a bot game runs `startNewGame` first, so the one
+         * thing a reviewer actually wants -- "I lost it here, let me try the
+         * other move against something that punishes" -- could not be done at
+         * all. `toggleAi` has always worked from any node; nothing but a way to
+         * ask for it was missing. The line branches at the current move, so the
+         * game being reviewed is left intact.
+         */
+        label: isAiPlaying && aiColor
+          ? t('Stop the engine playing {value1}', { value1: aiColor === 'black' ? 'Black' : 'White' })
+          : t('Play on from here against the engine'),
+        category: 'Game',
+        // Declared below the registry, so defer the reference to call time.
+        run: () => handlePlayFromHere(),
+        keywords: ['continue', 'play from here', 'vs computer', 'bot', 'try again', 'takeover', 'resume', 'sparring'],
       },
       {
         id: 'rotate-board',
@@ -3052,16 +3654,54 @@ export const Layout: React.FC = () => {
   const currentMoveInsight = getMoveInsight(currentNode.move, boardSize, currentNode.parent?.gameState.board ?? null);
 
   const handleUndo = () => {
-    const st = useGameStore.getState();
-    const lastMover = st.currentNode.move?.player ?? null;
-    const shouldUndoTwice = !!st.isAiPlaying && !!st.aiColor && lastMover === st.aiColor && st.currentPlayer !== st.aiColor;
-    navigateBack();
-    if (shouldUndoTwice) navigateBack();
+    const steps = getPlayerUndoSteps(useGameStore.getState());
+    if (steps === 0) {
+      if (useGameStore.getState().currentNode.parent) toast(NOTHING_TO_TAKE_BACK_MESSAGE, 'info');
+      return;
+    }
+    for (let i = 0; i < steps; i++) navigateBack();
   };
 
   const handleResign = () => {
-    setPendingResignPlayer(currentPlayer);
+    const st = useGameStore.getState();
+    // A game that already has its result is over; offering to resign again
+    // proposed the other side's resignation and overwrote the record.
+    // The root's RE counts too: resigning a line of a loaded record, or a
+    // step back after resigning, wrote B+R over the result the game had.
+    const recorded = st.currentNode.endState || readRecordedResult(st.rootNode.properties?.RE?.[0]);
+    if (recorded) {
+      toast(t("This game is already over ({value1}).", { value1: recorded }), 'info');
+      return;
+    }
+    // Against the engine it is the human who resigns, whoever is to move:
+    // while the engine is thinking it is its own turn, and reading that turn
+    // resigned on the engine's behalf and recorded a win for the player.
+    const human = st.isAiPlaying && st.aiColor ? (st.aiColor === 'black' ? 'white' : 'black') : currentPlayer;
+    setPendingResignPlayer(human);
   };
+
+  /**
+   * Hand the position on screen to the engine, or take it back.
+   *
+   * Shared by the palette entry and the board control bar's button so the two
+   * cannot drift: they are the same action, and one of them saying "Play on"
+   * while the other says "Stop" would be worse than having only one.
+   */
+  const handlePlayFromHere = useCallback(() => {
+    // While the engine is thinking it *is* the side to move, so the side not to
+    // move would be the human. Read the colour it already holds.
+    const engineColor = isAiPlaying && aiColor
+      ? aiColor
+      : currentPlayer === 'black' ? 'white' : 'black';
+    const turningOn = !(isAiPlaying && aiColor === engineColor);
+    useGameStore.getState().toggleAi(engineColor);
+    toast(
+      turningOn
+        ? `The engine plays ${engineColor === 'black' ? 'Black' : 'White'} from here. Your moves branch off the game.`
+        : 'The engine has stopped playing.',
+      'success'
+    );
+  }, [aiColor, currentPlayer, isAiPlaying, toast]);
 
   const confirmResign = useCallback(() => {
     const resigningPlayer = pendingResignPlayer ?? currentPlayer;
@@ -3106,9 +3746,25 @@ export const Layout: React.FC = () => {
 
   useTournamentWatcher();
 
-  const handlePlayTournamentGame = useCallback((ladder: LadderState) => {
+  /**
+   * A ladder or gauntlet game replaces the one on the board like any new
+   * game: ask first, and leave the new game unlinked from the library item
+   * that was open. Skipping both replaced unsaved work without a word, and
+   * the next Save then wrote the fresh 9x9 over the library game.
+   */
+  const replaceWithRankedGame = useCallback(async (options: { komi: number; boardSize: BoardSize; handicap: number }): Promise<boolean> => {
+    if (!(await prepareForGameReplacement())) return false;
+    startNewGame({ komi: options.komi, rules: settings.gameRules, boardSize: options.boardSize, handicap: options.handicap });
+    setLoadedLibraryFile(null);
+    setScoringMode(false);
+    setManualDeadStones(new Set());
+    markCurrentGameCleanAndClearAutoSave();
+    return true;
+  }, [markCurrentGameCleanAndClearAutoSave, prepareForGameReplacement, setLoadedLibraryFile, settings.gameRules, startNewGame]);
+
+  const handlePlayTournamentGame = useCallback(async (ladder: LadderState) => {
     setIsTournamentOpen(false);
-    startNewGame({ komi: ladder.komi, rules: settings.gameRules, boardSize: ladder.boardSize, handicap: ladder.handicap });
+    if (!(await replaceWithRankedGame(ladder))) return;
     updateSettings({ aiStrategy: 'rank', aiRankKyu: ladder.currentKyu });
     const opponent = ladder.userColor === 'black' ? 'white' : 'black';
     // Start a fresh game first, then hand the opponent color to the rank bot.
@@ -3117,12 +3773,12 @@ export const Layout: React.FC = () => {
       useTournamentStore.getState().beginGame();
     }, 0);
     toast(t('Ladder game vs {size}×{size} {color} bot started.', { size: ladder.boardSize, color: ladder.userColor === 'black' ? t('White') : t('Black') }), 'success');
-  }, [startNewGame, updateSettings, settings.gameRules, t, toast]);
+  }, [replaceWithRankedGame, updateSettings, toast, t]);
 
-  const handlePlayGauntletGame = useCallback((gauntlet: GauntletState) => {
+  const handlePlayGauntletGame = useCallback(async (gauntlet: GauntletState) => {
     setIsTournamentOpen(false);
     const opponentKyu = currentGauntletOpponentKyu(gauntlet);
-    startNewGame({ komi: gauntlet.komi, rules: settings.gameRules, boardSize: gauntlet.boardSize, handicap: gauntlet.handicap });
+    if (!(await replaceWithRankedGame(gauntlet))) return;
     updateSettings({ aiStrategy: 'rank', aiRankKyu: opponentKyu });
     const opponent = gauntlet.userColor === 'black' ? 'white' : 'black';
     window.setTimeout(() => {
@@ -3130,7 +3786,15 @@ export const Layout: React.FC = () => {
       useTournamentStore.getState().beginGauntletGame();
     }, 0);
     toast(t('Gauntlet game {n}/4 vs {rank} started.', { n: gauntlet.index + 1, rank: formatKyuRank(opponentKyu) }), 'success');
-  }, [startNewGame, updateSettings, settings.gameRules, t, toast]);
+  }, [replaceWithRankedGame, updateSettings, toast, t]);
+
+  // Insert mode's parity trap, offered while there is still something to do
+  // about it: the continuation can only follow an even number of inserted
+  // moves. The store says so on the way out; this says so on the way through.
+  const insertProgress = useMemo(
+    () => describeInsertProgress(countInsertedMoves(currentNode, insertAnchorNodeId)),
+    [currentNode, insertAnchorNodeId],
+  );
 
   const gamepadBlockedByOverlay = Boolean(
     isSettingsOpen ||
@@ -3142,6 +3806,7 @@ export const Layout: React.FC = () => {
     isKifuPrintOpen ||
     isGameReportOpen ||
     isCommandPaletteOpen ||
+    isGameNotesSearchOpen ||
     isKeyboardHelpOpen ||
     isNewGameOpen ||
     isScoreQuizOpen ||
@@ -3179,7 +3844,32 @@ export const Layout: React.FC = () => {
       branchNext: () => switchBranch(1),
     },
   });
-  const currentGameDirty = hasUnsavedChanges();
+
+  /**
+   * Name the tab after the game in it. Several of these are usually open at
+   * once -- a review, a bot game, a drill -- and every one of them said just
+   * "Web KaTrain". PB/PW are read raw rather than through the Black/White
+   * fallbacks above, so an unnamed game falls back to the app name instead of
+   * labelling every empty board "Black vs White".
+   */
+  const hasCurrentGame = !!loadedLibraryFileId || !!loadedExternalFile || rootNode.children.length > 0
+    || !!rootNode.move || !!rootNode.note
+    || rootNode.gameState.board.some(row => row.some(stone => stone !== null))
+    || Object.keys(rootNode.properties ?? {}).some(key => !['RU', 'SZ', 'AP', 'FF', 'GM', 'CA'].includes(key));
+  const titleFileName = loadedLibraryFileName ?? loadedExternalFile?.name ?? null;
+  const titleBlackName = getRootProp('PB');
+  const titleWhiteName = getRootProp('PW');
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.title = buildDocumentTitle({
+      fileName: titleFileName,
+      blackName: titleBlackName,
+      whiteName: titleWhiteName,
+      dirty: currentGameDirty,
+    });
+    // Read off as strings rather than through getRootProp, which is rebuilt
+    // every render and would re-run this on all of them.
+  }, [currentGameDirty, titleBlackName, titleFileName, titleWhiteName]);
   /**
    * Whether the loaded SGF carries a usable clock. Games played locally have
    * none, so the graph's Time toggle is only offered when it can actually draw
@@ -3230,10 +3920,14 @@ export const Layout: React.FC = () => {
           );
         }}
       >
-      <Suspense fallback={null}>
+      <GameReviewConfirmModal />
+      <Suspense fallback={<LazyModalFallback />}>
         {isBlindfoldOpen && <BlindfoldModal onClose={() => setIsBlindfoldOpen(false)} />}
         {blindfoldSession ? <BlindfoldBanner /> : null}
-        {isSettingsOpen && <SettingsModal onClose={() => setIsSettingsOpen(false)} />}
+        {isSettingsOpen && <SettingsModal focusModel={settingsFocusModel} onClose={() => {
+          setIsSettingsOpen(false);
+          setSettingsFocusModel(false);
+        }} />}
         {isAboutOpen && (
           <AboutDialog
             onClose={() => setIsAboutOpen(false)}
@@ -3289,6 +3983,20 @@ export const Layout: React.FC = () => {
             returnFocus={modalReturnFocusRef.current}
           />
         )}
+        {isGameNotesSearchOpen && (
+          <GameNotesSearchModal
+            onClose={() => setIsGameNotesSearchOpen(false)}
+            returnFocus={modalReturnFocusRef.current}
+            onSelectNode={(node) => {
+              if (useGameStore.getState().isInsertMode) {
+                toast(t("Finish inserting before navigating."), 'error');
+                return;
+              }
+              useGameStore.getState().jumpToNode(node);
+              setIsGameNotesSearchOpen(false);
+            }}
+          />
+        )}
         {isScoreQuizOpen && (
           <ScoreQuizModal onClose={() => setIsScoreQuizOpen(false)} />
         )}
@@ -3306,7 +4014,11 @@ export const Layout: React.FC = () => {
           />
         )}
         {isLessonsOpen && (
-          <LessonsModal onClose={() => setIsLessonsOpen(false)} />
+          <LessonsModal onClose={() => {
+            setIsLessonsOpen(false);
+            if (lessonsReturnHome) setMobileHomeOpen(true);
+            setLessonsReturnHome(false);
+          }} />
         )}
         {isGuessMoveOpen && (
           <GuessMoveModal
@@ -3366,13 +4078,14 @@ export const Layout: React.FC = () => {
         )}
         {isNewGameOpen && (
           <NewGameModal
+            teachModeOn={isTeachMode}
             onClose={() => setIsNewGameOpen(false)}
             defaultSetupPosition={{
               enabled: false,
               untilMove: settings.setupPositionMove,
               targetAdvantage: settings.setupPositionAdvantage,
             }}
-            onStart={({ komi: nextKomi, rules, info, aiConfig, timerConfig, boardSize: nextBoardSize, handicap: nextHandicap, setupPosition }) => {
+            onStart={({ komi: nextKomi, rules, info, aiConfig, timerConfig, boardSize: nextBoardSize, handicap: nextHandicap, setupPosition, teachMode }) => {
             startNewGame({ komi: nextKomi, rules, boardSize: nextBoardSize, handicap: nextHandicap });
             if (setupPosition.enabled) {
               updateSettings({ setupPositionMove: setupPosition.untilMove, setupPositionAdvantage: setupPosition.targetAdvantage });
@@ -3452,17 +4165,36 @@ export const Layout: React.FC = () => {
               ...timerSettings,
             });
             const opponent = aiConfig.opponent === 'none' ? null : aiConfig.opponent;
-            useGameStore.setState({ isAiPlaying: !!opponent, aiColor: opponent });
+            // A clock chosen here is meant to run. Every game started paused,
+            // and the only start control is a small ▶ that phones under 430px
+            // do not show: a "5 × 30s" game never spent a second. A generated
+            // opening still waits, so its engine moves are not charged.
+            useGameStore.setState({
+              isAiPlaying: !!opponent,
+              aiColor: opponent,
+              ...(timerEnabled && !setupPosition.enabled ? { timerPaused: false } : {}),
+            });
+            // Only when it changes: toggleTeachMode also switches analysis on,
+            // and calling it for a box that was already ticked would turn the
+            // mode straight back off.
+            if (teachMode !== useGameStore.getState().isTeachMode) {
+              useGameStore.getState().toggleTeachMode();
+            }
             const after = useGameStore.getState();
             if (after.isAiPlaying && after.aiColor === after.currentPlayer) {
-              window.setTimeout(() => after.makeAiMove(), 0);
+              after.scheduleAiMove();
             }
             markCurrentGameCleanAndClearAutoSave();
             setIsNewGameOpen(false);
           }}
-            defaultKomi={KOMI}
-            defaultRules="chinese"
-            defaultBoardSize={settings.defaultBoardSize}
+            defaultKomi={hasCurrentGame ? komi : KOMI}
+            defaultRules={hasCurrentGame ? settings.gameRules : 'chinese'}
+            // The board in front of the reader, not the saved default: opening
+            // a 13x13 and then New Game should still offer 13x13. That used to
+            // work because `loadGame` wrote the file's size into the settings,
+            // which dragged the file's *handicap* in with it. Reading the live
+            // board keeps the convenience without touching the setting.
+            defaultBoardSize={boardSize}
             defaultHandicap={settings.defaultHandicap}
             defaultInfo={defaultGameInfo}
             defaultAiConfig={defaultAiConfig}
@@ -3477,7 +4209,7 @@ export const Layout: React.FC = () => {
       {isFileDragActive && (
         <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none">
           <div className="rounded-xl border-2 border-dashed border-[var(--ui-accent)] px-6 py-4 text-center ui-panel">
-            <div className="text-sm font-semibold text-[var(--ui-accent)]">{t('Drop SGF, OGS URL, board photo, or model weights')}</div>
+            <div className="text-sm font-semibold text-[var(--ui-accent)]">{t('Drop SGF, GIB, NGF, OGS URL, board photo, or model weights')}</div>
             <div className="text-xs ui-text-faint">{t('Release to load a game, fetch Online-Go, trace a photo, or switch browser KataGo weights.')}</div>
           </div>
         </div>
@@ -3504,6 +4236,9 @@ export const Layout: React.FC = () => {
         onDrillMistakes={() => startMistakeDrill('both')}
         onProblem={() => setIsProblemOpen(true)}
         onCopy={handleCopySgf}
+        onCopyText={() => { void handleCopyBoardText(); }}
+        onCopyShareLink={() => { void handleCopyShareLink(); }}
+        onCopyBoardImage={() => { void handleCopyBoardImage(); }}
         onPaste={handlePasteSgf}
         onSettings={() => setIsSettingsOpen(true)}
         onCommandPalette={() => setIsCommandPaletteOpen(true)}
@@ -3512,7 +4247,9 @@ export const Layout: React.FC = () => {
         appLocale={settings.appLocale}
         onLocaleChange={(appLocale) => updateSettings({ appLocale })}
         quickNewGameBoardSize={settings.defaultBoardSize}
-        recentItems={recentLibraryItems}
+          quickNewGameHandicap={settings.defaultHandicap}
+        recentItems={recentLibraryItems.files}
+        recentKind={recentLibraryItems.kind}
         onOpenRecent={handleOpenRecent}
       />
 
@@ -3527,11 +4264,18 @@ export const Layout: React.FC = () => {
           engineMeta={engineMeta}
           gamepadName={gamepadStatus.connected ? gamepadStatus.name : null}
           gamepadCount={gamepadStatus.count}
-          recentItems={recentLibraryItems}
+          recentItems={recentLibraryItems.files}
+        recentKind={recentLibraryItems.kind}
           onClose={closeMobileHome}
           onGamepadNavigationDisable={handleDisableGamepadNavigation}
           quickNewGameBoardSize={settings.defaultBoardSize}
+          quickNewGameHandicap={settings.defaultHandicap}
           onQuickNewGame={() => void startQuickNewGame()}
+          onLessons={() => {
+            closeMobileHome();
+            setLessonsReturnHome(true);
+            setIsLessonsOpen(true);
+          }}
           onNewGame={() => {
             closeMobileHome();
             void openNewGameWithGuard();
@@ -3582,10 +4326,13 @@ export const Layout: React.FC = () => {
               <div className="relative flex h-full min-h-0 w-full min-w-0">
                 <GoBoard
                   hoveredMove={activeHoverMove}
-                  onHoverMove={handleHoverMove}
+                  onHoverMove={setHoveredMove}
                   pvUpToMove={pvUpToMove}
+                  onPvScroll={pvOverlayEnabled ? handlePvScroll : undefined}
+                  onPvCommit={pvOverlayEnabled ? handlePvCommit : undefined}
+                  pvScrollHint={pvScrollHint}
                   uiMode={boardUiMode}
-                  forcePvOverlay={!!reportHoverMove}
+                  forcePvOverlay={!!activeReportHoverMove && allowExplicitPvPreview}
                   scoringMode={scoringMode}
                   scoreTerritory={manualScoreEstimate.territory}
                   deadStones={manualDeadStones}
@@ -3607,9 +4354,6 @@ export const Layout: React.FC = () => {
                   score={manualScoreEstimate}
                   blackName={blackName}
                   whiteName={whiteName}
-                  capturedBlack={capturedBlack}
-                  capturedWhite={capturedWhite}
-                  komi={komi}
                   deadStoneCount={manualDeadStones.size}
                   shortcutLabel={layoutShortcutLabels['toggle-scoring']}
                   scoreMode={manualScoreMode}
@@ -3619,7 +4363,7 @@ export const Layout: React.FC = () => {
                   canAutoEstimate={scoreEstimateSource !== null}
                   estimateSource={scoreEstimateSource}
                   onClear={clearManualDeadStones}
-                  onDone={() => setScoringMode(false)}
+                  onDone={finishScoring}
                 />}
               </>
             }
@@ -3640,9 +4384,10 @@ export const Layout: React.FC = () => {
             loadedFileName={loadedLibraryFileName ?? loadedExternalFile?.name ?? null}
             dirty={currentGameDirty}
             currentNode={currentNode}
+            treeVersion={treeVersion}
             drillHidesAnswer={drillHidesAnswer}
-            hoveredCandidateKey={reportHoverMove ? `${reportHoverMove.x},${reportHoverMove.y}` : null}
-            onHoverCandidate={setReportHoverMove}
+            hoveredCandidateKey={activeReportHoverMove ? `${activeReportHoverMove.x},${activeReportHoverMove.y}` : null}
+            onHoverCandidate={setCandidateHoverMove}
             branchInfo={branchInfo}
             showAnalysis={isAnalysisMode || mode === 'analyze' || hasCurrentAnalysis}
             winRate={winRate ?? null}
@@ -3651,7 +4396,6 @@ export const Layout: React.FC = () => {
             pointsLostLabel={pointsLostLabel}
             engineState={engineActivity.state}
             enginePillLabel={engineActivity.label}
-            engineMeta={engineMeta}
             engineMetaTitle={engineMetaTitle}
             engineBackend={engineBackend ?? ''}
             engineModelLabel={activeEngineModelLabel ?? ''}
@@ -3664,6 +4408,7 @@ export const Layout: React.FC = () => {
             updateControls={updateControls}
             updateSettings={updateSettings}
             isInsertMode={isInsertMode}
+            insertProgress={insertProgress}
             toggleInsertMode={toggleInsertMode}
             isSelectingRegionOfInterest={isSelectingRegionOfInterest}
             startSelectRegionOfInterest={startSelectRegionOfInterest}
@@ -3678,7 +4423,8 @@ export const Layout: React.FC = () => {
                   open
                   onClose={handleCloseLibrary}
                   docked
-                  getCurrentSgf={() => generateSgfFromTree(rootNode, sgfExportOptions)}
+                  getCurrentSgf={generateCurrentSgf}
+                  legacyGameEncoding={settings.legacyGameEncoding}
                   onLoadSgf={handleLoadFromLibrary}
                   onToast={toast}
                   onOpenPhotoBoard={openPhotoBoard}
@@ -3704,30 +4450,41 @@ export const Layout: React.FC = () => {
             stopGameAnalysis={stopGameAnalysis}
             onClearAnalysisCache={requestClearAnalysisCache}
             onOpenGameReport={() => setIsGameReportOpen(true)}
+            onChooseModel={openModelSettings}
             navigateBack={navigateBack}
-            navigateForward={navigateForward}
+            navigateForward={insertGuarded(navigateForward)}
             canNavigateBack={historyNavigation.back}
             canNavigateForward={historyNavigation.forward}
-            navigateStart={navigateStart}
-            navigateEnd={navigateEnd}
-            navigateToMove={navigateToMove}
+            navigateStart={insertGuarded(navigateStart)}
+            navigateEnd={insertGuarded(navigateEnd)}
+            navigateToMove={insertGuarded(navigateToMove)}
             jumpBack={() => jumpBack(10)}
-            jumpForward={() => jumpForward(10)}
-            findMistake={(dir) => findMistake(dir > 0 ? 'redo' : 'undo')}
+            jumpForward={insertGuarded(() => jumpForward(10))}
+            findMistake={insertGuarded((dir: number) => findMistake(dir > 0 ? 'redo' : 'undo'))}
             canFindPreviousMistake={mistakeNavigation.previous}
             canFindNextMistake={mistakeNavigation.next}
             rotateBoard={rotateBoard}
-            switchBranch={switchBranch}
-            undoToBranchPoint={undoToBranchPoint}
-            makeCurrentNodeMainBranch={makeCurrentNodeMainBranch}
+            switchBranch={insertGuarded(switchBranch)}
+            undoToBranchPoint={insertGuarded(undoToBranchPoint)}
+            makeCurrentNodeMainBranch={insertGuarded(makeCurrentNodeMainBranch)}
             passTurn={passTurn}
             onUndo={handleUndo}
             onAiMove={requestAiMove}
             onResign={handleResign}
-            onPlayBest={requestAiMove}
+            onPlayBest={playBestAnalysisMove}
+            engineOpponent={isAiPlaying ? aiColor : null}
+            onPlayFromHere={handlePlayFromHere}
+            isTeachMode={isTeachMode}
+            onToggleTeachMode={toggleTeachMode}
             onNewGame={() => void openNewGameWithGuard()}
+            onLessons={() => setIsLessonsOpen(true)}
             onSaveSgf={handleSaveCurrentSgf}
             onCopySgf={handleCopySgf}
+            onCopyBoardText={() => { void handleCopyBoardText(); }}
+            onCopyShareLink={() => { void handleCopyShareLink(); }}
+            onCopyBoardImage={() => { void handleCopyBoardImage(); }}
+            onExportBoardImage={() => { void handleExportBoardImage(); }}
+            onPrintKifu={() => setIsKifuPrintOpen(true)}
             onSaveToLibrary={handleOpenSaveToLibraryDialog}
             onLoadSgf={handleLoadClick}
             onPasteSgf={handlePasteSgf}
@@ -3737,6 +4494,7 @@ export const Layout: React.FC = () => {
             onSettings={() => setIsSettingsOpen(true)}
             onCommandPalette={() => setIsCommandPaletteOpen(true)}
             onKeyboardHelp={openKeyboardHelp}
+            onFindNotes={openGameNotesSearch}
             onAbout={openAbout}
             toast={toast}
             headerNotification={
@@ -3776,7 +4534,8 @@ export const Layout: React.FC = () => {
               onClose={handleCloseLibrary}
               docked={isDesktop}
               width={leftPanelWidth}
-              getCurrentSgf={() => generateSgfFromTree(rootNode, sgfExportOptions)}
+              getCurrentSgf={generateCurrentSgf}
+              legacyGameEncoding={settings.legacyGameEncoding}
               onLoadSgf={handleLoadFromLibrary}
               onToast={toast}
               onOpenPhotoBoard={openPhotoBoard}
@@ -3791,6 +4550,18 @@ export const Layout: React.FC = () => {
             />
           </Suspense>
         ) : null}
+
+        {/* Covered board content is inert and can be squeezed to zero width.
+            Keep panel notifications outside it so they remain announced and usable. */}
+        {notification && (rightPanelOpen || (libraryOpen && !focusMode)) && (
+          <NotificationToast
+            notification={notification}
+            onClose={clearNotification}
+            onHoldChange={setNotificationHeld}
+            onUndo={undoEditFromToast}
+            placement="mobile-panel"
+          />
+        )}
 
         {/* Main board column — a <main> landmark so assistive tech can skip
             straight here. This layout previously exposed no main/header at all,
@@ -3808,7 +4579,7 @@ export const Layout: React.FC = () => {
         >
           {/* The mobile shell has no visible app title to promote, so the page's
               top-level heading is screen-reader only. */}
-          <h1 className="sr-only">Web KaTrain</h1>
+          <h1 className="sr-only">{t('Web KaTrain')}</h1>
           {topBarOpen && !focusMode && (
             <TopControlBar
               settings={settings}
@@ -3817,6 +4588,7 @@ export const Layout: React.FC = () => {
               regionOfInterest={regionOfInterest}
               setRegionOfInterest={setRegionOfInterest}
               isInsertMode={isInsertMode}
+            insertProgress={insertProgress}
               isEditMode={isEditMode}
               isAnalysisMode={isAnalysisMode}
               toggleAnalysisMode={toggleAnalysisMode}
@@ -3887,7 +4659,7 @@ export const Layout: React.FC = () => {
             ].filter(Boolean).join(' ')}
             style={{ '--board-tool-offset-y': `${boardToolOffsetY}px` } as React.CSSProperties}
           >
-            {notification && (
+            {notification && !rightPanelOpen && !(libraryOpen && !focusMode) && (
               <NotificationToast
                 notification={notification}
                 onClose={clearNotification}
@@ -3910,9 +4682,6 @@ export const Layout: React.FC = () => {
               score={manualScoreEstimate}
               blackName={blackName}
               whiteName={whiteName}
-              capturedBlack={capturedBlack}
-              capturedWhite={capturedWhite}
-              komi={komi}
               deadStoneCount={manualDeadStones.size}
               shortcutLabel={layoutShortcutLabels['toggle-scoring']}
               scoreMode={manualScoreMode}
@@ -3922,7 +4691,7 @@ export const Layout: React.FC = () => {
               canAutoEstimate={scoreEstimateSource !== null}
               estimateSource={scoreEstimateSource}
               onClear={clearManualDeadStones}
-              onDone={() => setScoringMode(false)}
+              onDone={finishScoring}
             />
             <div
               ref={analysisCommandBarRef}
@@ -3959,8 +4728,8 @@ export const Layout: React.FC = () => {
             </div>
             {isMobile && showBoardAnalysisCommandBar && isAnalysisMode && !isEditMode && !scoringMode && (
               <CandidatePvTiles
-                pinnedKey={reportHoverMove ? `${reportHoverMove.x},${reportHoverMove.y}` : null}
-                onPin={setReportHoverMove}
+                pinnedKey={activeReportHoverMove ? `${activeReportHoverMove.x},${activeReportHoverMove.y}` : null}
+                onPin={setCandidateHoverMove}
               />
             )}
             {showMobileMatchStrip && (
@@ -3981,8 +4750,9 @@ export const Layout: React.FC = () => {
               // Only a tab panel on mobile: on desktop there is no tab bar, so the role
               // and the aria-labelledby would point at tabs that are not rendered.
               {...(isMobile ? { role: 'tabpanel', id: MOBILE_TAB_PANEL_IDS.board, 'aria-labelledby': mobileTabId('board') } : {})}
+              data-board-tooltip-boundary="true"
               className={[
-                'mobile-board-canvas flex-1 flex justify-center min-h-0 min-w-0',
+                'mobile-board-canvas flex-1 flex justify-center min-h-0 min-w-0 relative',
                 // On mobile the Score (top-left) and Edit (bottom-left) launchers float
                 // over the board shell. Reserve vertical clearance so the board never
                 // grows under them and covers the corner coordinates / play area.
@@ -4008,10 +4778,13 @@ export const Layout: React.FC = () => {
             >
               <GoBoard
                 hoveredMove={activeHoverMove}
-                onHoverMove={handleHoverMove}
+                onHoverMove={setHoveredMove}
                 pvUpToMove={pvUpToMove}
+                onPvScroll={pvOverlayEnabled ? handlePvScroll : undefined}
+                onPvCommit={pvOverlayEnabled ? handlePvCommit : undefined}
+                pvScrollHint={pvScrollHint}
                 uiMode={boardUiMode}
-                forcePvOverlay={!!reportHoverMove}
+                forcePvOverlay={!!activeReportHoverMove && allowExplicitPvPreview}
                 scoringMode={scoringMode}
                 scoreTerritory={manualScoreEstimate.territory}
                 deadStones={manualDeadStones}
@@ -4024,8 +4797,8 @@ export const Layout: React.FC = () => {
         </main>
 
         <RightPanel
-          hoveredCandidateKey={reportHoverMove ? `${reportHoverMove.x},${reportHoverMove.y}` : null}
-          onHoverCandidate={setReportHoverMove}
+          hoveredCandidateKey={activeReportHoverMove ? `${activeReportHoverMove.x},${activeReportHoverMove.y}` : null}
+          onHoverCandidate={setCandidateHoverMove}
           open={rightPanelOpen}
           onClose={handleCloseRightPanel}
           width={isDesktop ? rightPanelWidth : undefined}
@@ -4049,6 +4822,7 @@ export const Layout: React.FC = () => {
           analysisCacheSize={analysisCacheSize}
           onOpenGameAnalysis={() => setIsGameAnalysisOpen(true)}
           onOpenGameReport={() => setIsGameReportOpen(true)}
+          onChooseModel={openModelSettings}
           currentPlayer={currentPlayer}
           navigateStart={navigateStart}
           navigateEnd={navigateEnd}
@@ -4080,6 +4854,7 @@ export const Layout: React.FC = () => {
           shapeCoachEnabled={shapeCoachEnabled}
           onToggleShapeCoach={toggleShapeCoach}
           noteFocusRequest={noteFocusRequest}
+          onFindNotes={openGameNotesSearch}
           isMobile={isMobile}
           activeMobileTab={mobileTab}
           showAnalysisSection={!isDesktop}
@@ -4126,6 +4901,8 @@ export const Layout: React.FC = () => {
                     isMobile={true}
                     onUndo={handleUndo}
                     onAiMove={requestAiMove}
+                    engineOpponent={isAiPlaying ? aiColor : null}
+                    onPlayFromHere={handlePlayFromHere}
                     onResign={handleResign}
                     unsavedChanges={currentGameDirty}
                     autoSaveStatus={autoSaveStatus}
@@ -4157,13 +4934,13 @@ export const Layout: React.FC = () => {
           role="toolbar"
           aria-label={t('Focus mode controls')}
         >
-          <button type="button" onClick={navigateStart} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('First move')} aria-label={t('First move')}>⏮</button>
-          <button type="button" onClick={navigateBack} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Previous move')} aria-label={t('Previous move')}>◀</button>
+          <button type="button" onClick={navigateStart} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('First move')} aria-label={t('First move')}>⏮</button>
+          <button type="button" onClick={navigateBack} disabled={!historyNavigation.back} className="grid h-11 w-11 shrink-0 place-items-center rounded-full not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Previous move')} aria-label={t('Previous move')}>◀</button>
           <span className="min-w-12 px-1 text-center font-mono tabular-nums lg:min-w-[4.5rem]">
             {currentMoveNumber}/{totalMovesInCurrentLine}
           </span>
-          <button type="button" onClick={navigateForward} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Next move')} aria-label={t('Next move')}>▶</button>
-          <button type="button" onClick={navigateEnd} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Last move')} aria-label={t('Last move')}>⏭</button>
+          <button type="button" onClick={navigateForward} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Next move')} aria-label={t('Next move')}>▶</button>
+          <button type="button" onClick={navigateEnd} disabled={!historyNavigation.forward} className="grid h-11 w-11 shrink-0 place-items-center rounded-full not-disabled:hover:bg-[var(--ui-surface-2)] disabled:cursor-not-allowed disabled:opacity-40 desktop-shell:h-8 desktop-shell:w-8" title={t('Last move')} aria-label={t('Last move')}>⏭</button>
           <button
             type="button"
             onClick={() => setFocusMode(false)}

@@ -8,8 +8,9 @@ import type { GameRules } from '../types';
  * network is given (`featuresV7`), whether multi-stone suicide is a legal move,
  * and how the position is scored.
  *
- * Only rulesets we can serve correctly are listed: each one's network inputs,
- * move legality and scoring are implemented rather than approximated.
+ * These definitions select the intended behavior; each engine path still needs
+ * validation against it. Network rule inputs alone do not establish search or
+ * endgame parity (see docs/continuous-audit.md).
  */
 
 export type ScoringRule = 'area' | 'territory';
@@ -28,6 +29,8 @@ export type RulesDefinition = {
   tax: TaxRule;
   multiStoneSuicideLegal: boolean;
   hasButton: boolean;
+  /** KataGo's friendly-pass suppression; Tromp–Taylor deliberately disables it. */
+  friendlyPassOk: boolean;
   handicapBonus: HandicapBonusRule;
   /** KataGo's default komi for this ruleset. */
   defaultKomi: number;
@@ -45,6 +48,7 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'seki',
     multiStoneSuicideLegal: false,
     hasButton: false,
+    friendlyPassOk: false,
     handicapBonus: 'zero',
     defaultKomi: 6.5,
     sgf: 'Japanese',
@@ -58,6 +62,7 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'seki',
     multiStoneSuicideLegal: false,
     hasButton: false,
+    friendlyPassOk: false,
     handicapBonus: 'zero',
     defaultKomi: 6.5,
     sgf: 'Korean',
@@ -71,8 +76,9 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'none',
     multiStoneSuicideLegal: false,
     hasButton: false,
+    friendlyPassOk: true,
     handicapBonus: 'n',
-    defaultKomi: 7.5,
+    defaultKomi: 7,
     sgf: 'Chinese',
   },
   aga: {
@@ -84,6 +90,7 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'none',
     multiStoneSuicideLegal: false,
     hasButton: false,
+    friendlyPassOk: true,
     handicapBonus: 'n-minus-one',
     defaultKomi: 7.5,
     sgf: 'AGA',
@@ -97,6 +104,7 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'none',
     multiStoneSuicideLegal: true,
     hasButton: false,
+    friendlyPassOk: true,
     handicapBonus: 'zero',
     defaultKomi: 7.0,
     sgf: 'New Zealand',
@@ -110,6 +118,7 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'all',
     multiStoneSuicideLegal: false,
     hasButton: false,
+    friendlyPassOk: true,
     handicapBonus: 'zero',
     defaultKomi: 7.5,
     sgf: 'Stone Scoring',
@@ -123,6 +132,7 @@ export const RULES: Record<GameRules, RulesDefinition> = {
     tax: 'none',
     multiStoneSuicideLegal: true,
     hasButton: false,
+    friendlyPassOk: false,
     handicapBonus: 'zero',
     defaultKomi: 7.5,
     sgf: 'Tromp-Taylor',
@@ -149,6 +159,22 @@ export const rulesLabel = (rules: GameRules): string => rulesOf(rules).label;
 export const isAreaScoring = (rules: GameRules): boolean => rulesOf(rules).scoring === 'area';
 
 export const isSuicideLegal = (rules: GameRules): boolean => rulesOf(rules).multiStoneSuicideLegal;
+
+/**
+ * The rulesets that do allow multi-stone suicide, as a readable list.
+ *
+ * A message that has just told the reader their ruleset forbids something owes
+ * them the way out, and reading it off the table keeps the sentence true if the
+ * table changes.
+ */
+export const suicideAllowingRulesLabel = (): string => {
+  const labels = Object.values(RULES)
+    .filter((definition) => definition.multiStoneSuicideLegal)
+    .map((definition) => definition.label);
+  if (labels.length === 0) return '';
+  if (labels.length === 1) return labels[0]!;
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+};
 
 /**
  * Which "current area" input planes the network gets.

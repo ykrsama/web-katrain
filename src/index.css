@@ -2,7 +2,8 @@
 
 /* Tailwind's `lg:` is width-only, but this app switches to its desktop shell
    only when the viewport is BOTH wide and tall enough (see
-   DESKTOP_LAYOUT_MEDIA in src/utils/responsiveLayout.ts — keep these in sync).
+   DESKTOP_LAYOUT_MEDIA in src/utils/layoutBreakpoints.ts — keep these in sync;
+   two tests read that file and assert this line is built from its numbers).
    Using `lg:` for shell decisions broke short, wide viewports: the mobile
    right panel went `lg:static` while the app was still in the mobile shell,
    so its `w-full` consumed the whole row and the board collapsed to 0px. */
@@ -18,8 +19,6 @@
     --ui-bar-pad-x: 12px;
     --ui-bar-pad-y: 8px;
     --ui-control-size: 38px;
-    --ui-panel-pad: 12px;
-    --ui-gap: 8px;
     --mobile-tabbar-height: 68px;
     --ui-bg: #0f1210;
     --ui-bar: #141815;
@@ -45,6 +44,21 @@
     --ui-warning-soft: #3a2a12;
     --ui-success: #22c55e;
     --ui-success-soft: #17351f;
+    /* Move-tree marks. Three of them were fixed hex values chosen against a
+       dark panel, and measured against this app's four: the connector lines at
+       6.7:1 here and 2.54:1 on the light theme, the current-node ring at 11.1
+       and 1.53, the best-move dot and its halo at 9.4 and 1.81. The ring is the
+       mark that says where you are, and on the light theme it was not there.
+       The three dark themes keep the values they had; the light theme overrides
+       them below with the same hues, darkened until they read.
+
+       The three that were measured and left alone: the auto-undone ring
+       (#EF4444, 3.76 on light), the blunder dot (#dc2626, 4.83) and the setup
+       dot (#a855f7, 3.96) all clear the 3:1 a graphic needs on every theme. */
+    --tree-edge: #9ca3af;
+    --tree-current: #facc15;
+    --tree-best: #22d3ee;
+
     /* KaTrain move-quality eval scale (theme independent, shared with the
        dashboard scale in dashboard.css). */
     --eval-blunder: rgb(114, 33, 107);
@@ -133,6 +147,10 @@
     --ui-warning-soft: #fef3c7;
     --ui-success: #166534;
     --ui-success-soft: #dcfce7;
+    /* Same hues as above, at 4.8, 5.0 and 5.4:1 on this theme's panel. */
+    --tree-edge: #64748b;
+    --tree-current: #b45309;
+    --tree-best: #0e7490;
     color-scheme: light;
   }
 
@@ -142,8 +160,6 @@
     --ui-bar-pad-x: 10px;
     --ui-bar-pad-y: 6px;
     --ui-control-size: 34px;
-    --ui-panel-pad: 10px;
-    --ui-gap: 6px;
   }
 
   :root[data-ui-density='comfortable'] {
@@ -152,8 +168,6 @@
     --ui-bar-pad-x: 12px;
     --ui-bar-pad-y: 8px;
     --ui-control-size: 38px;
-    --ui-panel-pad: 12px;
-    --ui-gap: 8px;
   }
 
   :root[data-ui-density='large'] {
@@ -162,8 +176,6 @@
     --ui-bar-pad-x: 14px;
     --ui-bar-pad-y: 10px;
     --ui-control-size: 44px;
-    --ui-panel-pad: 14px;
-    --ui-gap: 10px;
   }
 
   @media (max-width: 1023px), (max-height: 499px) {
@@ -185,8 +197,6 @@
       --ui-bar-pad-x: 10px;
       --ui-bar-pad-y: 6px;
       --ui-control-size: 44px;
-      --ui-panel-pad: 10px;
-      --ui-gap: 6px;
       --mobile-tabbar-height: 68px;
     }
 
@@ -302,8 +312,11 @@
       gap: 0 !important;
     }
 
+    /* `safe` sends any overflow to the end rather than both sides. Plain
+       centring clipped the leftmost item -- the turn stone -- first. */
     .mobile-bottom-meta {
       justify-content: center;
+      justify-content: safe center;
       gap: 1px !important;
       padding-left: 0 !important;
       padding-right: 0 !important;
@@ -313,6 +326,10 @@
       display: none;
     }
 
+    /* The strip clips with overflow-hidden, and at 414px the fixed board size
+       pushed the save-status badge past the edge. Drop the values that never
+       change rather than a live "unsaved" warning or the current-turn chip,
+       which flexbox already squeezes toward zero under pressure. */
     .mobile-bottom-current-captures,
     .mobile-bottom-board-size,
     .mobile-bottom-handicap,
@@ -333,6 +350,12 @@
       white-space: nowrap;
     }
 
+    /* A three-digit count ran the strip 10px past its edge. The button's
+       label still reads "Move N of M". */
+    .mobile-bottom-move-hash {
+      display: none;
+    }
+
     .mobile-bottom-move-editor {
       min-width: 72px;
       min-height: 44px;
@@ -341,22 +364,14 @@
     }
 
     .mobile-bottom-meta [data-mobile-save-status='true'] {
-      width: 24px;
-      height: 24px;
+      width: 20px;
+      height: 20px;
       justify-content: center;
       gap: 0;
       padding: 0;
     }
 
     .mobile-bottom-save-status-label {
-      display: none;
-    }
-
-    /* The strip clips with overflow-hidden, and at 414px the fixed board size
-       pushed the save-status badge past the edge. Drop the value that never
-       changes rather than a live "unsaved" warning or the current-turn chip,
-       which flexbox already squeezes toward zero under pressure. */
-    .mobile-bottom-meta-size {
       display: none;
     }
   }
@@ -398,13 +413,7 @@
     }
   }
 
-  /* Below this the move counter's 44px touch target plus the full save badge no
-     longer fit the strip, so the badge goes icon-only rather than being clipped. */
   @media (max-width: 340px) {
-    .mobile-bottom-save-label {
-      display: none;
-    }
-
     /* Six full-size controls leave no room for a useful move count on 320px
        screens. Keep the review path legible and move the two board modes into
        the existing overflow sheet, where their 44px targets remain intact. */
@@ -417,16 +426,160 @@
     }
   }
 
+  /* The same shed, for the shell where the tab bar shares this row.
+     There the strip gets about 304px less than the viewport, so a 568px
+     landscape phone leaves the navigation group 42px to hold Back, the move
+     counter and Forward -- three 44px targets. The group is flex-1 min-w-0, so
+     it shrinks and they do not: they overflowed it and overlapped each other by
+     up to 24px, which means a tap aimed at Back landing on the move counter.
+     Room runs out at about 700px here rather than at 340px, because of what
+     else is in the row; shedding the mode actions returns the ~100px that puts
+     every target back in its own space. */
+  @media (max-height: 499px) and (max-width: 699px) {
+    .mobile-bottom-mode-actions {
+      display: none !important;
+    }
+
+    .mobile-bottom-overflow-mode-actions {
+      display: grid;
+    }
+
+    /* The shed alone left 140px where the group wants about 154, so the move
+       counter still crossed Back by 2px once the counter read two digits. These
+       are the same gaps the 430px and 380px rules tighten, for the same reason
+       and to the same values. */
+    .mobile-bottom-controls {
+      gap: 2px !important;
+    }
+
+    .mobile-bottom-navigation {
+      gap: 2px !important;
+    }
+
+    .mobile-bottom-meta {
+      gap: 1px !important;
+    }
+
+    /* The strip here is narrower than on a 380px phone, so shed the save
+       badge for the same reason: the turn stone was clipped off entirely. */
+    .mobile-bottom-meta [data-mobile-save-status='true'] {
+      display: none !important;
+    }
+
+    .mobile-bottom-move-button {
+      padding-left: 0.25rem !important;
+      padding-right: 0.25rem !important;
+    }
+
+    /* About 56px of strip: the current move alone, as a scoreboard would
+       show it. The button's label still reads "Move N of M". */
+    .mobile-bottom-move-hash,
+    .mobile-bottom-move-button-total {
+      display: none;
+    }
+  }
+
   html,
   body,
   #root {
     height: 100%;
   }
 
+  /* The shell is a fixed 100%-height layout that scrolls only on the inside,
+     so an overscroll at its edge has nothing to do but chain out to the
+     browser -- which on Android Chrome is pull-to-refresh, and horizontally is
+     the back gesture. Either one throws away a loaded game and a warmed-up
+     model to reload a PWA that has its own update prompt, and the board reads
+     horizontal drags itself (region select, scrub), so a drag that overshoots
+     the edge was a navigation away. Nothing here wants either. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
   body {
     background: var(--ui-bg);
     color: var(--ui-text);
     font-family: var(--ui-font);
+  }
+
+  /* A tap on a touch screen paints the browser's own highlight over whatever
+     was hit: a hard-edged rectangle that ignores every rounded corner in this
+     UI, and that lands on the board's intersections as readily as on a button.
+     Turning it off would leave a phone with no press feedback at all, because
+     Tailwind v4 puts `hover:` behind `(hover: hover)` and the hand-written
+     :hover rules below never fire for a finger either -- so the two halves go
+     together, and the acknowledgement now follows the control's own shape. */
+  :root {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* The other half of the same question, answered through this file: a rule
+     written for a hovering pointer is wrapped in `@media (hover: hover)`, so a
+     finger cannot leave one switched on. It does: a touch tap in Chrome puts
+     :hover on the element it hit and every ancestor, and leaves it there until
+     the next tap somewhere else -- measured on .panel-section-header, which sat
+     in its hover fill (#eef2f7 against a white panel) after being tapped, so a
+     collapsed section read as a selected one.
+
+     Only rules whose every selector is a :hover are wrapped. The ones that also
+     list :focus-visible or a state class mean something to a keyboard as well,
+     and guarding those wholesale would take that away. */
+  @media (hover: none) {
+    button:not(:disabled):active,
+    [role='button']:not([aria-disabled='true']):active,
+    [role='tab']:not(:disabled):active,
+    [role='menuitem']:not([aria-disabled='true']):active {
+      /* Opacity rather than the scale() that .panel-icon-button and
+         .status-bar-button use for a mouse: a transform changes the element's
+         box while the finger is still down, and LibraryPanel's
+         openButtonContextMenu positions its menu from a getBoundingClientRect()
+         taken during exactly that press. Fading leaves the geometry alone. */
+      opacity: 0.62;
+    }
+  }
+
+  /* The highlight was themed, but only inside .wk-dashboard -- so the mobile
+     shell, every dialog and the whole review side of the app selected in the
+     browser's own blue, over four palettes that have nothing blue in them.
+     The colour is stated as well as the fill: a selection that keeps muted or
+     accent-coloured text would not be guaranteed readable on it. */
+  ::selection {
+    background: var(--ui-accent-soft);
+    color: var(--ui-text);
+  }
+
+  /* A row that answers a long press should not also start selecting its own
+     name under the finger: on a touch screen the press that opens the menu
+     leaves a highlight behind it, and on iOS raises the callout on top of the
+     menu. Nothing is lost -- the rows are draggable and carry their own
+     context menu, so neither pointer could select this text anyway, and the
+     board (which long-presses to mark a point) is already select-none. */
+  .library-tree-node {
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* A control that only dims still says "click me" under a mouse: the pointer
+     cursor stays, and the dimming alone is easy to read as a colour rather
+     than a state. Four component classes already answered this one at a time
+     -- .panel-icon-button, .panel-action-button, .analysis-command-bar__button,
+     .manual-score-launch -- but 29 of the 59 Tailwind `disabled:opacity-*`
+     controls had no cursor rule at all, so the same disabled state felt
+     different depending on which button it was.
+
+     Stated once, in base, so it also covers controls not yet written. A
+     utility class still wins, which is what the one deliberate exception
+     wants: MobileHome's disabled:pointer-events-none takes the element out of
+     hit-testing entirely, and a cursor is inherited from the parent there. */
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  [role='button'][aria-disabled='true'],
+  [role='menuitem'][aria-disabled='true'],
+  [role='tab'][aria-disabled='true'] {
+    cursor: not-allowed;
   }
 
   /* Focus ring for accessibility */
@@ -480,9 +633,35 @@
     font-family: var(--ui-font-mono);
   }
 
-  .settings-modal label.text-slate-300,
-  .settings-modal label.text-slate-400 {
-    color: var(--ui-text-muted);
+  /* iOS Safari zooms the page in when a form control smaller than 16px takes
+     focus, and does not zoom back out when it loses focus -- so tapping the
+     library search, a player name or the komi field on an iPhone left the whole
+     app enlarged until the reader pinched it back by hand. Every text field
+     here is Tailwind's text-sm (14px) or text-xs (12px).
+
+     The fix is the font size and not `maximum-scale=1` on the viewport tag:
+     that would stop the zoom by taking pinch-zoom away from everyone, which is
+     a worse trade and an accessibility one.
+
+     `!important` because these sit on Tailwind's text-* utilities, and
+     utilities outrank every layer this file writes into -- the same reason the
+     landscape rule further down carries one. Keyed on `hover: none` rather than
+     on the width, so a phone in landscape is covered too and so it reads the
+     same as the library's touch rules; on a phone it is true wherever
+     `pointer: coarse` is. */
+  @media (hover: none) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+
+    /* The one exemption: a 38px slot in a 34px pill, on a rail measured at
+       5.8px of headroom (see the 700px tier in dashboard.css). A coarse
+       pointer only reaches it on a tablet wide enough for the desktop shell. */
+    .wk-dashboard .move-counter input {
+      font-size: 12.5px !important;
+    }
   }
 }
 
@@ -599,10 +778,15 @@
     color: var(--ui-text);
   }
 
-  .settings-modal .settings-search-result:hover,
   .settings-modal .settings-search-result:focus-visible,
   .settings-modal .settings-search-result[aria-selected='true'] {
     background: var(--ui-surface);
+  }
+
+  @media (hover: hover) {
+    .settings-modal .settings-search-result:hover {
+      background: var(--ui-surface);
+    }
   }
 
   .settings-modal .settings-search-result-tab {
@@ -634,8 +818,10 @@
     border-color: transparent;
   }
 
-  .settings-modal .settings-tab:hover {
-    color: var(--ui-text);
+  @media (hover: hover) {
+    .settings-modal .settings-tab:hover {
+      color: var(--ui-text);
+    }
   }
 
   .settings-modal .settings-tab-active {
@@ -768,24 +954,33 @@
       min-height: 44px;
     }
 
+    /* The build link is one 11px line under the title. Its 44px target made
+       the sticky header 101px tall, a band of blank space held over the menu
+       as it scrolls; the negative margins let the target overlap the header's
+       padding instead of adding to it. */
+    [aria-labelledby='menu-title'] [data-menu-build-link='true'] {
+      line-height: 44px;
+      margin-block: -14px;
+    }
+
     [aria-labelledby='menu-title'] a[href] {
       display: inline-flex;
       align-items: center;
     }
 
-    [data-menu-action-grid] > button:nth-child(odd) {
-      border-right: 1px solid var(--ui-border);
+    /* Grid lines are the 1px gaps over a border-coloured backdrop, not borders
+       counted per child. The counted rules drifted as groups gained items: the
+       full-width "Copy position as text" still took the odd child's right
+       border, a second line just inside the edge, and Study & Practice's
+       seventh item sat beside an empty bordered cell. A lone last action now
+       spans the rest of its row, whatever the count. */
+    [data-menu-action-grid] {
+      gap: 1px;
+      background: var(--ui-border) !important;
     }
 
-    [data-menu-action-grid] > button:nth-child(n + 3) {
-      border-top: 1px solid var(--ui-border);
-    }
-
-    /* A final unpaired action should read as a deliberate full-width row,
-       rather than leaving a bordered ghost cell beside it. */
-    [data-menu-action-grid='game'] > button:last-child:nth-child(7) {
+    [data-menu-action-grid] > button:last-child:nth-child(odd) {
       grid-column: 1 / -1;
-      border-right: 0;
     }
 
     .settings-modal button,
@@ -841,10 +1036,6 @@
     /* The base .toggle styles above already size the switch to 44px. */
   }
 
-  .ui-panel-pad {
-    padding: var(--ui-panel-pad);
-  }
-
   .ui-surface {
     background: var(--ui-surface);
     border-color: var(--ui-border);
@@ -881,6 +1072,20 @@
 
   .notification-toast-region--below-command-bar {
     top: 8.75rem;
+  }
+
+  /* Library, Tree, and Review cover the board. Their notifications belong to
+     the visible workspace, above its tab bar and below modal dialogs. */
+  .notification-toast-region.notification-toast-region--mobile-panel {
+    position: fixed;
+    inset: auto 0.5rem calc(var(--mobile-tabbar-height) + var(--pwa-banner-height, 0px) + env(safe-area-inset-bottom) + 0.5rem);
+    z-index: 45;
+    justify-content: center;
+  }
+
+  .notification-toast-region--mobile-panel .notification-toast {
+    max-height: calc(100dvh - var(--mobile-tabbar-height) - var(--pwa-banner-height, 0px) - env(safe-area-inset-bottom) - 5rem);
+    overflow-y: auto;
   }
 
   .notification-toast {
@@ -966,20 +1171,34 @@
       border-color 0.15s ease;
   }
 
-  .notification-toast-undo:hover,
   .notification-toast-undo:focus-visible {
     color: var(--ui-text);
     background: var(--ui-surface-2);
   }
 
-  .notification-toast-action:hover,
+  @media (hover: hover) {
+    .notification-toast-undo:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
+  }
+
   .notification-toast-action:focus-visible,
-  .notification-toast-close:hover,
   .notification-toast-close:focus-visible {
     color: var(--ui-text);
     background: var(--ui-surface-2);
     border-color: var(--ui-border);
     outline: none;
+  }
+
+  @media (hover: hover) {
+    .notification-toast-action:hover,
+    .notification-toast-close:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+      border-color: var(--ui-border);
+      outline: none;
+    }
   }
 
   .notification-toast-info {
@@ -1053,7 +1272,7 @@
        The board column has no gap wide enough to hold the toast beside the
        board — 192px between the board's right edge and the sidebar at 1280 —
        so this clips the board's top edge instead, which is the lesser cover. */
-    body:has(.wk-dashboard[data-gamestrip="open"])
+    :root[data-dashboard-gamestrip='open']
       .notification-toast-region--desktop-dashboard:has(.notification-toast-error) {
       top: 5.9375rem; /* the 3.25rem header offset plus the strip's 43px */
     }
@@ -1193,8 +1412,10 @@
     user-select: none;
   }
 
-  .panel-section-header:hover {
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .panel-section-header:hover {
+      background: var(--ui-surface-2);
+    }
   }
 
   .panel-section-title {
@@ -1218,8 +1439,10 @@
     transition: color 0.15s ease;
   }
 
-  .panel-section-title:hover {
-    color: var(--ui-text);
+  @media (hover: hover) {
+    .panel-section-title:hover {
+      color: var(--ui-text);
+    }
   }
 
   .panel-collapse-icon {
@@ -1245,6 +1468,22 @@
   .panel-section-content {
     padding: 8px 10px;
     min-height: 0;
+  }
+
+  /* Styling a scrollbar opts out of the platform's overlay one, so a panel
+     takes the scrollbar's width out of its layout the moment its content
+     outgrows the box -- and gives it back when it shrinks, moving every row
+     sideways as a list grows, a section opens or a search filters. Measured in
+     headless Chrome: 8px on a phone, 9px on the desktop shell, and 0 either
+     side of the threshold. Reserve the gutter instead, so the width is the
+     same either way.
+
+     `.panel-scroll-region` is the element that actually scrolls;
+     `.panel-section-content` never gets an overflow, which is why the
+     scrollbar rules below name it to no effect. */
+  .panel-scroll-region,
+  .library-tree {
+    scrollbar-gutter: stable;
   }
 
   .panel-section-content::-webkit-scrollbar,
@@ -1305,12 +1544,20 @@
     background: transparent;
     color: var(--ui-text-muted);
     cursor: pointer;
-    transition: all 0.15s ease;
+    /* Named properties rather than `all`. Two things the button does are not
+       eases: the keyboard focus ring (a global rule gives every button an
+       outline on :focus-visible) faded in over 150ms, so tabbing along a
+       toolbar smeared instead of stepping; and the :active squish below ramped
+       over the same 150ms, which is longer than a quick tap lasts -- the press
+       acknowledgement arrived after the press. */
+    transition: color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
   }
 
-  .panel-icon-button:hover:not(:disabled) {
-    background: var(--ui-surface-2);
-    color: var(--ui-text);
+  @media (hover: hover) {
+    .panel-icon-button:hover:where(:not(:disabled)) {
+      background: var(--ui-surface-2);
+      color: var(--ui-text);
+    }
   }
 
   .panel-icon-button.active {
@@ -1320,6 +1567,8 @@
 
   .panel-icon-button:active:not(:disabled) {
     transform: scale(0.96);
+    /* Down immediately, back up on the base rule's ease. */
+    transition: transform 0s;
   }
 
   .panel-icon-button:disabled {
@@ -1356,9 +1605,11 @@
       background 0.15s ease;
   }
 
-  .panel-tab:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface);
+  @media (hover: hover) {
+    .panel-tab:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface);
+    }
   }
 
   .panel-tab.active {
@@ -1403,9 +1654,11 @@
       border-color 0.15s ease;
   }
 
-  .panel-action-button:hover:not(:disabled) {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .panel-action-button:hover:where(:not(:disabled)) {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
   }
 
   .panel-action-button:disabled {
@@ -1644,9 +1897,11 @@
       transform 0.15s ease;
   }
 
-  .analysis-command-bar__status-copy:hover {
-    color: #fff;
-    background: var(--ui-danger);
+  @media (hover: hover) {
+    .analysis-command-bar__status-copy:hover {
+      color: #fff;
+      background: var(--ui-danger);
+    }
   }
 
   .analysis-command-bar__status-copy:active {
@@ -1799,10 +2054,12 @@
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--ui-accent) 30%, transparent);
   }
 
-  .analysis-command-bar__button:hover:not(:disabled) {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
-    border-color: var(--ui-border-strong);
+  @media (hover: hover) {
+    .analysis-command-bar__button:hover:where(:not(:disabled)) {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+      border-color: var(--ui-border-strong);
+    }
   }
 
   .analysis-command-bar__button:disabled {
@@ -1884,9 +2141,11 @@
     line-height: 1;
   }
 
-  .analysis-command-bar__depth-close:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .analysis-command-bar__depth-close:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
   }
 
   .analysis-command-bar__depth-options {
@@ -1915,10 +2174,12 @@
       color 0.15s ease;
   }
 
-  .analysis-command-bar__depth-option:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
-    border-color: var(--ui-border-strong);
+  @media (hover: hover) {
+    .analysis-command-bar__depth-option:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+      border-color: var(--ui-border-strong);
+    }
   }
 
   .analysis-command-bar__depth-option.active {
@@ -1978,11 +2239,18 @@
     margin-top: 0.75rem;
   }
 
+  /* The box is the target; the track and thumb are drawn at their own sizes
+     below, so growing it changes what can be grabbed and not what is seen.
+     It was 1.25rem, which is 20px against the 24px WCAG 2.2 asks for -- found
+     by putting this dialog into the viewport sweep's smoke list, where it had
+     never been. The thumb keeps its own centring: -0.3125rem is half the
+     difference between a 14px thumb and a 4px track, and WebKit centres the
+     track in whatever height the box has. */
   .analysis-command-bar__depth-slider {
     flex: 1;
     width: 100%;
     min-width: 0;
-    height: 1.25rem;
+    height: 1.5rem;
     margin: 0;
     appearance: none;
     -webkit-appearance: none;
@@ -2031,6 +2299,14 @@
     background: var(--ui-accent);
     border: 2px solid var(--ui-panel);
     border-radius: 999px;
+  }
+
+  /* A finger drags this, and 24px is the floor for a pointer, not for a hand.
+     44px is the size every other target on a touch screen here is held to. */
+  @media (hover: none) {
+    .analysis-command-bar__depth-slider {
+      height: 2.75rem;
+    }
   }
 
   .analysis-command-bar__depth-input {
@@ -2220,17 +2496,19 @@
     }
 
     .analysis-command-bar__depth-popover {
-      position: fixed;
-      top: max(4.75rem, calc(env(safe-area-inset-top) + 0.75rem));
-      right: max(0.75rem, env(safe-area-inset-right));
-      bottom: calc(
+      --depth-popover-top: max(4.75rem, calc(env(safe-area-inset-top) + 0.75rem));
+      --depth-popover-bottom: calc(
         var(--mobile-tabbar-height) +
           var(--mobile-bottom-controls-height, 0px) +
           max(0.75rem, env(safe-area-inset-bottom))
       );
+      position: fixed;
+      top: var(--depth-popover-top);
+      right: max(0.75rem, env(safe-area-inset-right));
+      bottom: auto;
       left: max(0.75rem, env(safe-area-inset-left));
       width: auto;
-      max-height: none;
+      max-height: calc(100dvh - var(--depth-popover-top) - var(--depth-popover-bottom));
       overflow-y: auto;
       overscroll-behavior: contain;
     }
@@ -2245,9 +2523,18 @@
     }
 
     /* Keep the state readable while giving the scrollable controls enough of a
-       preview to make their horizontal affordance obvious on a phone. */
+       preview to make their horizontal affordance obvious on a phone.
+
+       The status track is a floor and not a fixed width, because what has to
+       fit in it is a word -- "Loading", the longest of Idle/Ready/Error --
+       whose pixel width follows the font size of whichever tier is in effect.
+       Fixed at 4.75rem it left 52px for a word needing 53.8px at 390px and up,
+       so every common phone width rendered it as "Load...". Sizing the track
+       to its content fits the word at any tier and hands the leftover back to
+       the metrics when the word is short, which is the same minmax(_, auto)
+       shape the desktop rule above already uses. */
     .analysis-command-bar-slot .analysis-command-bar {
-      grid-template-columns: 4.75rem minmax(6rem, 1fr) minmax(6.5rem, 36vw);
+      grid-template-columns: minmax(4.75rem, auto) minmax(6rem, 1fr) minmax(6.5rem, 36vw);
       column-gap: 0.25rem;
     }
 
@@ -2346,15 +2633,24 @@
     }
   }
 
+  /* Same floor-not-fixed reasoning as the 640px tier: at 360px this track was
+     4rem, leaving 44px for a word needing 49.3px even at the 11px size below. */
   @media (max-width: 360px) {
     .analysis-command-bar-slot .analysis-command-bar {
-      grid-template-columns: 4rem minmax(6rem, 1fr) minmax(6.5rem, 36vw);
+      grid-template-columns: minmax(4rem, auto) minmax(6rem, 1fr) minmax(6.5rem, 36vw);
     }
   }
 
   .library-tree {
     display: flex;
     flex-direction: column;
+  }
+
+  .library-tree.panel-scroll-region {
+    /* Reserve the native scrollbar consistently. WebKit's stable gutter made
+       child rows eight pixels wider than the visible mobile scroll area. */
+    scrollbar-gutter: auto;
+    overflow-y: scroll;
   }
 
   /* A mainline game lays the move tree out as a single row across the top of
@@ -2422,11 +2718,18 @@
       color 0.15s ease;
   }
 
-  .move-tree-control-button:hover,
   .move-tree-control-button.active {
     color: var(--ui-accent);
     background: var(--ui-accent-soft);
     border-color: var(--ui-accent);
+  }
+
+  @media (hover: hover) {
+    .move-tree-control-button:hover {
+      color: var(--ui-accent);
+      background: var(--ui-accent-soft);
+      border-color: var(--ui-accent);
+    }
   }
 
   /* The mobile move list is one 44px row per move using about a third of the
@@ -2449,8 +2752,17 @@
     border-bottom: 1px solid var(--ui-border);
   }
 
-  .move-tree-list-split > button:nth-child(odd) {
+  /* Placed by colour, not by position. Counting children put White in the
+     left column for a whole handicap game -- White moves first -- and drew
+     the divider on the right column's outer edge, since the full-width root
+     row made every left cell an even child. */
+  .move-tree-list-split > .move-tree-list-split-black {
+    grid-column: 1;
     border-right: 1px solid var(--ui-border);
+  }
+
+  .move-tree-list-split > .move-tree-list-split-white {
+    grid-column: 2;
   }
 
   .move-tree-list-split-full {
@@ -2509,9 +2821,11 @@
     pointer-events: auto;
   }
 
-  .move-tree-empty-state-action:hover {
-    color: var(--ui-text);
-    border-color: var(--ui-accent);
+  @media (hover: hover) {
+    .move-tree-empty-state-action:hover {
+      color: var(--ui-text);
+      border-color: var(--ui-accent);
+    }
   }
 
   @media (max-width: 1023px), (max-height: 499px) {
@@ -2557,6 +2871,13 @@
   }
 
   @media (max-height: 520px) and (orientation: landscape) {
+    /* Settings keeps its × in the header; the footer's Done repeats it. On a
+       320px-tall phone the two bars left the settings themselves 101px of a
+       3,000px list, so the repeat goes. */
+    .settings-modal .settings-modal-footer {
+      display: none !important;
+    }
+
     .move-tree-empty-state {
       padding: 0.75rem 3rem 0.5rem;
     }
@@ -2606,7 +2927,7 @@
   }
 
   .move-tree-node-marker.best {
-    fill: #22d3ee;
+    fill: var(--tree-best);
   }
 
   .move-tree-node-marker.setup {
@@ -2629,9 +2950,19 @@
   .move-list-quality-dot.best { background: #22d3ee; }
   .move-list-quality-dot.setup { background: #a855f7; }
 
+  .move-tree-edge {
+    stroke: var(--tree-edge);
+  }
+
+  .move-tree-node-ring-current {
+    fill: none;
+    stroke: var(--tree-current);
+    stroke-width: 2;
+  }
+
   .move-tree-node-halo-best {
     fill: none;
-    stroke: #22d3ee;
+    stroke: var(--tree-best);
     stroke-width: 1.75;
     opacity: 0.9;
   }
@@ -2670,20 +3001,36 @@
     user-select: none;
   }
 
-  .move-tree-collapsed-stub:hover .move-tree-collapsed-stub-dot,
   .move-tree-collapsed-stub:focus-visible .move-tree-collapsed-stub-dot {
     fill: var(--ui-accent);
     stroke-dasharray: none;
   }
 
-  .move-tree-collapsed-stub:hover .move-tree-collapsed-stub-count,
+  @media (hover: hover) {
+    .move-tree-collapsed-stub:hover .move-tree-collapsed-stub-dot {
+      fill: var(--ui-accent);
+      stroke-dasharray: none;
+    }
+  }
+
   .move-tree-collapsed-stub:focus-visible .move-tree-collapsed-stub-count {
     fill: var(--ui-accent-contrast);
   }
 
-  .move-tree-collapsed-stub:hover .move-tree-collapsed-stub-line,
+  @media (hover: hover) {
+    .move-tree-collapsed-stub:hover .move-tree-collapsed-stub-count {
+      fill: var(--ui-accent-contrast);
+    }
+  }
+
   .move-tree-collapsed-stub:focus-visible .move-tree-collapsed-stub-line {
     opacity: 1;
+  }
+
+  @media (hover: hover) {
+    .move-tree-collapsed-stub:hover .move-tree-collapsed-stub-line {
+      opacity: 1;
+    }
   }
 
   .move-tree-keyboard-focus {
@@ -2801,8 +3148,10 @@
     transition: background 0.1s ease;
   }
 
-  .library-tree-node:hover {
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .library-tree-node:hover {
+      background: var(--ui-surface-2);
+    }
   }
 
   .library-tree-node.selected {
@@ -2815,13 +3164,20 @@
     background: var(--ui-success-soft);
   }
 
-  .library-tree-node.loaded:hover {
-    background: var(--ui-success-soft);
+  @media (hover: hover) {
+    .library-tree-node.loaded:hover {
+      background: var(--ui-success-soft);
+    }
   }
 
-  .library-tree-node.loaded.dirty,
-  .library-tree-node.loaded.dirty:hover {
+  .library-tree-node.loaded.dirty {
     background: var(--ui-warning-soft);
+  }
+
+  @media (hover: hover) {
+    .library-tree-node.loaded.dirty:hover {
+      background: var(--ui-warning-soft);
+    }
   }
 
   .library-tree-node.loaded::before {
@@ -2915,6 +3271,14 @@
     font-weight: 500;
   }
 
+  .library-tree-node[data-library-depth]:not([data-library-depth='0']) .library-tree-node-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .library-tree-node-meta {
     flex-shrink: 0;
     margin-left: auto;
@@ -2949,8 +3313,11 @@
     grid-row: 1;
   }
 
+  /* The name spans every column to the row's end: the actions shown on hover
+     or focus share columns with it otherwise, and six of them cut a 300px
+     panel's names to two letters ("Le…") on exactly the row being pointed at. */
   .library-tree-node[data-library-row='file'] .library-tree-node-name {
-    grid-column: 3;
+    grid-column: 3 / -1;
     grid-row: 1;
   }
 
@@ -2965,14 +3332,18 @@
     white-space: nowrap;
   }
 
+  /* ...so the badge and the actions sit on the meta line, which truncates to
+     make room. The actions' negative margins keep 24px buttons from growing a
+     line of 11px text, so revealing them does not shift the list. */
   .library-tree-node[data-library-row='file'] .library-dirty-indicator {
     grid-column: 4;
-    grid-row: 1 / 3;
+    grid-row: 2;
   }
 
   .library-tree-node[data-library-row='file'] .library-tree-node-actions {
     grid-column: 5;
-    grid-row: 1 / 3;
+    grid-row: 2;
+    margin-block: -5px;
   }
 
   .library-dirty-indicator {
@@ -2988,7 +3359,8 @@
   }
 
   /* Collapsed to zero width (not display:none) so the row name gets the space
-     while the buttons stay tabbable; focus-within re-expands them. */
+     while the buttons stay tabbable; focus-within re-expands them, and so does
+     hover on a device that has one. */
   .library-tree-node-actions {
     display: inline-flex;
     gap: 2px;
@@ -2998,10 +3370,16 @@
     transition: opacity 0.1s ease;
   }
 
-  .library-tree-node:hover .library-tree-node-actions,
   .library-tree-node:focus-within .library-tree-node-actions {
     width: auto;
     opacity: 1;
+  }
+
+  @media (hover: hover) {
+    .library-tree-node:hover .library-tree-node-actions {
+      width: auto;
+      opacity: 1;
+    }
   }
 
   .library-tree-node-action {
@@ -3015,13 +3393,17 @@
     background: transparent;
   }
 
-  .library-tree-node-action:hover {
-    background: var(--ui-surface-2);
-    color: var(--ui-text);
+  @media (hover: hover) {
+    .library-tree-node-action:hover {
+      background: var(--ui-surface-2);
+      color: var(--ui-text);
+    }
   }
 
-  .library-tree-node-action.danger:hover {
-    color: var(--ui-danger);
+  @media (hover: hover) {
+    .library-tree-node-action.danger:hover {
+      color: var(--ui-danger);
+    }
   }
 
   .library-tree-node-more {
@@ -3041,9 +3423,14 @@
   }
 
   .library-tree-node-select.is-visible,
-  .library-tree-node:hover .library-tree-node-select,
   .library-tree-node:focus-within .library-tree-node-select {
     opacity: 1;
+  }
+
+  @media (hover: hover) {
+    .library-tree-node:hover .library-tree-node-select {
+      opacity: 1;
+    }
   }
 
   /* The glyph stays 14px; the button grows to the 24x24 floor, which the 28px
@@ -3099,10 +3486,16 @@
     text-align: left;
   }
 
-  .library-context-menu-item:hover,
   .library-context-menu-item:focus-visible {
     background: var(--ui-surface-2);
     outline: none;
+  }
+
+  @media (hover: hover) {
+    .library-context-menu-item:hover {
+      background: var(--ui-surface-2);
+      outline: none;
+    }
   }
 
   .library-context-menu-item svg {
@@ -3126,6 +3519,7 @@
 
   .library-show-more {
     display: block;
+    min-height: 44px;
     width: calc(100% - 12px);
     margin: 6px;
     padding: 7px 10px;
@@ -3137,9 +3531,11 @@
     cursor: pointer;
   }
 
-  .library-show-more:hover {
-    border-color: var(--ui-border-strong);
-    color: var(--ui-text);
+  @media (hover: hover) {
+    .library-show-more:hover {
+      border-color: var(--ui-border-strong);
+      color: var(--ui-text);
+    }
   }
 
   .library-stats {
@@ -3181,8 +3577,10 @@
     top: var(--board-tool-offset-y, 9rem);
   }
 
-  .manual-score-launch:hover:not(:disabled) {
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .manual-score-launch:hover:where(:not(:disabled)) {
+      background: var(--ui-surface-2);
+    }
   }
 
   .manual-score-shortcut {
@@ -3294,9 +3692,11 @@
     color: var(--ui-text-muted);
   }
 
-  .manual-score-icon:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .manual-score-icon:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
   }
 
   .manual-score-method {
@@ -3326,9 +3726,11 @@
     font-weight: 800;
   }
 
-  .manual-score-method button:hover:not(:disabled) {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .manual-score-method button:hover:where(:not(:disabled)) {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
   }
 
   .manual-score-method button.active {
@@ -3487,9 +3889,11 @@
     text-transform: uppercase;
   }
 
-  .manual-score-details-toggle:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .manual-score-details-toggle:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
   }
 
   .manual-score-breakdown {
@@ -3502,6 +3906,13 @@
 
   .manual-score-breakdown[hidden] {
     display: none;
+  }
+
+  .manual-score-rules {
+    margin: 0 0 4px;
+    color: var(--ui-text);
+    font-weight: 600;
+    overflow-wrap: anywhere;
   }
 
   .manual-score-breakdown > div {
@@ -3548,9 +3959,11 @@
     font-weight: 700;
   }
 
-  .manual-score-actions button:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
+  @media (hover: hover) {
+    .manual-score-actions button:hover {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+    }
   }
 
   .manual-score-actions button:disabled {
@@ -3558,9 +3971,11 @@
     opacity: 0.45;
   }
 
-  .manual-score-actions button:disabled:hover {
-    color: var(--ui-text-muted);
-    background: var(--ui-surface);
+  @media (hover: hover) {
+    .manual-score-actions button:disabled:hover {
+      color: var(--ui-text-muted);
+      background: var(--ui-surface);
+    }
   }
 
   .manual-score-actions button.primary {
@@ -3585,7 +4000,7 @@
     text-align: center;
   }
 
-  /* Matches MOBILE_LAYOUT_MEDIA in src/utils/responsiveLayout.ts: the mobile
+  /* Matches MOBILE_LAYOUT_MEDIA in src/utils/layoutBreakpoints.ts: the mobile
      shell also runs on short, wide windows, and a width-only query left these
      controls at their 26-31px desktop heights while the app was in touch mode. */
   @media (max-width: 1023px), (max-height: 499px) {
@@ -3656,26 +4071,6 @@
   .manual-score-panel.manual-score-compact .manual-score-totals,
   .manual-score-panel.manual-score-compact .manual-score-help {
     display: none;
-  }
-
-  .status-bar {
-    background: var(--ui-panel);
-    border-top: 1px solid var(--ui-border);
-    padding: 6px 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    min-height: 28px;
-    z-index: 5;
-    width: 100%;
-    flex-shrink: 0;
-  }
-
-  @media (max-width: 1024px) {
-    .status-bar {
-      display: none;
-    }
   }
 
   .mobile-safe-bottom {
@@ -3769,6 +4164,12 @@
       border-left: 1px solid var(--ui-border);
     }
 
+    /* A lone last action takes the whole row, so the grid's rules run edge to
+       edge instead of stopping at its first cell. */
+    .mobile-home-actions--primary > button:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+
     .mobile-home-recent {
       grid-area: recent;
       margin-top: 0;
@@ -3798,7 +4199,10 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .mobile-home-actions--primary > button {
+    /* :nth-child(n) matches the two-column rule's :nth-child(even) in
+       specificity; a bare `> button` lost to it and left a stray left border
+       on the fourth action, which sits in the first column here. */
+    .mobile-home-actions--primary > button:nth-child(n) {
       border-left: 0;
     }
 
@@ -3808,6 +4212,14 @@
 
     .mobile-home-actions--primary > button:not(:nth-child(3n + 1)) {
       border-left: 1px solid var(--ui-border);
+    }
+
+    .mobile-home-actions--primary > button:last-child:nth-child(odd) {
+      grid-column: auto;
+    }
+
+    .mobile-home-actions--primary > button:last-child:nth-child(3n + 1) {
+      grid-column: 1 / -1;
     }
   }
 
@@ -3860,65 +4272,9 @@
     }
   }
 
-  .status-bar-section {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .status-bar-left {
-    flex: 0 0 auto;
-    min-width: 100px;
-  }
-
-  .status-bar-right {
-    flex: 0 0 auto;
-    margin-left: auto;
-  }
-
-  .status-bar-text {
-    font-size: 12px;
-    color: var(--ui-text);
-    font-weight: 500;
-  }
-
-  .status-bar-matchup {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
   .status-bar-item {
     font-size: 11px;
     color: var(--ui-text-muted);
-  }
-
-  .status-player {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    border: 1px solid var(--ui-border-strong);
-    flex-shrink: 0;
-  }
-
-  .status-player-black {
-    background: #111;
-  }
-
-  .status-player-white {
-    background: #fff;
-  }
-
-  .status-bar-captures {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .status-bar-divider {
-    font-size: 11px;
-    color: var(--ui-text-muted);
-    opacity: 0.7;
   }
 
   .status-bar-button {
@@ -3931,7 +4287,9 @@
     background: transparent;
     border: 1px solid var(--ui-border);
     border-radius: 4px;
-    transition: all 0.2s ease;
+    /* See .panel-icon-button: `all` also animated the focus ring and the
+       :active squish, and 0.2s is longer still. */
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
     line-height: 1;
     /* The game strip is 42px with 7px of padding, so a 28px control fills its
        content box exactly and costs the strip no height. At 20px this was the
@@ -3940,14 +4298,17 @@
     min-width: 28px;
   }
 
-  .status-bar-button:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
-    border-color: var(--ui-border-strong);
+  @media (hover: hover) {
+    .status-bar-button:hover:where(:not(:disabled)) {
+      color: var(--ui-text);
+      background: var(--ui-surface-2);
+      border-color: var(--ui-border-strong);
+    }
   }
 
   .status-bar-button:active {
     transform: scale(0.98);
+    transition: transform 0s;
   }
 
   .status-bar-button:disabled {
@@ -3972,6 +4333,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    /* "0:30 ×5" is one reading; squeezed, it broke to "0:30" over "×5". */
+    white-space: nowrap;
+    flex: none;
   }
 
   /* Below this the clock's own 44px pause target no longer fits the phone top
@@ -4032,6 +4396,17 @@
     min-width: 7rem;
   }
 
+  /* py-2 around a single line of label makes a 38px row, which is fine for a
+     mouse and under the 44px every other tap target here is held to. The row
+     centres its content, so the floor only adds space around the label. The
+     list scrolls, so the cost is a shorter page of commands, not a clipped
+     one. */
+  @media (hover: none) {
+    [data-command-palette-item] {
+      min-height: 44px;
+    }
+  }
+
   /* The setup tools are stones, so they are drawn as stones: a rimmed disc
      carries on any panel background, where a tinted glyph only carried on one.
      Same two gradients the game strip's mini stones use. */
@@ -4089,35 +4464,6 @@
     padding-inline: 4px;
   }
 
-  .panel-toggle {
-    padding: 4px 6px;
-    border: none;
-    border-radius: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--ui-text-muted);
-    background: transparent;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .panel-toggle:hover {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
-  }
-
-  .panel-toggle.active {
-    color: var(--ui-text);
-    background: var(--ui-surface-2);
-  }
-
-  .ui-gap {
-    gap: var(--ui-gap);
-  }
-
   .panel-scroll-region {
     min-height: 0;
     overflow: auto;
@@ -4163,8 +4509,10 @@
     position: fixed;
     left: auto;
     right: max(12px, env(safe-area-inset-right));
+    /* The desktop dashboard measures what really sits below its board; see
+       --dashboard-navbar-height in DesktopDashboard. */
     bottom: calc(
-      var(--ui-bar-height) + var(--desktop-bottom-controls-height, 0px) +
+      var(--dashboard-navbar-height, calc(var(--ui-bar-height) + var(--desktop-bottom-controls-height, 0px))) +
         max(12px, env(safe-area-inset-bottom))
     );
     z-index: 45;
@@ -4190,7 +4538,7 @@
      the board column whenever that panel is open. `--sidebar-w` is shared with
      the dashboard grid, so the two stay aligned as the panel grows. */
   @media (min-width: 1024px) {
-    :root:has(.wk-dashboard[data-sidebar='open']) .pwa-install-banner {
+    :root[data-dashboard-sidebar='open'] .pwa-install-banner {
       right: calc(var(--sidebar-w) + max(12px, env(safe-area-inset-right)));
     }
   }
@@ -4211,14 +4559,21 @@
     line-height: 1.1;
   }
 
+  /* This line is the whole point of the card, and one line of a 420px card
+     leaves it 224px. Measured at 1440x900: 208px of the 432px sentence was cut,
+     so "App shell, board assets, TFJS WASM, and the bundled small model are
+     cached." stopped at "are ca". Four of the five strings lost roughly half,
+     among them the iOS instructions ("Tap Share, then Add to Home Screen…") and
+     the blocked-install advice, which are the two that have to be read to be
+     acted on. Viewports under 640px already wrapped; the card has no
+     max-height, and its height is measured into --pwa-banner-height by a
+     ResizeObserver, so the board's reserve follows a two-line card on its own. */
   .pwa-install-detail {
     margin-top: 2px;
     overflow: hidden;
     color: var(--ui-text-muted);
     font-size: 11px;
     line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .pwa-install-actions {
@@ -4249,9 +4604,11 @@
     background: var(--ui-surface-2);
   }
 
-  .pwa-install-primary:hover,
-  .pwa-install-secondary:hover {
-    filter: brightness(1.04);
+  @media (hover: hover) {
+    .pwa-install-primary:hover,
+    .pwa-install-secondary:hover {
+      filter: brightness(1.04);
+    }
   }
 
   .pwa-install-primary:disabled,
@@ -4259,6 +4616,85 @@
     cursor: wait;
     opacity: 0.65;
     filter: none;
+  }
+
+  /* A transient notice must never sit on top of a modal.
+     The mobile More Controls sheet is `z-50`, but it renders inside an
+     ancestor with `zIndex: 20`, so that 50 is local to a stacking context
+     that sits *below* this banner's root-level 45. Measured on a 390px
+     phone with the sheet open, `elementFromPoint` at each button's centre
+     returned the banner: Rotate board was 98% covered, Resign and Play on
+     from here 85%, and all three were unclickable. Raising the sheet would
+     mean editing a stacking context several other things sit in; yielding
+     is the smaller and more obviously correct change, and the banner comes
+     straight back when the sheet closes. */
+  :root[data-bottom-more-sheet='open'] .pwa-install-banner {
+    display: none;
+  }
+
+  /* And to a notification, for the reason the sheet and the start rail already
+     have. On a phone the card, the toast, the controls and the tab bar all
+     stack off the bottom edge, and the card's height pushes the toast up onto
+     the board: measured at 390x844 with a game loaded, 19 of 361 intersections
+     came back from `elementFromPoint` as the toast, and dismissing the card by
+     hand took that straight to 0. The toast is transient and says something
+     just happened; the card is a promo that can wait for it to pass. Scoped to
+     the mobile shell with the app's own breakpoint -- `MOBILE_LAYOUT_MEDIA` in
+     responsiveLayout.ts, mirrored throughout this file -- rather than a phone
+     width. The shell runs to 1023px, so a narrower guess left the same collision
+     in place on every tablet. On the desktop shell the card sits in the board
+     column's bottom corner and the toast in the top one, so they never meet. */
+  @media (max-width: 1023px), (max-height: 499px) {
+    :root[data-notification-shown='true'] .pwa-install-banner {
+      display: none;
+    }
+  }
+
+  /* The two install promos also step aside for the first-run start rail. The
+     card is fixed inside the board column, so on a first visit its only choices
+     are the rail or the board -- lifting it clear of the rail put it over 14
+     intersections, N1 to T2, where a click reached the card and did nothing.
+     Two first-run invitations in one corner is one too many anyway, and asking
+     someone to install lands better once they have started a game.
+     `offline-ready` and `update-ready` are not promos and still show: they say
+     something happened, and the stage reserve below keeps them off the board. */
+  :root[data-pwa-banner='install'][data-dashboard-hero='shown'] .pwa-install-banner,
+  :root[data-pwa-banner='ios-install'][data-dashboard-hero='shown'] .pwa-install-banner {
+    display: none;
+  }
+
+  /* And every card steps aside on a screen too short to spare the room. The
+     card is fixed and the board reserves its height, which on a landscape phone
+     means a 66px band out of 390px of screen and a board measured at 203px
+     where it is 250px without. A quarter of the board is too much to ask for an
+     invitation that will be waiting in portrait, where the same phone has the
+     height for it.
+
+     This used to exempt `offline-ready` and `update-ready` on the grounds that
+     they report something that happened and "the stage reserve keeps them off
+     the board". The reserve does not hold once the board has shrunk as far as
+     it will go and the column has nothing left to give. Measured with the
+     update card up, counting intersections that `elementFromPoint` returns as
+     something other than the board:
+
+       568x320  171 covered, board shoved to top:4 under the top bar
+       568x360   95
+       740x360   19
+       568x400   19
+       568x440    0   <- the reserve holds from here up
+       844x390    0   (a wider screen lays the card out at 66px, not 106px)
+
+     So the failure is not a height: it is the card's own height, which varies
+     with width, against a column that has run out of room. Rather than fit a
+     constant to that, all four types now key on 499px -- the height below which
+     this app is not the desktop shell, and the same bound every rule above
+     uses. The cost is the 440-499px band, where a report would have fitted; a
+     report withheld until the next portrait view or the next visit is a smaller
+     loss than one sitting on a quarter of the board. */
+  @media (max-height: 499px) {
+    .pwa-install-banner {
+      display: none;
+    }
   }
 
   @media (max-width: 640px) {
@@ -4276,10 +4712,6 @@
     .pwa-install-primary,
     .pwa-install-secondary {
       min-height: 44px;
-    }
-
-    .pwa-install-detail {
-      white-space: normal;
     }
   }
 
@@ -4329,10 +4761,6 @@
     display: none;
   }
 
-  .ui-border {
-    border-color: var(--ui-border);
-  }
-
   .ui-border-strong {
     border-color: var(--ui-border-strong);
   }
@@ -4343,10 +4771,6 @@
 
   .ui-text-faint {
     color: var(--ui-text-faint);
-  }
-
-  .ui-accent {
-    color: var(--ui-accent);
   }
 
   .ui-accent-bg {
@@ -4645,7 +5069,7 @@
      keyed on the pointer as well as the width. */
   @media (max-width: 1023px), (max-height: 499px), (hover: none) {
     .library-tree-node[data-library-row='file'] {
-      grid-template-columns: 44px 16px minmax(0, 1fr) auto;
+      grid-template-columns: 44px 16px minmax(0, 1fr) auto 44px;
       column-gap: 4px;
       row-gap: 2px;
       min-height: 50px;
@@ -4658,12 +5082,27 @@
       opacity: 1;
     }
 
+    /* Stop short of the ⋯, which holds column 5 on both lines here. */
     .library-tree-node[data-library-row='file'] .library-tree-node-name {
+      grid-column: 3 / 5;
       width: 100%;
     }
 
     .library-tree-node[data-library-row='file'] .library-tree-node-actions {
       display: none;
+    }
+
+    /* ...and the ⋯ takes its place, as it already did on a folder row. */
+    .library-tree-node[data-library-row='file'] .library-tree-node-more {
+      display: inline-flex;
+      grid-column: 5;
+      grid-row: 1 / 3;
+      width: 44px;
+      height: 44px;
+      align-items: center;
+      justify-content: center;
+      color: var(--ui-text-muted);
+      border-radius: 6px;
     }
 
     .library-tree-node[data-library-row='folder'] {
@@ -4718,11 +5157,16 @@
       border-radius: 6px;
     }
 
-    .library-tree-node[data-library-row='folder'] .library-tree-node-more:hover,
-    .library-tree-node[data-library-row='folder']
-      .library-tree-node-more:focus-visible {
+    .library-tree-node-more:focus-visible {
       color: var(--ui-text);
       background: var(--ui-surface-2);
+    }
+
+    @media (hover: hover) {
+      .library-tree-node-more:hover {
+        color: var(--ui-text);
+        background: var(--ui-surface-2);
+      }
     }
 
     .library-context-menu-item {
@@ -4735,7 +5179,11 @@
     .notification-toast-region,
     .notification-toast-region--below-command-bar {
       top: auto;
-      bottom: 0.5rem;
+      /* The edit toolbar is an absolutely positioned sibling in this same
+         parent, at the same z-index 40 and also bottom-anchored, so DOM order
+         decided which one was visible and the toolbar won. Sit above whatever
+         it occupies; the variable is unset unless that toolbar is open. */
+      bottom: calc(0.5rem + var(--mobile-edit-toolbar-inset, 0px));
     }
   }
 
@@ -4975,43 +5423,24 @@
       grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     }
 
-    [data-menu-action-grid] > button:nth-child(odd) {
-      border-right: 0;
-    }
-
-    [data-menu-action-grid] > button:nth-child(n + 3) {
-      border-top: 0;
-    }
-
-    [data-menu-action-grid] > button:not(:nth-child(3n)) {
-      border-right: 1px solid var(--ui-border);
-    }
-
-    [data-menu-action-grid] > button:nth-child(n + 4) {
-      border-top: 1px solid var(--ui-border);
-    }
-
-    /* Three columns suit the seven game actions and six study actions, but
-       create empty cells in the two-action Edit and four-action Settings
-       groups. Keep those naturally balanced as two equal columns. */
+    /* Three columns suit the game and study groups; Edit and Settings stay
+       two equal columns. In three columns a lone last action spans what is
+       left of its row: all of it after a full row, two cells after one. */
     [data-menu-action-grid='edit'],
     [data-menu-action-grid='settings'] {
       grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 
-    [data-menu-action-grid='edit'] > button,
-    [data-menu-action-grid='settings'] > button {
-      border-top: 0;
-      border-right: 0;
+    [data-menu-action-grid]:not([data-menu-action-grid='edit']):not([data-menu-action-grid='settings']) > button:last-child {
+      grid-column: auto;
     }
 
-    [data-menu-action-grid='edit'] > button:nth-child(odd),
-    [data-menu-action-grid='settings'] > button:nth-child(odd) {
-      border-right: 1px solid var(--ui-border);
+    [data-menu-action-grid]:not([data-menu-action-grid='edit']):not([data-menu-action-grid='settings']) > button:last-child:nth-child(3n + 1) {
+      grid-column: 1 / -1;
     }
 
-    [data-menu-action-grid='settings'] > button:nth-child(n + 3) {
-      border-top: 1px solid var(--ui-border);
+    [data-menu-action-grid]:not([data-menu-action-grid='edit']):not([data-menu-action-grid='settings']) > button:last-child:nth-child(3n + 2) {
+      grid-column: span 2;
     }
 
     [data-mobile-tools-action-grid='true'] {
@@ -5194,7 +5623,7 @@
     .score-quiz-body {
       display: grid;
       grid-template-columns: minmax(8rem, 0.72fr) minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1fr) auto;
+      grid-template-rows: minmax(min-content, 1fr) auto;
       gap: 8px 16px;
       padding: 8px 16px !important;
     }
@@ -5628,6 +6057,7 @@
        branch navigation remains available from More Controls. */
     .mobile-bottom-dock .mobile-bottom-meta {
       justify-content: center;
+      justify-content: safe center;
       gap: 2px !important;
       padding-left: 0 !important;
       padding-right: 0 !important;
@@ -5981,6 +6411,20 @@
 
     .lessons-copy {
       line-height: 1.25rem !important;
+    }
+  }
+
+  /* Those caps are for the short end of the range: at 375x667 a larger
+     board pushes the instruction below the fold. A 390x844 phone had 300px
+     of height to spare under a 208px lesson board, whose 9x9 points were
+     22px taps, and a 176px 19x19 position to estimate a score from. */
+  @media (max-width: 419px) and (orientation: portrait) and (min-height: 760px) {
+    .lessons-board {
+      max-width: 18rem !important;
+    }
+
+    .score-quiz-board {
+      max-width: 18rem !important;
     }
   }
 
@@ -6379,10 +6823,11 @@
   }
 
 
-  /* The backend detail is already dropped below 640px, but on the narrowest
-     phones the pill's own padding left the state word 40px to say "Loading"
-     in 47px, so it rendered as "Load...". A truncated status word is worse
-     than a tight one: buy the room back from the padding and the gap. */
+  /* The pill's own rhythm on the narrowest phones. This once existed to stop
+     "Loading" rendering as "Load..." by buying width back from the padding and
+     the gap; the status track sizes itself to the word now, so what is left
+     here is density -- a tighter pill leaves more of a 360px row for the
+     metrics beside it. */
   @media (max-width: 380px) {
     .analysis-command-bar__status {
       gap: 0.25rem;
@@ -6398,14 +6843,20 @@
    against each other without hovering each in turn. Sized to the panel it
    lives in rather than to the board. */
 .candidate-list {
-  display: flex;
-  flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   --candidate-row-height: 1.75rem;
+  --candidate-min-width: 19rem;
+}
+.candidate-list[data-analysis-experience='coach'] {
+  --candidate-min-width: 13rem;
+}
+.candidate-list[data-candidate-detail='true'] {
+  --candidate-min-width: 22.5rem;
 }
 
 .candidate-list-head,
+.candidate-row-group,
 .candidate-row {
   display: grid;
   grid-template-columns: 1.25rem minmax(3rem, 1fr) 3.25rem 3rem 2.75rem 2.75rem;
@@ -6418,14 +6869,16 @@
 }
 
 .candidate-list[data-analysis-experience='coach'] .candidate-list-head,
+.candidate-list[data-analysis-experience='coach'] .candidate-row-group,
 .candidate-list[data-analysis-experience='coach'] .candidate-row {
   grid-template-columns: 1.25rem minmax(4rem, 1fr) 5rem;
 }
 
 /* Pro with the prior and spread columns open: six figures, tighter gap. */
 .candidate-list[data-candidate-detail='true'] .candidate-list-head,
+.candidate-list[data-candidate-detail='true'] .candidate-row-group,
 .candidate-list[data-candidate-detail='true'] .candidate-row {
-  grid-template-columns: 1rem minmax(2.5rem, 1fr) 2.75rem 2.5rem 2.25rem 2.25rem 2.25rem 2.25rem;
+  grid-template-columns: 1rem minmax(3.5rem, 1fr) 2.75rem 2.5rem 2.25rem 2.25rem 2.25rem 2.25rem;
   gap: 0.25rem;
   font-size: 0.625rem;
 }
@@ -6441,10 +6894,23 @@
   text-align: right;
   cursor: pointer;
   border-radius: 0.25rem;
+  /* WCAG 2.2 SC 2.5.8 floors a target at 24x24. The head's own padding already
+     made the row 24px tall while these sat at 16px inside it, so the height
+     moves from the row to the controls and the row does not grow -- which
+     matters, because the list's max-height budgets exactly 1.5rem for it. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 1.5rem;
 }
-.candidate-list-head .cl-sort:hover,
 .candidate-list-head .cl-sort:focus-visible {
   color: var(--ui-text);
+}
+
+@media (hover: hover) {
+  .candidate-list-head .cl-sort:hover {
+    color: var(--ui-text);
+  }
 }
 .candidate-list-head .cl-sort.is-sorted {
   color: var(--ui-accent);
@@ -6452,10 +6918,30 @@
   text-underline-offset: 2px;
 }
 
-.candidate-row .cl-pv-toggle {
-  margin-left: auto;
-  width: 1rem;
-  height: 1rem;
+/* Keep the play button and disclosure separate in the accessibility tree.
+   Sharing the row's columns preserves alignment with the table header. */
+.candidate-row-group > .candidate-row {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  grid-template-columns: subgrid;
+  padding-inline: 0;
+  min-width: 0;
+}
+.candidate-row-group.has-pv .cl-move {
+  padding-inline-end: 1.5rem;
+}
+.candidate-row-group .cl-pv-toggle {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  z-index: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   border-radius: 0.25rem;
   display: inline-flex;
   align-items: center;
@@ -6464,12 +6950,18 @@
   font-weight: 700;
   transition: transform 120ms ease;
 }
-.candidate-row .cl-pv-toggle:hover,
-.candidate-row .cl-pv-toggle:focus-visible {
+.candidate-row-group .cl-pv-toggle:focus-visible {
   color: var(--ui-text);
   background: var(--ui-surface-2);
 }
-.candidate-row .cl-pv-toggle.is-open {
+
+@media (hover: hover) {
+  .candidate-row-group .cl-pv-toggle:hover {
+    color: var(--ui-text);
+    background: var(--ui-surface-2);
+  }
+}
+.candidate-row-group .cl-pv-toggle.is-open {
   transform: rotate(90deg);
 }
 
@@ -6508,29 +7000,62 @@
   padding: 0.1rem 0.4rem;
   font: inherit;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
 }
-.candidate-list .cl-pv-action:hover,
 .candidate-list .cl-pv-action:focus-visible {
   color: var(--ui-text);
   border-color: var(--ui-accent);
 }
 
+@media (hover: hover) {
+  .candidate-list .cl-pv-action:hover {
+    color: var(--ui-text);
+    border-color: var(--ui-accent);
+  }
+}
+
 .candidate-list-head .cl-detail-toggle {
+  flex-shrink: 0;
   border: 1px solid var(--ui-border);
   background: var(--ui-surface);
   color: var(--ui-text-faint);
-  width: 1rem;
-  height: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
   line-height: 1;
   border-radius: 0.25rem;
   padding: 0;
   font: inherit;
   cursor: pointer;
 }
-.candidate-list-head .cl-detail-toggle:hover,
 .candidate-list-head .cl-detail-toggle.is-on {
   color: var(--ui-text);
   border-color: var(--ui-accent);
+}
+
+@media (hover: hover) {
+  .candidate-list-head .cl-detail-toggle:hover {
+    color: var(--ui-text);
+    border-color: var(--ui-accent);
+  }
+}
+
+/* Low-visit estimates stay readable. Italic figures and a faded quality dot
+   distinguish their uncertainty without fading small text below contrast. */
+.candidate-row.is-uncertain .cl-num,
+.candidate-row.is-uncertain .cl-quality {
+  font-style: italic;
+}
+.candidate-row.is-uncertain .cl-dot {
+  opacity: 0.55;
+}
+.candidate-row.is-active .cl-num,
+.candidate-row:focus-visible .cl-num {
+  color: inherit;
 }
 
 .candidate-list .cl-quality {
@@ -6565,10 +7090,16 @@
   border-right: 0;
 }
 
-.analysis-experience-toggle > button:hover,
 .analysis-experience-toggle > button:focus-visible {
   color: var(--ui-text);
   background: var(--ui-surface-2);
+}
+
+@media (hover: hover) {
+  .analysis-experience-toggle > button:hover {
+    color: var(--ui-text);
+    background: var(--ui-surface-2);
+  }
 }
 
 .analysis-experience-toggle > button.active {
@@ -6586,7 +7117,13 @@
 }
 
 .candidate-list-head {
-  padding-block: 0.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: var(--candidate-min-width);
+  background: var(--ui-panel);
+  min-height: 1.5rem;
+  padding-block: 0;
   color: var(--ui-text-faint);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -6597,7 +7134,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  overflow-y: auto;
+  min-width: var(--candidate-min-width);
   min-height: 0;
 }
 
@@ -6610,10 +7147,16 @@
   cursor: pointer;
 }
 
-.candidate-row:hover,
 .candidate-row:focus-visible {
   background: var(--ui-surface-2);
   color: var(--ui-text);
+}
+
+@media (hover: hover) {
+  .candidate-row:hover {
+    background: var(--ui-surface-2);
+    color: var(--ui-text);
+  }
 }
 
 .candidate-row.is-active {

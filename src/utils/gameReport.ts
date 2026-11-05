@@ -1,7 +1,8 @@
 import type { CandidateMove, FloatArray, GameNode, Player } from '../types';
 import { isReportReadyAnalysis } from './analysisCoverage';
 import { getCurrentLineNodes, type ActiveBranchMap } from './branchNavigation';
-import { getEvaluationClass } from './nodeAnalysis';
+import { DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from './nodeAnalysis';
+import { formatGtpMove } from '../lib/gtp';
 import { t } from '../i18n';
 
 const ADDITIONAL_MOVE_ORDER = 999; // KaTrain core/constants.py
@@ -56,6 +57,27 @@ export function formatPolicyRank(rank: number | null | undefined): string {
   return rank ? `#${rank}` : t('unranked');
 }
 
+/**
+ * The "generated at" line on the printed report cover.
+ *
+ * Minute precision, matching formatLibraryTimestamp and the save status. The
+ * locale defaults to the reader's, as those two do: this was pinned to en-US,
+ * so a report printed in Berlin dated itself "Sep 9, 2026 · 05:23 PM" while the
+ * library list two panels away read "9. Sept. 2026, 17:23".
+ */
+export function formatReportTimestamp(
+  generatedAt: Date,
+  locales: Intl.LocalesArgument = [],
+): string {
+  const date = generatedAt.toLocaleDateString(locales, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const time = generatedAt.toLocaleTimeString(locales, { hour: '2-digit', minute: '2-digit' });
+  return `${date} · ${time}`;
+}
+
 export function getPhaseThresholds(boardSize: number): { openingEnd: number; middleEnd: number } {
   const size = Math.max(1, Math.trunc(boardSize));
   const known = KAYA_PHASE_THRESHOLDS[size];
@@ -96,8 +118,8 @@ export function getPhaseAnalysisMoveRange(boardSize: number, phase: GameReportPh
   return [start, end];
 }
 
-export function getPointLossBucket(pointsLost: number, thresholds: number[]): number {
-  const safeThresholds = thresholds.length ? thresholds : [12, 6, 3, 1.5, 0.5, 0];
+export function getPointLossBucket(pointsLost: number, thresholds: readonly number[]): number {
+  const safeThresholds = thresholds.length ? thresholds : DEFAULT_EVAL_THRESHOLDS;
   return getEvaluationClass(Math.max(0, pointsLost), safeThresholds, safeThresholds.length);
 }
 
@@ -201,6 +223,12 @@ function policyClassification(args: {
   boardSize: number;
 }): MoveReportEntry['policy'] | undefined {
   const playedCandidate = args.candidates.find((candidate) => candidate.x === args.move.x && candidate.y === args.move.y) ?? null;
+  // Outside the candidates, only the raw policy knows the move's prior. Fast
+  // review keeps none, and reading that as a zero prior made every such move a
+  // "Blunder, unranked, 0% of top" -- a fifth of a professional game, some at
+  // a 1.7-point loss. Without it the policy's view is unknown, not bad.
+  const hasRawPolicy = !!args.policy && args.policy.length > 0;
+  if (!playedCandidate && !hasRawPolicy) return undefined;
   const topPrior = args.candidates.reduce(
     (best, candidate) => Math.max(best, finitePrior(candidate.prior)),
     finitePrior(args.topCandidate?.prior)
@@ -218,13 +246,6 @@ function policyClassification(args: {
     relativePrior,
     category: classifyMoveByRankAndPolicy(rank, relativePrior),
   };
-}
-
-function xyToGtp(x: number, y: number, boardSize: number): string {
-  if (x < 0 || y < 0) return 'pass';
-  const col = x >= 8 ? x + 1 : x;
-  const letter = String.fromCharCode(65 + col);
-  return `${letter}${boardSize - y}`;
 }
 
 function nodesForCurrentBranch(currentNode: GameNode, activeBranchChildIds: ActiveBranchMap = {}): GameNode[] {
@@ -310,7 +331,7 @@ export type MoveReportEntry = {
 };
 
 export type GameReport = {
-  thresholds: number[];
+  thresholds: readonly number[];
   labels: string[];
   histogram: Array<Record<Player, number>>;
   stats: Record<Player, PlayerReportStats>;
@@ -601,12 +622,12 @@ export function getReportStudyFocus(args: {
 
 export function computeGameReport(args: {
   currentNode: GameNode;
-  thresholds: number[];
+  thresholds: readonly number[];
   activeBranchChildIds?: ActiveBranchMap;
   depthFilter?: [number, number] | null;
   phaseFilter?: GameReportPhaseFilter;
 }): GameReport {
-  const thresholds = args.thresholds?.length ? args.thresholds : [12, 6, 3, 1.5, 0.5, 0];
+  const thresholds = args.thresholds?.length ? args.thresholds : DEFAULT_EVAL_THRESHOLDS;
   const depthFilter = args.depthFilter ?? null;
   const phaseFilter = args.phaseFilter ?? 'all';
   const [fromFrac, toFrac] = depthFilter ?? [0, 1e9]; // KaTrain uses fractions of board area.
@@ -615,10 +636,12 @@ export function computeGameReport(args: {
   const fromDepth = Math.ceil(fromFrac * boardSquares);
   const toDepth = Math.ceil(toFrac * boardSquares);
 
-  const labels = thresholds.map((t, i) => {
-    if (i === thresholds.length - 1) return `< ${thresholds[thresholds.length - 2]}`;
-    return `>= ${t}`;
-  });
+  // The last bucket is the catch-all below the one above it. With a single
+  // configured threshold there is no "one above it", and reading past the front
+  // of the array printed the bucket as "< undefined" on the histogram.
+  const lastBucketBound = thresholds[thresholds.length - 2] ?? thresholds[thresholds.length - 1];
+  const labels = thresholds.map((t, i) =>
+    i === thresholds.length - 1 ? `< ${lastBucketBound}` : `>= ${t}`);
 
   const histogram: Array<Record<Player, number>> = thresholds.map(() => ({ black: 0, white: 0 }));
   const aiTopMoveCount: Record<Player, number> = { black: 0, white: 0 };
@@ -709,7 +732,7 @@ export function computeGameReport(args: {
       node: n,
       moveNumber,
       player,
-      move: xyToGtp(move.x, move.y, boardSize),
+      move: formatGtpMove(move.x, move.y, boardSize),
       pointsLost,
       pointsGained,
       scoreBefore: parentScore,
@@ -721,7 +744,7 @@ export function computeGameReport(args: {
       winRateDelta,
       winRateSwing,
       phase,
-      topMove: top ? xyToGtp(top.x, top.y, boardSize) : undefined,
+      topMove: top ? formatGtpMove(top.x, top.y, boardSize) : undefined,
       topCandidate: top ?? undefined,
       isTopMove: top ? top.x === move.x && top.y === move.y : undefined,
       pv: top?.pv,

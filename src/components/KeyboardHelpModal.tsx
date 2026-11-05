@@ -12,6 +12,7 @@ import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { filterKeyboardReferenceItems } from '../utils/keyboardHelp';
+import { MAX_SEARCH_QUERY_LENGTH } from '../utils/searchTerms';
 
 interface KeyboardHelpModalProps {
   onClose: () => void;
@@ -42,6 +43,7 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
   const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, { returnFocus });
   const [overrides, setOverrides] = React.useState(() => loadShortcutOverrides());
   const [query, setQuery] = React.useState('');
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     const refresh = () => setOverrides(loadShortcutOverrides());
@@ -125,8 +127,14 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
               size={12}
             />
             <input
+              ref={searchInputRef}
               type="search"
               value={query}
+              maxLength={MAX_SEARCH_QUERY_LENGTH}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
               onChange={(event) => setQuery(event.currentTarget.value)}
               className="ui-input h-11 w-full rounded-lg border py-2 pl-8 pr-12 text-sm text-[var(--ui-text)]"
               placeholder={t('Search shortcuts')}
@@ -137,7 +145,10 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
               <button
                 type="button"
                 className="absolute right-1 top-1/2 grid min-h-11 min-w-11 -translate-y-1/2 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-                onClick={() => setQuery('')}
+                onClick={() => {
+                  setQuery('');
+                  searchInputRef.current?.focus();
+                }}
                 aria-label={t('Clear shortcut search')}
               >
                 <FaTimes aria-hidden="true" size={11} />
@@ -145,7 +156,7 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             )}
           </label>
           {(visibleGamepadHelp.length > 0 || visiblePointerHelp.length > 0) && (
-          <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3">
             {visiblePointerHelp.length > 0 && (
             <section className="ui-surface rounded-lg border p-3" data-keyboard-help-pointer="true">
               <div className="mb-2 flex items-center gap-2 border-b border-[var(--ui-border)] pb-2">
@@ -153,10 +164,17 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
                 <h3 className="text-sm font-semibold text-[var(--ui-text)]">{t('Touch / Trackpad / Mouse')}</h3>
               </div>
               <div className="grid grid-cols-1 gap-1">
+                {/* These chips hold whatever the list calls a control, and some of
+                    those are phrases rather than key names: "Middle-click a
+                    candidate" renders 189px wide. shrink-0 keeps a key name from
+                    being squeezed into nonsense, but with nowhere to wrap, a 189px
+                    chip in a 234px row simply painted 48px outside it and 5px past
+                    a 320px viewport. Wrapping puts the chip on its own line exactly
+                    when it does not fit, and never fires at a width where it does. */}
                 {visiblePointerHelp.map((item) => (
-                  <div key={item.control} className="flex items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-2)] px-2 py-1.5 text-sm">
-                    <span className="ui-text-faint">{t(item.action)}</span>
-                    <kbd className="shrink-0 rounded bg-[var(--ui-panel)] px-2 py-0.5 text-xs font-mono text-[var(--ui-text)]">
+                  <div key={t(item.control)} data-keyboard-help-row="true" className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-2)] px-2 py-1.5 text-sm">
+                    <span className="max-w-full wrap-anywhere ui-text-faint">{t(item.action)}</span>
+                    <kbd className="shrink-0 rounded bg-[var(--ui-panel)] max-w-full wrap-anywhere px-2 py-0.5 text-xs font-mono text-[var(--ui-text)]">
                       {t(item.control)}
                     </kbd>
                   </div>
@@ -172,9 +190,9 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
               </div>
               <div className="grid grid-cols-1 gap-1">
                 {visibleGamepadHelp.map((item) => (
-                  <div key={item.control} className="flex items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-2)] px-2 py-1.5 text-sm">
-                    <span className="ui-text-faint">{t(item.action)}</span>
-                    <kbd className="shrink-0 rounded bg-[var(--ui-panel)] px-2 py-0.5 text-xs font-mono text-[var(--ui-text)]">
+                  <div key={t(item.control)} data-keyboard-help-row="true" className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-2)] px-2 py-1.5 text-sm">
+                    <span className="max-w-full wrap-anywhere ui-text-faint">{t(item.action)}</span>
+                    <kbd className="shrink-0 rounded bg-[var(--ui-panel)] max-w-full wrap-anywhere px-2 py-0.5 text-xs font-mono text-[var(--ui-text)]">
                       {t(item.control)}
                     </kbd>
                   </div>
@@ -184,7 +202,7 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             )}
           </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
             {visibleGroups.map((category) => (
               <div key={category.title} className="ui-surface rounded-lg p-3 border">
                 <h3 className="text-sm font-semibold text-[var(--ui-text)] mb-2 pb-2 border-b border-[var(--ui-border)]">
@@ -192,9 +210,9 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
                 </h3>
                 <div className="space-y-1">
                   {category.shortcuts.map((shortcut) => (
-                    <div key={shortcut.id} className="flex items-center justify-between text-sm">
-                      <span className="ui-text-faint">{t(shortcut.label)}</span>
-                      <kbd className="px-2 py-0.5 ui-surface-2 rounded text-xs font-mono text-[var(--ui-text)] ml-2 whitespace-nowrap">
+                    <div key={shortcut.id} data-keyboard-help-row="true" className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm">
+                      <span className="max-w-full wrap-anywhere ui-text-faint">{t(shortcut.label)}</span>
+                      <kbd className="max-w-full shrink-0 wrap-anywhere px-2 py-0.5 ui-surface-2 rounded text-xs font-mono text-[var(--ui-text)]">
                         {shortcutDisplay(shortcut.bindings)}
                       </kbd>
                     </div>
@@ -204,7 +222,7 @@ export const KeyboardHelpModal: React.FC<KeyboardHelpModalProps> = ({ onClose, o
             ))}
           </div>
           {normalizedQuery && visibleResultCount === 0 && (
-            <div className="ui-surface rounded-lg border p-4 text-sm ui-text-muted" data-keyboard-help-empty="true">
+            <div className="ui-surface wrap-anywhere rounded-lg border p-4 text-sm ui-text-muted" data-keyboard-help-empty="true" data-search-empty="true">
               {t('No shortcuts match "{query}".', { query: query.trim() })}
             </div>
           )}

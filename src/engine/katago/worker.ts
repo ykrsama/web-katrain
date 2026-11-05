@@ -16,6 +16,7 @@ import { getAnimationNow } from '../../utils/animationFrame';
 import { parseKataGoModelV8 } from './loadModelV8';
 import { KataGoModelV8Tf } from './modelV8';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from './limits';
+import { createAnalyzeAbortCheck } from './analyzeAbort';
 import { MctsSearch, rootSymmetrySamplesForBackend, type OwnershipMode } from './analyzeMcts';
 import { fillInputsV7FastForPosition } from './positionInputsV7';
 import {
@@ -78,6 +79,7 @@ let search: MctsSearch | null = null;
 let searchKey: {
   positionId: string;
   positionKey: string | null;
+  repetitionKey: string;
   modelUrl: string;
   boardSize: number;
   maxChildren: number;
@@ -357,6 +359,7 @@ async function computeHumanPolicyLogits(args: {
   previousPreviousBoard?: KataGoAnalyzeRequest['previousPreviousBoard'];
   currentPlayer: KataGoAnalyzeRequest['currentPlayer'];
   moveHistory: KataGoAnalyzeRequest['moveHistory'];
+  repetitionHistory?: readonly string[];
   komi: number;
   rules: GameRules;
   conservativePass: boolean;
@@ -375,6 +378,7 @@ async function computeHumanPolicyLogits(args: {
     previousPreviousBoard: args.previousPreviousBoard,
     currentPlayer: args.currentPlayer,
     moveHistory: args.moveHistory,
+    repetitionHistory: args.repetitionHistory,
     komi: args.komi,
     rules: args.rules,
     conservativePassAndIsRoot: args.conservativePass,
@@ -469,6 +473,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
       previousPreviousBoard: msg.previousPreviousBoard,
       currentPlayer: msg.currentPlayer,
       moveHistory: msg.moveHistory,
+      repetitionHistory: msg.repetitionHistory,
       komi: msg.komi,
       rules,
       conservativePassAndIsRoot: conservativePass,
@@ -543,6 +548,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
         previousPreviousBoard: pos.previousPreviousBoard,
         currentPlayer: pos.currentPlayer,
         moveHistory: pos.moveHistory,
+        repetitionHistory: pos.repetitionHistory,
         komi: pos.komi,
         rules,
         conservativePassAndIsRoot: conservativePass,
@@ -593,10 +599,13 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
     const meta = analyzeMeta.get(msg);
     const analysisGroup = meta?.analysisGroup ?? msg.analysisGroup ?? 'background';
     const interactiveTokenAtEnqueue = meta?.interactiveToken ?? interactiveToken;
-    const isStale = () => latestAnalyzeByGroup.get(analysisGroup) !== msg.id;
-    const isPreemptedByInteractive =
-      analysisGroup !== 'interactive' && interactiveToken !== interactiveTokenAtEnqueue;
-    const shouldAbort = () => isStale() || isPreemptedByInteractive;
+    const shouldAbort = createAnalyzeAbortCheck({
+      analysisGroup,
+      requestId: msg.id,
+      interactiveTokenAtEnqueue,
+      latestIdForGroup: () => latestAnalyzeByGroup.get(analysisGroup),
+      currentInteractiveToken: () => interactiveToken,
+    });
     const postCanceled = () =>
       post({
         type: 'katago:analyze_result',
@@ -623,7 +632,9 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
 
     const maxVisits = Math.max(16, Math.min(msg.visits ?? 256, ENGINE_MAX_VISITS));
     const maxTimeMs = Math.max(25, Math.min(msg.maxTimeMs ?? 800, ENGINE_MAX_TIME_MS));
-    const batchSize = Math.max(1, Math.min(msg.batchSize ?? (tf.getBackend() === 'webgpu' ? 16 : 4), 64));
+    // `??` catches a missing batch size but not a broken one; NaN is a number.
+    const requestedBatchSize = Number.isFinite(msg.batchSize) ? msg.batchSize! : (tf.getBackend() === 'webgpu' ? 16 : 4);
+    const batchSize = Math.max(1, Math.min(requestedBatchSize, 64));
     const maxChildren = Math.max(4, Math.min(msg.maxChildren ?? 64, BOARD_AREA));
     const topK = Math.max(1, Math.min(msg.topK ?? 10, 50));
     const includeMovesOwnership = msg.includeMovesOwnership === true;
@@ -710,6 +721,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
           previousPreviousBoard: msg.previousPreviousBoard,
           currentPlayer: msg.currentPlayer,
           moveHistory: msg.moveHistory,
+          repetitionHistory: msg.repetitionHistory,
           komi: msg.komi,
           rules,
           conservativePass,
@@ -721,6 +733,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
     }
     const humanMovePriors = humanLogits ? softmaxOverBoard(humanLogits) : null;
 
+    const repetitionKey = [...new Set(msg.repetitionHistory ?? [])].sort().join(';');
     const canReuse =
       msg.reuseTree === true &&
       typeof msg.positionId === 'string' &&
@@ -728,6 +741,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
       !!searchKey &&
       searchKey.positionId === msg.positionId &&
       searchKey.positionKey === (msg.positionKey ?? null) &&
+      searchKey.repetitionKey === repetitionKey &&
       searchKey.modelUrl === msg.modelUrl &&
       searchKey.boardSize === boardSize &&
       searchKey.maxChildren === maxChildren &&
@@ -790,6 +804,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
             previousPreviousBoard: msg.previousPreviousBoard,
             currentPlayer: msg.currentPlayer,
             moveHistory: msg.moveHistory,
+            repetitionHistory: msg.repetitionHistory,
             komi: msg.komi,
             rules,
             regionOfInterest: msg.regionOfInterest,
@@ -799,6 +814,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
             searchKey = {
               positionId: msg.positionId,
               positionKey: msg.positionKey ?? null,
+              repetitionKey,
               modelUrl: msg.modelUrl,
               boardSize,
               maxChildren,
@@ -831,6 +847,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
         previousPreviousBoard: msg.previousPreviousBoard,
         currentPlayer: msg.currentPlayer,
         moveHistory: msg.moveHistory,
+        repetitionHistory: msg.repetitionHistory,
         komi: msg.komi,
         rules,
         nnRandomize,
@@ -853,6 +870,7 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
         searchKey = {
           positionId: msg.positionId,
           positionKey: msg.positionKey ?? null,
+          repetitionKey,
           modelUrl: msg.modelUrl,
           boardSize,
           maxChildren,
@@ -978,6 +996,15 @@ async function handleMessage(msg: KataGoWorkerRequest): Promise<void> {
 
 self.onmessage = (ev: MessageEvent<KataGoWorkerRequest>) => {
   const msg = ev.data;
+  if (msg.type === 'katago:cancel') {
+    // Handle control messages immediately; queuing behind the search would
+    // wait for the very work being canceled. A late cancel must not revoke a
+    // newer request that has already taken over this group.
+    if (latestAnalyzeByGroup.get(msg.analysisGroup) === msg.id) {
+      latestAnalyzeByGroup.delete(msg.analysisGroup);
+    }
+    return;
+  }
   if (msg.type === 'katago:analyze') {
     const analysisGroup = msg.analysisGroup ?? 'background';
     latestAnalyzeByGroup.set(analysisGroup, msg.id);

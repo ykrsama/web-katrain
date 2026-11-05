@@ -1,0 +1,294 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { BOARD_THEME_OPTIONS, getBoardTheme } from '../src/utils/boardThemes';
+import type { BoardThemeId } from '../src/types';
+import { useGameStore } from '../src/store/gameStore';
+
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const publicDir = path.join(rootDir, 'public');
+
+function readPngSize(relativePath: string): { width: number; height: number } {
+  const buffer = fs.readFileSync(path.join(publicDir, relativePath));
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+}
+
+/** The deployment origin, written in index.html, robots.txt and sitemap.xml. */
+const SITE_URL = 'https://sir-teo.github.io/web-katrain/';
+
+describe('PWA assets', () => {
+  it('ships PNG install icons for manifest and iOS home-screen installs', () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(publicDir, 'manifest.webmanifest'), 'utf8')
+    ) as {
+      id?: string;
+      icons?: Array<{ src?: string; sizes?: string; type?: string; purpose?: string }>;
+      screenshots?: Array<{ src?: string; sizes?: string; type?: string; form_factor?: string; label?: string }>;
+      shortcuts?: Array<{ icons?: Array<{ src?: string; sizes?: string; type?: string }> }>;
+    };
+
+    expect(manifest.id).toBe('.');
+    expect(manifest.icons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          src: 'pwa/icon-192.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any maskable',
+        }),
+        expect.objectContaining({
+          src: 'pwa/icon-512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any maskable',
+        }),
+      ])
+    );
+    expect(manifest.shortcuts?.[0]?.icons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ src: 'pwa/icon-192.png', sizes: '192x192', type: 'image/png' }),
+      ])
+    );
+    expect(manifest.screenshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          src: 'pwa/screenshot-wide.png',
+          sizes: '1280x800',
+          type: 'image/png',
+          form_factor: 'wide',
+        }),
+        expect.objectContaining({
+          src: 'pwa/screenshot-mobile.png',
+          sizes: '390x844',
+          type: 'image/png',
+          form_factor: 'narrow',
+        }),
+      ])
+    );
+
+    expect(readPngSize('pwa/icon-192.png')).toEqual({ width: 192, height: 192 });
+    expect(readPngSize('pwa/icon-512.png')).toEqual({ width: 512, height: 512 });
+    expect(readPngSize('pwa/apple-touch-icon.png')).toEqual({ width: 180, height: 180 });
+    expect(readPngSize('pwa/screenshot-wide.png')).toEqual({ width: 1280, height: 800 });
+    expect(readPngSize('pwa/screenshot-mobile.png')).toEqual({ width: 390, height: 844 });
+
+    const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+    expect(indexHtml).toContain('pwa/apple-touch-icon.png');
+    expect(indexHtml).toContain('name="twitter:card" content="summary_large_image"');
+    // The card asks for a large image, so the dimensions it advertises have to
+    // be the ones the file actually has. The URL itself is checked — and has to
+    // be absolute — by "gives link previews an absolute image" below.
+    expect(indexHtml).toContain('<meta property="og:image:width" content="1280" />');
+    expect(indexHtml).toContain('<meta property="og:image:height" content="800" />');
+
+    // The install icons are precached; the screenshots deliberately are not.
+    // See "precaches what offline needs" below for why, and for the guard that
+    // keeps them out.
+    const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+    expect(sw).toContain('./pwa/icon-192.png');
+    expect(sw).toContain('./pwa/icon-512.png');
+    expect(sw).toContain('./pwa/apple-touch-icon.png');
+  });
+
+  it('precaches what offline needs and not the install dialog\u2019s decoration', () => {
+    const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+    const precache = sw.slice(sw.indexOf('const PRECACHE_URLS'), sw.indexOf('];', sw.indexOf('const PRECACHE_URLS')));
+
+    // The engine and its runtime are the offline promise, so the model is here.
+    expect(precache).toContain('./models/katago-small.bin.gz');
+
+    /**
+     * One wasm build, not three. This used to hold all three because that is
+     * what the shell cache was measured holding -- but TFJS asks for exactly
+     * one of them, chosen at runtime, and on this deployment two of the three
+     * can never be the one it asks for.
+     *
+     * Its thread feature test constructs a `SharedArrayBuffer`, which a browser
+     * only exposes on a cross-origin-isolated page. GitHub Pages cannot send
+     * COOP/COEP -- README and docs/deployment.md both say so -- so the threaded
+     * build is never requested here, and no browser new enough to run this app
+     * asks for the non-SIMD one. That was 746KB of a 1.17MB wasm precache on
+     * every first visit, which is the same objection this test already makes to
+     * the screenshots below and to the non-default board themes.
+     */
+    expect(precache.match(/\.wasm'/g) ?? []).toHaveLength(1);
+    expect(precache).toContain('./tfjs/tfjs-backend-wasm-simd.wasm');
+    // Dropped from the precache, not from the app: a self-hosted deployment
+    // that does send the headers still keeps its threaded build after one use.
+    expect(sw).toMatch(/isCacheFirstAsset[\s\S]*?\/tfjs\//);
+    // Asked of the package rather than of `public/tfjs/`, which is generated by
+    // `npm run copy:tfjs-wasm` -- a pre-step of dev and build, but not of test.
+    // A developer who has run either has the directory and this passed for them
+    // locally; a clean checkout does not, which is what CI is, and the first
+    // version of this check went red there while green on every machine that
+    // had ever started the app. The copy script ships every .wasm it finds
+    // here, so this is the same question asked where the answer actually lives.
+    const wasmDist = path.join(rootDir, 'node_modules', '@tensorflow', 'tfjs-backend-wasm', 'dist');
+    for (const name of ['tfjs-backend-wasm.wasm', 'tfjs-backend-wasm-threaded-simd.wasm']) {
+      expect(fs.existsSync(path.join(wasmDist, name)), `${name} must still ship`).toBe(true);
+    }
+
+    /**
+     * The manifest's screenshots are 504KB of the install dialog's preview and
+     * of index.html's social card -- shown by the browser, the OS or a crawler,
+     * never by the running app. Precaching them cost every first visit 8% of a
+     * 6.4MB install for something offline never needs.
+     */
+    expect(precache).not.toContain('screenshot-wide');
+    expect(precache).not.toContain('screenshot-mobile');
+    // Still cache-first if something ever does ask for them.
+    expect(sw).toMatch(/isCacheFirstAsset[\s\S]{0,200}png/);
+    // And still declared, so the install dialog can show them.
+    const manifest = JSON.parse(fs.readFileSync(path.join(publicDir, 'manifest.webmanifest'), 'utf8'));
+    expect(manifest.screenshots.map((s: { src: string }) => s.src)).toContain('pwa/screenshot-wide.png');
+  });
+
+  it('never caches failed navigations as the offline shell', () => {
+    const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+    const navigateStart = sw.indexOf("request.mode === 'navigate'");
+    const assetStart = sw.indexOf('isCacheFirstAsset(url)');
+    expect(navigateStart).toBeGreaterThan(-1);
+    expect(assetStart).toBeGreaterThan(navigateStart);
+    // The navigate handler must check the response before overwriting './',
+    // or a transient 404/500 permanently poisons offline navigation.
+    //
+    // The check is asserted by intent rather than by its exact text. It used to
+    // read `if (response.ok)` and now reads `isStorableResponse(response)`,
+    // which is stricter: `.ok` is also true for 206 Partial Content, and
+    // `cache.put` throws on those. Pinning the old spelling failed on a change
+    // that made the guard better.
+    const navigateHandler = sw.slice(navigateStart, assetStart);
+    expect(navigateHandler).toContain("cache.put('./'");
+    const guard = navigateHandler.indexOf('isStorableResponse(response)');
+    expect(guard, 'the navigate handler has no success guard').toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(navigateHandler.indexOf("cache.put('./'"));
+  });
+
+  it('never caches a partial response', () => {
+    const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+    // `response.ok` is true for 206 Partial Content and `cache.put()` throws on
+    // those — verified in a browser. Browsers issue Range requests for exactly
+    // the assets this app is largest in: a ~96MB network and megabyte TFJS wasm
+    // files. Every cache write must go through the stricter check.
+    expect(sw).toContain('const isStorableResponse = (response) => response.status === 200;');
+    const writes = sw.match(/if \(response\.ok\)/g) ?? [];
+    expect(writes, 'a cache write still gates on response.ok').toEqual([]);
+  });
+
+  it('does not retain cache-busted update checks or unlimited old bundles', () => {
+    const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+    const runtimeStart = sw.indexOf('caches.open(RUNTIME_CACHE)');
+    const runtimeHandler = sw.slice(runtimeStart);
+
+    // `version.json?t=...` is fetched with `cache: no-store` every five
+    // minutes. Ignoring that request mode creates a fresh permanent entry on
+    // every check because the timestamp is deliberately unique.
+    expect(sw).toContain("const isCacheableRequest = (request) => request.cache !== 'no-store';");
+    expect(runtimeHandler).toContain('isCacheableRequest(request)');
+
+    // Hashed JS/CSS names change on each deploy. Bound the runtime cache so
+    // several releases cannot grow into an unbounded origin-storage leak.
+    expect(sw).toContain('const MAX_RUNTIME_CACHE_ENTRIES = 64;');
+    expect(sw).toContain('keys.slice(0, excess)');
+    expect(runtimeHandler).toContain('putRuntimeResponse(cache, request, response.clone())');
+  });
+
+  it('publishes crawl metadata for the public web deployment', () => {
+    const robots = fs.readFileSync(path.join(publicDir, 'robots.txt'), 'utf8');
+    const sitemap = fs.readFileSync(path.join(publicDir, 'sitemap.xml'), 'utf8');
+
+    expect(robots).toContain('User-agent: *');
+    expect(robots).toContain('Allow: /');
+    expect(robots).toContain(`Sitemap: ${SITE_URL}sitemap.xml`);
+
+    expect(sitemap).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
+    expect(sitemap).toContain(`<loc>${SITE_URL}</loc>`);
+    expect(sitemap).toContain('<lastmod>2026-06-03</lastmod>');
+    expect(sitemap).toContain('<changefreq>weekly</changefreq>');
+  });
+
+  it('gives link previews an absolute image, and one origin across all three files', () => {
+    /**
+     * `%BASE_URL%` expands to a root-relative "/web-katrain/", and Open Graph
+     * requires an absolute URL with a scheme. The page asks for
+     * summary_large_image and was handing the scrapers a path they could not
+     * resolve, so the card rendered with no image.
+     *
+     * Absolute means the origin is now written in three files. This checks they
+     * agree rather than leaving a fourth spelling to appear later.
+     */
+    const html = fs.readFileSync('index.html', 'utf8');
+
+    for (const property of ['og:image', 'twitter:image']) {
+      const match = new RegExp(`(?:property|name)="${property}" content="([^"]+)"`).exec(html);
+      expect(match, `${property} is missing`).toBeTruthy();
+      expect(match![1], `${property} must be absolute for scrapers to resolve it`)
+        .toBe(`${SITE_URL}pwa/screenshot-wide.png`);
+    }
+
+    expect(html).toContain(`<meta property="og:url" content="${SITE_URL}" />`);
+    expect(html).toContain(`<link rel="canonical" href="${SITE_URL}" />`);
+    // The card image has to be a file that actually ships.
+    expect(fs.existsSync(path.join(publicDir, 'pwa', 'screenshot-wide.png'))).toBe(true);
+    // No %BASE_URL% left in the social tags: that is what broke them.
+    const socialTags = html.match(/<meta (?:property="og:|name="twitter:)[^>]*>/g) ?? [];
+    expect(socialTags.filter((tag) => tag.includes('%BASE_URL%'))).toEqual([]);
+  });
+
+  it('precaches the board every visit draws, not the themes most visits never pick', () => {
+    const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+    const precache = sw.slice(sw.indexOf('const PRECACHE_URLS'), sw.indexOf('];', sw.indexOf('const PRECACHE_URLS')));
+
+    /**
+     * 660KB of `katrain/` images were precached, of which 484KB belonged to
+     * board themes that are not the default: `board.png` is bamboo's texture
+     * and the two stone images are bamboo's, flat's and dark's. Every first
+     * visit paid for all three regardless of which board it then drew.
+     *
+     * Derived from the theme table rather than listed, so changing the default
+     * theme or retexturing one moves this guard with it.
+     */
+    const defaultTheme = useGameStore.getState().settings.boardTheme;
+    // `getBoardTheme` hands back resolved URLs, so match the tail rather than
+    // the raw `katrain/...` the theme table is written with.
+    const boardAssets = (id: BoardThemeId) => {
+      const theme = getBoardTheme(id);
+      return [theme.board.texture, theme.stones.black.image, theme.stones.white.image,
+        ...(theme.stones.black.imageVariations ?? []), ...(theme.stones.white.imageVariations ?? [])]
+        .map((asset) => /((?:katrain\/|themes\/[^/]+\/)[\w.-]+)$/.exec(asset ?? '')?.[1])
+        .filter((asset): asset is string => asset !== undefined);
+    };
+
+    const usedByDefault = new Set(boardAssets(defaultTheme));
+    const onlyOtherThemes = [
+      ...new Set(BOARD_THEME_OPTIONS.flatMap((option) => boardAssets(option.value))),
+    ].filter((asset) => !usedByDefault.has(asset));
+
+    // Include SVG themes too: the old katrain-only pattern silently omitted
+    // all three of Hikaru's default assets from this guard and the precache.
+    expect(usedByDefault.size).toBeGreaterThan(0);
+    for (const asset of usedByDefault) expect(precache).toContain(asset);
+    expect(onlyOtherThemes.length).toBeGreaterThanOrEqual(3);
+    for (const asset of onlyOtherThemes) expect(precache).not.toContain(asset);
+
+    // What GoBoard draws under every theme stays precached -- this is the half
+    // of the trade that makes the offline board work at all.
+    const goBoard = fs.readFileSync(path.join(rootDir, 'src/components/GoBoard.tsx'), 'utf8');
+    const alwaysDrawn = [...goBoard.matchAll(/publicUrl\('(katrain\/[\w.-]+)'\)/g)].map((match) => match[1]!);
+    expect(alwaysDrawn.length).toBeGreaterThanOrEqual(3);
+    for (const asset of alwaysDrawn) expect(precache).toContain(asset);
+
+    // And the dropped ones stay cache-first, so picking one of those themes
+    // once is enough to have it offline afterwards.
+    expect(sw).toContain("url.pathname.includes('/katrain/')");
+  });
+
+  it('does not keep starter-template assets', () => {
+    expect(fs.existsSync(path.join(publicDir, 'vite.svg'))).toBe(false);
+    expect(fs.existsSync(path.join(rootDir, 'src/assets/react.svg'))).toBe(false);
+  });
+});

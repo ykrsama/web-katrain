@@ -9,6 +9,7 @@ import { BotPersonaPicker } from './BotPersonaPicker';
 import { botPersonaAiPatch, type BotPersona } from '../data/botPersonas';
 import { KATAGO_HUMAN_PROFILES } from '../engine/katago/searchParams';
 import { describeHumanProfile } from '../utils/humanProfileLabel';
+import { RULES_OPTIONS, rulesOf } from '../utils/goRules';
 import {
   formatGameInfoPlayer,
   formatGameInfoTitle,
@@ -19,6 +20,10 @@ import {
   readRootInfoValue,
 } from '../utils/gameInfoDisplay';
 import { useT } from '../i18n';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
+import { parseDecimalDraft, parseIntegerDraft } from '../utils/numberDraft';
+import { GAME_DRAFT_COMMITTED_EVENT } from '../utils/gameDrafts';
+import { useGameDraftLifecycle } from '../hooks/useGameDraftLifecycle';
 
 type GameInfoField = {
   key: string;
@@ -37,17 +42,92 @@ const playerFields: GameInfoField[] = [
 const detailFields: GameInfoField[] = [
   { key: 'GN', label: 'Game', placeholder: 'Game name', className: 'sm:col-span-2' },
   { key: 'EV', label: 'Event', placeholder: 'Event', className: 'sm:col-span-2' },
+  { key: 'RO', label: 'Round', placeholder: 'Final, Round 3' },
   { key: 'DT', label: 'Date', placeholder: 'YYYY-MM-DD' },
   { key: 'PC', label: 'Place', placeholder: 'Location' },
   { key: 'RE', label: 'Result', placeholder: 'B+R, W+2.5' },
   { key: 'TM', label: 'Time', placeholder: 'Main time' },
+  { key: 'OT', label: 'Overtime', placeholder: '5x30 byo-yomi' },
 ];
 
 const inputClass =
   'min-h-11 w-full ui-input border rounded px-2 py-1.5 text-xs text-[var(--ui-text)] focus:border-[var(--ui-accent)] outline-none desktop-shell:min-h-0';
 
-export const GameInfoPanel: React.FC = () => {
+/**
+ * One text field, held as typed and saved when the edit ends. Saving every
+ * keystroke through the store's trim meant a space typed at the end of the
+ * text was trimmed away before the next letter arrived -- "Lee Sedol" came
+ * out "LeeSedol" -- and each keystroke was its own undo step.
+ */
+const GameInfoTextField: React.FC<{
+  field: GameInfoField;
+  value: string;
+  gameRootId: string;
+  onCommit: (key: string, value: string) => void;
+}> = ({ field, value, gameRootId, onCommit }) => {
   const t = useT();
+  const [draft, setDraft] = React.useState(value);
+  const [editing, setEditing] = React.useState(false);
+  const pending = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const preservePending = React.useCallback(() => {
+    const value = pending.current;
+    pending.current = null;
+    const before = useGameStore.getState();
+    if (value === null || before.rootNode.id !== gameRootId) return false;
+    onCommit(field.key, value);
+    if (useGameStore.getState().treeVersion === before.treeVersion) return false;
+    window.dispatchEvent(new Event(GAME_DRAFT_COMMITTED_EVENT));
+    return true;
+  }, [field.key, gameRootId, onCommit]);
+
+  useGameDraftLifecycle(preservePending, () => setEditing(false));
+
+  const commit = () => {
+    preservePending();
+    setEditing(false);
+  };
+
+  return (
+    <label className={['min-w-0 space-y-1', field.className ?? ''].join(' ')}>
+      <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
+        {t(field.label)}
+      </span>
+      <input
+        value={draft}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => {
+          setEditing(true);
+          pending.current = e.target.value;
+          setDraft(e.target.value);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (isComposingKeyEvent(e.nativeEvent)) return;
+          if (e.key === 'Enter') {
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            pending.current = null;
+            setDraft(value);
+            e.currentTarget.blur();
+          }
+        }}
+        placeholder={t(field.placeholder)}
+        className={inputClass}
+        spellCheck={false}
+      />
+    </label>
+  );
+};
+
+const GameInfoPanelContent: React.FC = () => {
+  const t = useT();
+  const rulesHelpId = React.useId();
   const {
     rootNode,
     komi,
@@ -83,6 +163,7 @@ export const GameInfoPanel: React.FC = () => {
   void treeVersion;
 
   const rootProps = rootNode.properties ?? {};
+  const gameRootId = rootNode.id;
   const valueFor = (key: string) => rootProps[key]?.[0] ?? '';
   const boardSize = normalizeBoardSize(rootNode.gameState.board.length, DEFAULT_BOARD_SIZE);
   const maxHandicap = getMaxHandicap(boardSize);
@@ -92,6 +173,8 @@ export const GameInfoPanel: React.FC = () => {
   const [isEditingKomi, setIsEditingKomi] = React.useState(false);
   const [handicapInput, setHandicapInput] = React.useState(() => String(handicap));
   const [isEditingHandicap, setIsEditingHandicap] = React.useState(false);
+  const pendingKomiRef = React.useRef<string | null>(null);
+  const pendingHandicapRef = React.useRef<string | null>(null);
   const [isEditingInfo, setIsEditingInfo] = React.useState(false);
   const [selectedPersonaId, setSelectedPersonaId] = React.useState<string | null>(null);
   const [showAdvancedAi, setShowAdvancedAi] = React.useState(false);
@@ -153,22 +236,49 @@ export const GameInfoPanel: React.FC = () => {
     e.stopPropagation();
   };
 
+  const preserveKomi = React.useCallback(() => {
+    const draft = pendingKomiRef.current;
+    pendingKomiRef.current = null;
+    const before = useGameStore.getState();
+    if (draft === null || before.rootNode.id !== gameRootId) return false;
+    const parsed = parseDecimalDraft(draft);
+    if (parsed === null) return false;
+    setKomi(parsed);
+    if (useGameStore.getState().treeVersion === before.treeVersion) return false;
+    window.dispatchEvent(new Event(GAME_DRAFT_COMMITTED_EVENT));
+    return true;
+  }, [gameRootId, setKomi]);
+
+  const preserveHandicap = React.useCallback(() => {
+    const draft = pendingHandicapRef.current;
+    pendingHandicapRef.current = null;
+    const before = useGameStore.getState();
+    if (draft === null || before.rootNode.id !== gameRootId) return false;
+    const parsed = parseIntegerDraft(draft);
+    if (parsed === null) return false;
+    setHandicap(Math.max(0, Math.min(parsed, maxHandicap)));
+    if (useGameStore.getState().treeVersion === before.treeVersion) return false;
+    window.dispatchEvent(new Event(GAME_DRAFT_COMMITTED_EVENT));
+    return true;
+  }, [gameRootId, maxHandicap, setHandicap]);
+
+  useGameDraftLifecycle(preserveKomi, () => setIsEditingKomi(false));
+  useGameDraftLifecycle(preserveHandicap, () => setIsEditingHandicap(false));
+
   const commitKomi = () => {
-    const parsed = Number(komiInput.trim());
-    if (Number.isFinite(parsed)) {
-      setKomi(parsed);
-      setKomiInput(String(Number(parsed.toFixed(2))));
-    } else {
-      setKomiInput(String(komi));
-    }
+    preserveKomi();
+    setKomiInput(String(useGameStore.getState().komi));
     setIsEditingKomi(false);
   };
 
   const handleKomiKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     handleKeyDown(e);
+    if (isComposingKeyEvent(e.nativeEvent)) return;
     if (e.key === 'Enter') {
       e.currentTarget.blur();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
+      pendingKomiRef.current = null;
       setKomiInput(String(komi));
       setIsEditingKomi(false);
       e.currentTarget.blur();
@@ -176,22 +286,19 @@ export const GameInfoPanel: React.FC = () => {
   };
 
   const commitHandicap = () => {
-    const parsed = Number.parseInt(handicapInput.trim(), 10);
-    if (Number.isFinite(parsed)) {
-      const next = Math.max(0, Math.min(parsed, maxHandicap));
-      setHandicap(next);
-      setHandicapInput(String(next));
-    } else {
-      setHandicapInput(String(handicap));
-    }
+    preserveHandicap();
+    setHandicapInput(useGameStore.getState().rootNode.properties?.HA?.[0] ?? '0');
     setIsEditingHandicap(false);
   };
 
   const handleHandicapKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     handleKeyDown(e);
+    if (isComposingKeyEvent(e.nativeEvent)) return;
     if (e.key === 'Enter') {
       e.currentTarget.blur();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
+      pendingHandicapRef.current = null;
       setHandicapInput(String(handicap));
       setIsEditingHandicap(false);
       e.currentTarget.blur();
@@ -220,7 +327,13 @@ export const GameInfoPanel: React.FC = () => {
       <button
         type="button"
         className="panel-action-button inline-flex items-center gap-1"
-        onClick={() => setIsEditingInfo((current) => !current)}
+        onClick={() => {
+          if (isEditingInfo) {
+            commitKomi();
+            commitHandicap();
+          }
+          setIsEditingInfo((current) => !current);
+        }}
         aria-pressed={isEditingInfo}
         data-game-info-edit-toggle="true"
       >
@@ -230,20 +343,8 @@ export const GameInfoPanel: React.FC = () => {
     </div>
   );
 
-  const renderField = ({ key, label, placeholder, className }: GameInfoField) => (
-    <label key={key} className={['min-w-0 space-y-1', className ?? ''].join(' ')}>
-      <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
-        {t(label)}
-      </span>
-      <input
-        value={valueFor(key)}
-        onChange={(e) => setRootProperty(key, e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={t(placeholder)}
-        className={inputClass}
-        spellCheck={false}
-      />
-    </label>
+  const renderField = (field: GameInfoField) => (
+    <GameInfoTextField key={field.key} field={field} value={valueFor(field.key)} gameRootId={rootNode.id} onCommit={setRootProperty} />
   );
 
   // The Edit button above is the single affordance for opening the editor; this
@@ -269,14 +370,14 @@ export const GameInfoPanel: React.FC = () => {
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-neutral-900 ring-1 ring-white/20" aria-hidden="true" />
           <div className="min-w-0">
             <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('Black')}</div>
-            <div className="truncate text-xs text-[var(--ui-text)]">{blackDisplay}</div>
+            <div className="truncate text-xs text-[var(--ui-text)]" title={blackDisplay}>{blackDisplay}</div>
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-2 rounded border border-[var(--ui-border)] bg-[var(--ui-panel)] px-2 py-1.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white ring-1 ring-black/30" aria-hidden="true" />
           <div className="min-w-0">
             <div className="text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">{t('White')}</div>
-            <div className="truncate text-xs text-[var(--ui-text)]">{whiteDisplay}</div>
+            <div className="truncate text-xs text-[var(--ui-text)]" title={whiteDisplay}>{whiteDisplay}</div>
           </div>
         </div>
       </div>
@@ -327,7 +428,7 @@ export const GameInfoPanel: React.FC = () => {
           </span>
           <input
             value={komiInput}
-            onChange={(e) => setKomiInput(e.target.value)}
+            onChange={(e) => { setIsEditingKomi(true); pendingKomiRef.current = e.target.value; setKomiInput(e.target.value); }}
             onFocus={() => setIsEditingKomi(true)}
             onBlur={commitKomi}
             onKeyDown={handleKomiKeyDown}
@@ -343,7 +444,7 @@ export const GameInfoPanel: React.FC = () => {
           </span>
           <input
             value={handicapInput}
-            onChange={(e) => setHandicapInput(e.target.value)}
+            onChange={(e) => { setIsEditingHandicap(true); pendingHandicapRef.current = e.target.value; setHandicapInput(e.target.value); }}
             onFocus={() => setIsEditingHandicap(true)}
             onBlur={commitHandicap}
             onKeyDown={handleHandicapKeyDown}
@@ -360,15 +461,18 @@ export const GameInfoPanel: React.FC = () => {
             {t('Rules')}
           </span>
           <select
+            aria-label={t('Rules')}
+            aria-describedby={rulesHelpId}
             value={gameRules}
             onChange={(e) => updateSettings({ gameRules: e.target.value as GameSettings['gameRules'] })}
             onKeyDown={handleKeyDown}
             className={inputClass}
           >
-            <option value="japanese">{t('Japanese rules')}</option>
-            <option value="chinese">{t('Chinese rules')}</option>
-            <option value="korean">{t('Korean rules')}</option>
+            {RULES_OPTIONS.map((rule) => (
+              <option key={rule.id} value={rule.id}>{t(rule.label)}</option>
+            ))}
           </select>
+          <p id={rulesHelpId} className="text-xs ui-text-faint">{rulesOf(gameRules).summary}</p>
         </label>
       </div>
       <div className="space-y-3 rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3" data-game-info-ai-edit="true">
@@ -540,4 +644,11 @@ export const GameInfoPanel: React.FC = () => {
       {isEditingInfo ? renderEditMode() : renderDisplayMode()}
     </div>
   );
+};
+
+export const GameInfoPanel: React.FC = () => {
+  const gameRootId = useGameStore(state => state.rootNode.id);
+  // Drafts and editor state belong to one game. A file opened while an input
+  // is focused must not carry those drafts into the replacement game's fields.
+  return <GameInfoPanelContent key={gameRootId} />;
 };

@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FaTimes, FaGraduationCap, FaChevronLeft, FaChevronRight, FaCheckCircle } from 'react-icons/fa';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { StaticBoard, type StaticBoardMarker } from './StaticBoard';
-import { LESSONS, boardFromRows } from '../data/lessons';
+import { LESSONS, getLessonBoard } from '../data/lessons';
 import { useT } from '../i18n';
 
 interface LessonsModalProps {
@@ -34,7 +34,18 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
     setClickMark(null);
   }
 
-  const board = useMemo(() => (step ? boardFromRows(step.rows) : null), [step]);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const body = dialog?.querySelector('.lessons-body');
+    if (body) body.scrollTop = 0;
+    // Next can become disabled on the new exercise, which makes the browser
+    // drop its focus onto the page behind the dialog. Give the new step an
+    // active target and let keyboard users answer directly on the board.
+    const board = dialog?.querySelector<SVGSVGElement>('[data-static-board-interactive="true"]');
+    (board ?? dialog)?.focus({ preventScroll: true });
+  }, [stepKey, dialogRef]);
+
+  const board = useMemo(() => (step ? getLessonBoard(step, clickMark) : null), [step, clickMark]);
   const isInteractive = !!step?.answers?.length;
   const canAdvance = !isInteractive || solved;
   const isLastStep = lesson ? stepIndex >= lesson.steps.length - 1 : false;
@@ -145,6 +156,7 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
               {feedback && (
                 <div
                   className="lessons-feedback rounded-lg border px-3 py-2 text-sm font-medium"
+                  role="status"
                   style={{ borderColor: feedback.tone, color: feedback.tone }}
                 >
                   <span className="inline-flex items-center gap-2">
@@ -169,7 +181,7 @@ export const LessonsModal: React.FC<LessonsModalProps> = ({ onClose }) => {
               type="button"
               disabled={!canAdvance}
               onClick={() => (isLastStep ? setActiveId(null) : setStepIndex((i) => i + 1))}
-              className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
+              className="min-h-11 rounded-lg border border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] px-4 py-2 text-sm font-semibold text-[var(--ui-text)] not-disabled:hover:bg-[var(--ui-surface-2)] disabled:opacity-50"
             >
               <span className="inline-flex items-center gap-2">
                 {isLastStep ? t('Finish') : t('Next')} <FaChevronRight aria-hidden="true" />

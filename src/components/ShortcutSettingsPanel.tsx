@@ -8,6 +8,7 @@ import {
   filterShortcutGroups,
   filterShortcutGroupsByStatus,
   findShortcutCollision,
+  findShortcutResetCollision,
   getShortcutBindings,
   getShortcutGroups,
   isShortcutRecordingCancelKey,
@@ -57,9 +58,9 @@ export const ShortcutSettingsPanel: React.FC = () => {
   const customShortcutCount = Object.keys(overrides).length;
   const disabledShortcutCount = Object.values(overrides).filter((binding) => binding === null).length;
   const filterOptions: Array<{ id: ShortcutStatusFilter; label: string; count: number }> = [
-    { id: 'all', label: 'All', count: totalShortcutCount },
-    { id: 'custom', label: 'Edited', count: customShortcutCount },
-    { id: 'disabled', label: 'Disabled', count: disabledShortcutCount },
+    { id: 'all', label: t('All'), count: totalShortcutCount },
+    { id: 'custom', label: t('Edited'), count: customShortcutCount },
+    { id: 'disabled', label: t('Disabled'), count: disabledShortcutCount },
   ];
 
   React.useEffect(() => {
@@ -109,8 +110,22 @@ export const ShortcutSettingsPanel: React.FC = () => {
   React.useEffect(() => {
     if (!recordingId) return;
     const handleKeyDown = (event: KeyboardEvent) => handleRecordEvent(event);
+    // Recording takes every key on the page, so it ends when the player moves
+    // elsewhere. Left armed, a click into the search box and "undo" bound U to
+    // the command and typed "ndo".
+    const handleElsewhere = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-shortcut-recording="true"]')) return;
+      setRecordingId(null);
+    };
     window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('pointerdown', handleElsewhere, true);
+    window.addEventListener('focusin', handleElsewhere, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('pointerdown', handleElsewhere, true);
+      window.removeEventListener('focusin', handleElsewhere, true);
+    };
   }, [handleRecordEvent, recordingId]);
 
   const handleDisable = (id: string) => {
@@ -121,6 +136,19 @@ export const ShortcutSettingsPanel: React.FC = () => {
   };
 
   const handleReset = (id: string) => {
+    const clash = findShortcutResetCollision(id, overrides);
+    if (clash) {
+      setRecordingId(null);
+      setConfirmResetAll(false);
+      setCollision({
+        binding: clash.binding,
+        conflictId: clash.conflict.id,
+        conflictLabel: clash.conflict.label,
+        message: t('Its default, {value1}, is now assigned to {value2}.', { value1: bindingToDisplay(clash.binding), value2: clash.conflict.label }),
+        targetId: id,
+      });
+      return;
+    }
     resetShortcutOverride(id);
     setCollision(null);
     setConfirmResetAll(false);
@@ -251,6 +279,10 @@ export const ShortcutSettingsPanel: React.FC = () => {
             <input
               type="search"
               value={query}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
               onChange={(event) => setQuery(event.currentTarget.value)}
               className="ui-input h-10 w-full rounded-lg border py-2 pl-8 pr-9 text-sm text-[var(--ui-text)]"
               placeholder={t('Search shortcuts')}
@@ -347,6 +379,7 @@ export const ShortcutSettingsPanel: React.FC = () => {
                         setConfirmResetAll(false);
                       }}
                       aria-pressed={isRecording}
+                      data-shortcut-recording={isRecording ? 'true' : undefined}
                       aria-label={
                         isRecording
                           ? `${t('Press keys for')} ${t(shortcut.label)}`
@@ -357,7 +390,7 @@ export const ShortcutSettingsPanel: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      className="px-3 py-2 rounded-lg border ui-surface-2 text-xs font-semibold text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-3 py-2 rounded-lg border ui-surface-2 text-xs font-semibold text-[var(--ui-text-muted)] not-disabled:hover:text-[var(--ui-text)] disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={() => handleDisable(shortcut.id)}
                       disabled={isDisabled}
                       title={isDisabled ? t('Shortcut is already disabled') : `${t('Disable')} ${t(shortcut.label)}`}
@@ -366,7 +399,7 @@ export const ShortcutSettingsPanel: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      className="px-3 py-2 rounded-lg border ui-surface-2 text-xs font-semibold text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-3 py-2 rounded-lg border ui-surface-2 text-xs font-semibold text-[var(--ui-text-muted)] not-disabled:hover:text-[var(--ui-text)] disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={() => handleReset(shortcut.id)}
                       disabled={!isCustom}
                       title={isCustom ? `${t('Reset')} ${t(shortcut.label)}` : t('Shortcut is already using the default')}

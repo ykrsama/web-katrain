@@ -238,6 +238,13 @@ export class AnalysisQueue {
     };
   }
 
+  /** A caller may share its completion handler only while this exact job is live. */
+  hasLiveJob(id: string, cacheKey: string): boolean {
+    const matches = (job: AnalysisQueueJob<unknown>) => job.id === id && job.cacheKey === cacheKey
+      && !job.signal.aborted && !this.isStale(job);
+    return this.pending.some(matches) || Array.from(this.active).some(matches);
+  }
+
   private start(job: AnalysisQueueJob<unknown>): void {
     if (job.signal.aborted) {
       // Superseded between being queued and being started: it never held a slot.
@@ -248,8 +255,27 @@ export class AnalysisQueue {
     this.active.add(job);
     const isStale = () => this.isStale(job);
 
-    void job
-      .run({ jobId: job.id, signal: job.signal.toAbortSignal(), priority: job.priority, isStale })
+    /**
+     * `run` can throw before it ever returns a promise. The engine client does
+     * exactly that: `analyze()` is not async, and it opens with a synchronous
+     * throw once its worker has crashed.
+     *
+     * Everything that frees the queue lives on the chain below -- the `finally`
+     * removes the job from `active` and pumps the next one -- and a synchronous
+     * throw means the chain is never built. The job stayed active forever, its
+     * caller never settled, and because `pump` returns early while anything is
+     * active, every later request sat in `pending` for the rest of the session
+     * with nothing on screen to say so. Turning the throw into a rejection hands
+     * it to the same abort/stale handling as any other failure.
+     */
+    let running: Promise<unknown>;
+    try {
+      running = job.run({ jobId: job.id, signal: job.signal.toAbortSignal(), priority: job.priority, isStale });
+    } catch (err) {
+      running = Promise.reject(err);
+    }
+
+    void running
       .then((result) => {
         if (job.signal.aborted) throw new AnalysisQueueCanceledError(job.signal.reason || undefined);
         if (isStale()) throw new AnalysisQueueStaleError(`${job.label} result was superseded`);

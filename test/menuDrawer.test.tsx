@@ -17,24 +17,35 @@ const recentFile: LibraryFile = {
   metadata: {},
 };
 
+/**
+ * Every required handler in one place. Adding a prop to MenuDrawer used to
+ * break each of the eight literals below in turn; now it breaks this.
+ */
+const baseProps = {
+  open: true as const,
+  onClose: () => undefined,
+  onQuickNewGame: () => undefined,
+  onNewGame: () => undefined,
+  onSave: () => undefined,
+  onSaveToLibrary: () => undefined,
+  onLoad: () => undefined,
+  onScanBoard: () => undefined,
+  onCopy: () => undefined,
+  onCopyText: () => undefined,
+  onCopyShareLink: () => undefined,
+  onCopyBoardImage: () => undefined,
+  onPaste: () => undefined,
+  onSettings: () => undefined,
+  onCommandPalette: () => undefined,
+  onKeyboardHelp: () => undefined,
+  onAbout: () => undefined,
+};
+
 describe('MenuDrawer', () => {
   it('shows move count and size for recent games', () => {
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
-        onCopy={() => undefined}
-        onPaste={() => undefined}
-        onSettings={() => undefined}
-        onCommandPalette={() => undefined}
-        onKeyboardHelp={() => undefined}
-        onAbout={() => undefined}
+        {...baseProps}
         recentItems={[recentFile]}
         onOpenRecent={() => undefined}
       />,
@@ -53,20 +64,7 @@ describe('MenuDrawer', () => {
     }));
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
-        onCopy={() => undefined}
-        onPaste={() => undefined}
-        onSettings={() => undefined}
-        onCommandPalette={() => undefined}
-        onKeyboardHelp={() => undefined}
-        onAbout={() => undefined}
+        {...baseProps}
         recentItems={recentItems}
         onOpenRecent={() => undefined}
       />,
@@ -80,20 +78,7 @@ describe('MenuDrawer', () => {
   it('shows the save-copy shortcut beside the library save action', () => {
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
-        onCopy={() => undefined}
-        onPaste={() => undefined}
-        onSettings={() => undefined}
-        onCommandPalette={() => undefined}
-        onKeyboardHelp={() => undefined}
-        onAbout={() => undefined}
+        {...baseProps}
       />,
     );
 
@@ -104,20 +89,7 @@ describe('MenuDrawer', () => {
   it('explains that quick new game uses defaults and checks unsaved changes', () => {
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
-        onCopy={() => undefined}
-        onPaste={() => undefined}
-        onSettings={() => undefined}
-        onCommandPalette={() => undefined}
-        onKeyboardHelp={() => undefined}
-        onAbout={() => undefined}
+        {...baseProps}
         quickNewGameBoardSize={13}
       />,
     );
@@ -129,20 +101,7 @@ describe('MenuDrawer', () => {
   it('offers the app locale in the mobile menu settings section', () => {
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
-        onCopy={() => undefined}
-        onPaste={() => undefined}
-        onSettings={() => undefined}
-        onCommandPalette={() => undefined}
-        onKeyboardHelp={() => undefined}
-        onAbout={() => undefined}
+        {...baseProps}
         appLocale="ja"
         onLocaleChange={() => undefined}
       />,
@@ -159,20 +118,7 @@ describe('MenuDrawer', () => {
   it('keeps the drawer title and close action available while scrolling', () => {
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
-        onCopy={() => undefined}
-        onPaste={() => undefined}
-        onSettings={() => undefined}
-        onCommandPalette={() => undefined}
-        onKeyboardHelp={() => undefined}
-        onAbout={() => undefined}
+        {...baseProps}
       />,
     );
 
@@ -181,19 +127,40 @@ describe('MenuDrawer', () => {
     expect(html).toMatch(/class="[^"]*ui-control[^"]*" aria-label="Close menu"/);
   });
 
+  it('offers every way to send a position, not only the SGF', () => {
+    // A phone had the share link and the board image in the command palette and
+    // nowhere else, while the desktop File menu carried both.
+    const html = renderToStaticMarkup(<MenuDrawer {...baseProps} />);
+    const editGrid = html.slice(html.indexOf('data-menu-action-grid="edit"'));
+    const section = editGrid.slice(0, editGrid.indexOf('</div></div>'));
+
+    for (const label of ['Copy SGF', 'Copy share link', 'Copy board image', 'Copy position as text']) {
+      expect(section, `${label} is missing from the drawer`).toContain(label);
+    }
+  });
+
+  it('offers the text diagram beside the other copies', () => {
+    const html = renderToStaticMarkup(
+      <MenuDrawer
+        {...baseProps}
+      />,
+    );
+
+    // Same wording as the command palette and the desktop File menu; a third
+    // item in a two-column grid spans the row rather than sitting beside a gap.
+    const editGrid = html.slice(html.indexOf('data-menu-action-grid="edit"'));
+    const spanning = editGrid.slice(editGrid.indexOf('col-span-2'));
+
+    expect(spanning.slice(0, spanning.indexOf('</button>'))).toContain('Copy position as text');
+  });
+
   it('groups common mobile actions into compact responsive grids', () => {
     const html = renderToStaticMarkup(
       <MenuDrawer
-        open
-        onClose={() => undefined}
-        onQuickNewGame={() => undefined}
-        onNewGame={() => undefined}
-        onSave={() => undefined}
-        onSaveToLibrary={() => undefined}
-        onLoad={() => undefined}
-        onScanBoard={() => undefined}
+        {...baseProps}
         onLessons={() => undefined}
         onCopy={() => undefined}
+        onCopyText={() => undefined}
         onPaste={() => undefined}
         onSettings={() => undefined}
         onCommandPalette={() => undefined}
@@ -225,8 +192,12 @@ describe('MenuDrawer', () => {
   it('balances incomplete action rows instead of rendering ghost cells', () => {
     const css = readFileSync('src/index.css', 'utf8');
 
-    expect(css).toMatch(/\[data-menu-action-grid='game'\] > button:last-child:nth-child\(7\) \{[^}]*grid-column: 1 \/ -1;/);
+    // Lines are gaps over a border-coloured backdrop, so no count of children
+    // decides where a border goes, and a lone last action spans its row.
+    expect(css).toMatch(/\[data-menu-action-grid\] \{\s*gap: 1px;\s*background: var\(--ui-border\) !important;/);
+    expect(css).toMatch(/\[data-menu-action-grid\] > button:last-child:nth-child\(odd\) \{\s*grid-column: 1 \/ -1;/);
+    expect(css).toContain("> button:last-child:nth-child(3n + 2) {\n      grid-column: span 2;");
+    expect(css).not.toMatch(/\[data-menu-action-grid\] > button:nth-child\(odd\) \{\s*border-right/);
     expect(css).toMatch(/\[data-menu-action-grid='edit'\],[\s\S]{0,120}\[data-menu-action-grid='settings'\] \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;/);
-    expect(css).toMatch(/\[data-menu-action-grid='settings'\] > button:nth-child\(n \+ 3\) \{[^}]*border-top: 1px solid var\(--ui-border\);/);
   });
 });

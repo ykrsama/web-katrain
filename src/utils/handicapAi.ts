@@ -24,10 +24,27 @@ export const clampHandicapPda = (value: number): number => {
   return Math.max(-HANDICAP_PDA_LIMIT, Math.min(HANDICAP_PDA_LIMIT, value));
 };
 
-/** Handicap stones set up at the root (SGF `AB`), which is what KaTrain counts. */
+/**
+ * How many handicap stones the root position gives Black.
+ *
+ * `HA` is the file's own answer and wins whenever it has one. Without it the
+ * count has to be read off the setup stones, and `AB` alone is not enough: a
+ * tsumego, a pasted diagram and a framed problem all arrive as `AB` plus `AW`.
+ * Counting those as a handicap put an "H8" on life-and-death problems and, on
+ * the handicap AI strategy, handed White a search bias for a game in which
+ * nobody was giving stones. White setup stones mean the position was arranged,
+ * not handicapped -- a real handicap places black stones and nothing else. A
+ * handicap also starts at two: one black stone on an empty board is a stone.
+ */
 export const countRootHandicapStones = (root: GameNode): number => {
-  const ab = root.properties?.AB;
-  return Array.isArray(ab) ? ab.length : 0;
+  const declared = Number.parseInt(root.properties?.HA?.[0] ?? '', 10);
+  // HA[1] is an even game without komi, not one handicap stone: the engine's
+  // count (countHandicapStones) gives it no compensation, and the manual count
+  // gave White a point the engine never did.
+  if (Number.isFinite(declared)) return declared >= 2 ? declared : 0;
+  const black = root.properties?.AB?.length ?? 0;
+  const white = root.properties?.AW?.length ?? 0;
+  return white === 0 && black >= 2 ? black : 0;
 };
 
 /**

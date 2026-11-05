@@ -6,6 +6,7 @@ import { StaticBoard } from './StaticBoard';
 import { PRO_GAMES, buildFinalBoard, filterProGames, type ProGameMeta } from '../utils/proGames';
 import { tagsFromResult, narrativeTagToneClass } from '../utils/narrativeTags';
 import { useT } from '../i18n';
+import { MAX_SEARCH_QUERY_LENGTH } from '../utils/searchTerms';
 
 interface ProGamesModalProps {
   onClose: () => void;
@@ -32,7 +33,9 @@ const shortPlayerName = (name: string): string => {
 
 export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGame }) => {
   useEscapeToClose(onClose);
-  const dialogRef = useInitialDialogFocus<HTMLDivElement>();
+  // The search field takes focus with autoFocus; focusing the container ran
+  // after it and took focus back, so typed text went nowhere.
+  const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, { focusContainer: false });
   const t = useT();
 
   const [query, setQuery] = useState('');
@@ -98,6 +101,11 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                   <input
                     type="search"
                     value={query}
+                    maxLength={MAX_SEARCH_QUERY_LENGTH}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(e) => setQuery(e.target.value)}
                     aria-label={t('Search pro games')}
                     placeholder={t('Search by player, event, date…')}
@@ -124,12 +132,19 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                       onClick={() => setSelectedId(g.id)}
                       aria-pressed={selected?.id === g.id}
                       className={[
-                        'min-h-11 shrink-0 rounded-full border px-2 py-0.5 text-[0.6875rem] transition-colors desktop-shell:min-h-0',
+                        // min-h-11 is the touch floor; desktop-shell drops it
+                        // because a mouse does not need 44px. It dropped it to
+                        // nothing, though, and this chip is the one place where
+                        // that bites: py-0.5 around 11px text is 23px, a pixel
+                        // under the 24px of WCAG 2.2 SC 2.5.8. min-h-6 is that
+                        // floor exactly, and every other chip in the app already
+                        // clears it on its own padding.
+                        'min-h-11 shrink-0 rounded-full border px-2 py-0.5 text-[0.6875rem] transition-colors desktop-shell:min-h-6',
                         selected?.id === g.id
                           ? 'border-[var(--ui-accent)] bg-[var(--ui-accent-soft,var(--ui-surface-2))] text-[var(--ui-text)]'
                           : 'border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]',
                       ].join(' ')}
-                      title={`${playerLine(g.black, g.blackRank)} vs ${playerLine(g.white, g.whiteRank)}`}
+                      title={t('{value1} vs {value2}', { value1: playerLine(g.black, g.blackRank), value2: playerLine(g.white, g.whiteRank) })}
                     >
                       {shortPlayerName(g.black)} v {shortPlayerName(g.white)}
                     </button>
@@ -139,7 +154,7 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
             </div>
             <ul className="pro-games-results min-h-0 flex-1 overflow-y-auto">
               {filtered.length === 0 && (
-                <li className="p-4 text-sm text-[var(--ui-text-muted)]">{t('No games match “{query}”.', { query })}</li>
+                <li data-search-empty="true" className="wrap-anywhere p-4 text-sm text-[var(--ui-text-muted)]">{t('No games match “{query}”.', { query })}</li>
               )}
               {filtered.map((g) => {
                 const active = selected?.id === g.id;
@@ -154,7 +169,7 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                       }`}
                     >
                       <div className="font-semibold text-[var(--ui-text)]">
-                        {playerLine(g.black, g.blackRank)} vs {playerLine(g.white, g.whiteRank)}
+                        {playerLine(g.black, g.blackRank)}  {t('vs')} {playerLine(g.white, g.whiteRank)}
                       </div>
                       <div className="text-xs text-[var(--ui-text-muted)]">
                         {[g.event, g.date, g.result].filter(Boolean).join(' · ')}
@@ -196,7 +211,7 @@ export const ProGamesModal: React.FC<ProGamesModalProps> = ({ onClose, onLoadGam
                 </div>
                 <div className="pro-games-metadata mt-3 space-y-1 text-sm">
                   <div className="font-semibold text-[var(--ui-text)]">
-                    {playerLine(selected.black, selected.blackRank)} vs {playerLine(selected.white, selected.whiteRank)}
+                    {playerLine(selected.black, selected.blackRank)}  {t('vs')} {playerLine(selected.white, selected.whiteRank)}
                   </div>
                   {selected.event && <div className="text-[var(--ui-text-muted)]">{selected.event}</div>}
                   <div className="flex flex-wrap gap-x-4 text-xs text-[var(--ui-text-muted)]">

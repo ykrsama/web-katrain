@@ -1,0 +1,1017 @@
+# Repository audit findings
+
+Started 2026-09-12 at `d868c00` on `codex/repo-audit-improvements`; merged into `main`.
+The original audit was wrapped up at the user’s request; dated continuation
+entries below record subsequent work. This document does not claim that
+every line or every workflow has been validated. The starting `src/` tree contained about 84,500 lines. Keep
+reproduced failures separate from candidates that still need investigation.
+
+## Changes completed
+
+| Commit / area | Problem and resulting behavior | Evidence |
+| --- | --- | --- |
+| `e98c9d5` | Undoing a marker could erase existing freehand strokes. Clearing drawings advertised Undo without recording history. Drawing creation, clearing, unrelated edits, and branch copies now preserve independent drawings. | Browser reproduction lost the only stroke before the fix. Real pointer drawing → Undo → Redo → Clear → Undo passed at 1440×900 and 390×844. Five regression tests. |
+| `20d8832` | Every edit copied every node's complete move history. Snapshots now share immutable positions and copy mutable annotations and tree links iteratively. Collapsed branches also survive undo. | Marker-edit median on a synthetic 2,001-node line: 38.41 ms → 0.40 ms in Chrome. Deep-tree, setup/replay immutability, and collapsed-branch regressions pass. |
+| `51bb3f5` | The default test network was presented as ordinary ready KataGo, without strength guidance in the review workflow. Review and engine details now identify it and link directly to the model setting. | Desktop, short desktop, and phone pointer checks verified the notice, visible focused model field, and removal after selecting stronger weights. The engine popover now scrolls within a 500 px-high viewport. |
+| `ed18b51` | SGF export recursed once per node even though long sequences can be imported. Saving a 12,000-comment study threw `RangeError`. Export now uses explicit stacks and joins output once. | Chrome reproduction changed from stack overflow to successful export. A real pointer click on Save SGF downloaded all 12,000 comments (169,034 bytes). Round-trip tests preserve all comments, sibling order, and omission of empty branches. |
+| `dbcdb55` | Undo could restore the previous model's cached evaluations. Undoing a rules change restored SGF `RU` but left the engine and legality rules unchanged. History now records analysis validity and rules. | Browser reproduction formerly restored a score of +12 from the old model; it now restores no stale analysis. Rule undo now restores Japanese in both settings and SGF. Four failing regressions turned green, including deep-tree analysis invalidation. |
+| Library ZIP exports | Different folders with the same name merged on re-import. Slashes in names changed hierarchy, and reserved names could make games disappear. Exports now allocate distinct paths by folder ID, reserve directories before files, and traverse selected descendants using a parent index. | Five failing archive regressions turned green. Chrome preserved two same-named folders through export/import. Selecting 10,000 short games blocked synchronously for 201.13 ms before the fix and 28.81 ms after it; total ZIP generation measured 729.39 ms → 450.93 ms. |
+| Beginner lessons | Lessons were hidden from the start screen, and correct answers displayed a success message without changing the diagram. Learn Go now opens lessons from desktop and phone start screens; correct answers place a stone and apply captures. Advancing to an exercise now focuses its board instead of losing focus when Next becomes disabled. | Real pointer capture exercises passed at 1440×900, 1024×500, 390×844, 320×568, and 568×320. The captured white stone disappears, the black stone appears, and the main game remains unchanged. Phone users return to Home after closing lessons. The viewport suite now checks solved lesson diagrams, step focus, and feedback contrast. |
+| Deep branch editing | Copying, pasting, and rebuilding setup stones overflowed the call stack on a long study. A failed setup edit could leave the stored root changed while the displayed board stayed unchanged. All four recursive clipboard/replay walks now use explicit stacks and reuse immutable positions for comment nodes. | All three operations failed on a 12,000-comment Chrome fixture before the fix. They completed in about 1.7 ms, 3.8 ms, and 6.3 ms after it. Regression tests cover every comment, sibling order, legal-move pruning, parent links, and undo/redo. `test:study` now exercises the complete branch workflow. |
+| First-analysis reload and browser QA | A cold development server discovered TensorFlow's worker dependencies only when analysis started, rebuilt shared chunks, and reloaded the app. The QA helper silently replayed the interrupted test in an empty document. Vite now prepares those dependencies at startup; browser navigation waits for the requested document and never replays interrupted actions. | An isolated cold cache reproduced the exact 768×1024 failure recorded in CI. Server logs identified all three TensorFlow dependencies, then a reload and a replayed probe before the new UI mounted. Nine helper regressions cover navigation ordering, failures, deadlines, and preserving exceptions. The viewport suite now uses an isolated profile and a fresh dependency cache on every run, and the CI step is enabled with failure screenshots. |
+| Nested imports and problem solutions | Importing deeply nested SGF variations and showing a solution still used recursive traversal. Both overflowed at 12,000 nodes. Parsing now tracks variation endpoints explicitly, and solution search backtracks with an explicit stack. | Three failing regressions now pass, covering every nested sibling, a deep wrong branch before a correct one, and an unmarked main line. Real file input and Show solution passed at 1440×900 and 390×844 with a 192,942-byte nested study; the solution board changes while the main game stays at the start. The browser benchmark measured 5.38 ms for nested parsing and 0.67 ms for solution lookup. |
+| Large file/ZIP imports | Each imported entry rebuilt and scanned the entire library for a name. Overlapping file reads also reserved names against stale state, producing duplicate names. Batches now reserve names with per-folder indexes against state at completion. Numeric suffixes remain unique beyond 9,999 collisions. | A real 10,000-game ZIP import at 1440×900 measured 2,947.74 ms → 498.15 ms; the longest observed main-thread task fell from 2,643 ms to 182 ms. Two overlapping file inputs formerly produced two `Race` entries; they now preserve both payloads as `Race` and `Race 2`. The 390×844 Library workflow passed the same count, uniqueness, and overlap checks. Five regression tests cover hierarchy, suffix gaps, concurrency ordering, and 12,000 same-named entries. |
+| International SGF records | File and ZIP readers assumed UTF-8 and silently replaced legacy-encoded player names and notes. A shared byte decoder now honors BOMs and the first root's `CA`, with UTF-8 then Latin-1 for undeclared records. Library downloads also correct stale declarations on pasted Unicode. ZIP expansion accounting now uses actual bytes rather than JavaScript string length. | A valid Shift-JIS fixture formerly displayed `�{���V` instead of `本因坊` on desktop and phone. Native file inputs now preserve names, notes, and moves. Library import → actual ZIP download → file re-import preserved five records covering Japanese, Korean, Chinese, and Latin-1 at 1440×900 and 390×844. An unsupported encoding reports an error and leaves the current game intact. Fifteen tests cover four byte fixtures, export round-trips, BOMs, size preflight, malformed declarations, and a Shift-JIS trail byte that resembles an SGF escape. |
+| OGS sync merge | Finishing an OGS sync replaced the library with the snapshot captured before downloading. Local imports and edits completed meanwhile could disappear. Sync now merges against the latest state, resolves the current destination folder, and reserves incoming names in one batch. | A real OGS dialog with mocked network responses reproduced a persisted local import disappearing when sync finished (10 entries instead of 11). The same workflow now retains both games. At 390×844, a local ZIP created the OGS destination while sync waited; completion reused that folder, preserved its local game, and expanded it. Three regressions cover late imports/edits, destination reuse and name collisions, and empty syncs. |
+| Live analysis scheduling | CPU/WASM inference could resolve through an uninterrupted chain of microtasks, preventing the worker from receiving newer-position requests. Search now yields to incoming tasks every 50 ms between completed batches, preserving the clock across progress slices and leaving the tree resumable. | A production pointer move during 50,000-visit / 8-second searches took 32.05 s to show the new evaluation before the fix and 0.37 s afterward. At 6× renderer CPU throttling it took 0.53 s; the worker itself is not throttled by that setting. Two real CPU regressions cover short progress slices, cancellation, and subsequent tree reuse. `test:analysis` repeats the real WASM workflow with a 2.5 s budget. |
+| Stop reaches the worker | Stop aborted queue signals but no search caller forwarded them to the engine, leaving canceled work consuming CPU and blocking the queue. All six search callers now pass their signals. The client settles locally, suppresses late replies, and sends a request-specific cancellation that the worker handles before its work queue. | A real Escape key during deep WASM analysis formerly left the worker searching another 7.72 s, with 28 progress updates. The production check now stops it in 20 ms, restarts successfully, and follows a new move. At 390×844, a trusted touch on the Tools sheet’s Stop button canceled the worker in 74 ms with no later progress updates. Eight client/queue regressions cover pre-cancellation, late replies, queue release, listener cleanup, and failed control-message delivery. |
+| Stop cancels deferred requests | A move schedules analysis 500 ms later, before the work enters the queue. Stop canceled active work but that pending callback could start it again. Deferred analysis callbacks are now tracked and cleared by Stop and Clear analysis cache. | The production browser reproduced a new request after Escape immediately following a move. The same workflow now produces none. The durable browser check plays a second move and stops before its 500 ms callback, then verifies no restart. Five store regressions cover new and existing moves, passes, setup edits, clearing analysis, and a subsequent explicit restart. |
+| First-search readiness | Live progress previously left the store in “Loading model” until the first search finished, hiding the active backend. Valid progress now publishes readiness and engine metadata immediately. | The production browser now shows “Analyzing…” and “CPU (WASM)” beside the first live evaluation, before an 8-second search finishes. Three regressions verify early readiness without claiming requested-depth completion and suppress late progress after Stop or a model change. The browser analysis check now asserts this header state. |
+| GIB/NGF conversion foundation | Added conversion to Unicode SGF with player names/ranks, results, dates, komi, Tygem handicap placement, and NGF passes. Invalid moves are rejected instead of silently removed. Byte decoding supports UTF-8/BOMs and explicit Korean, Chinese, Japanese, and Western encodings. | 35 tests cover format and byte fixtures. Chrome converted the 232-move GIB and 189-move NGF fixtures from PySGF with the expected players and complete move counts; synthetic Korean/Japanese records rendered the correct setup, side to move, and zero komi. The following integration change exposes these converters through the normal import controls. |
+| GIB/NGF import workflows | File opening, app drops, the PWA launch handler, library file imports, and ZIP imports now share the format-aware decoder. Settings search exposes an encoding preference for records without a declaration. Open controls use “game,” and imported library names shed the original extension before UTF-8 SGF export. | Full verification passed with 2,512 tests. Real Chrome file selection, drag-and-drop, Settings search, and library import → ZIP download → re-import passed at 1440×900, 390×844, and 320×568. Six Korean/Japanese/Chinese/SGF records retained content and names; malformed GIB input left the current game intact. The PWA consumer was exercised with a delivered File, without claiming OS association installation. Fifteen new regressions cover mixed archives, export round-trips, encoding overrides, and stored preferences. |
+| Partial archive failures and mobile notifications | ZIP imports now count rejected games and report the first filename and reason, including encoding recovery guidance. The expansion limit stops further decompression while still accounting for remaining games. Mixed loose-file failures also retain their counts. On mobile, Library/Tree/Review notifications now sit outside the hidden, inert board. | A real four-game ZIP previously reported only “Imported 1 file.” It now reports three skipped games and the first decoding error. At 390×844 the notification previously collapsed outside the viewport inside the inert board; the report and Dismiss are now reachable at 390×844 and 320×568. The regular viewport suite now imports a ZIP with rejected games, verifies the saved valid record, and clicks Copy and Dismiss on desktop and both phone sizes. Nine regressions cover rejected formats, metadata exclusion, expansion-budget accounting, misleading size declarations, complete failure counts, and bounded error details. |
+| On-demand AI keyboard action | Enter used the automatic-opponent guard, so it did nothing outside an AI game even though the AI move button worked. The shortcut now requests one move for the current side, matching the button. | In Chrome with body focus, Enter produced zero worker requests before the fix. The same trusted key now runs real WASM analysis and places exactly one move. Forty-nine shortcut/target regressions, typecheck, and focused lint passed. |
+| AI move cancellation and ownership | Stop now cancels active, queued, and delayed AI moves, and invalidates their retry callbacks. Replacement requests remove obsolete work for either color. Late failures and results cannot move a different or edited position, and old requests cannot clear a newer thinking indicator. | Escape previously left the AI thinking and played a move roughly 3.7 seconds later. Real production WASM searches now cancel in about 63 ms on desktop and 75 ms through phone touch controls, with no delayed move or retry. Fresh moves complete afterward. Eighteen store regressions cover Stop, replacement, pending replies, model-change/preemption recovery, cache clearing, resignation, and position edits. `test:analysis` now repeats Enter, phone Tools, Stop, and restart while resizing the same game from 1280×800 to 390×844. |
+| Search self-capture rules | The board allowed multi-stone self-capture under New Zealand and Tromp–Taylor, but search excluded the move and threw when replaying it to determine ko. Search now applies the selected rule at the root, inside variations, and when reusing a child. Undo restores captured friendly stones without leaving the newly played stone behind. | Eight failing regressions reproduced the disagreement and replay exception. Fourteen checks now cover both colors, single-stone rejection, undo stacks, root policy, previous-position replay, deeper search, and child reuse. Real SGF file input → analysis → pointer/two-tap self-capture → fresh analysis → AI reply passed at 1280×800 and 390×844 for both allowing rules; Japanese still rejected the move. The former “Illegal suicide move” engine error no longer occurs in these workflows. |
+| Neural area features follow self-capture rules | Standalone inputs, single-position evaluation, and batched search all computed territory features with self-capture disabled. They now use the selected rule. A KataGo reference board differs at seven points under New Zealand and Tromp–Taylor; Chinese inputs retain the previous result. | Ten regressions failed before the fix. Seventeen checks compare recorded KataGo maps, both players' feature channels, and actual tensors entering the bundled network at the root and a child. All six native SGF import → real WASM analysis workflows passed at 1280×800 and 390×844, with browser input maps inspected independently. This establishes feature propagation, not a measured strength improvement or full endgame parity. |
+| Search history and endgame pruning | The client sent only five moves to search, hiding four-opponent-pass sequences and the real turn number. Separately, search computed safe territory with self-capture forbidden under every ruleset. Search requests now retain their full move history, and root pruning uses the selected rule when creating or reusing a search. Pure neural evaluations retain their five-move feature limit. | Seven failing regressions exposed history loss and wrong pruning, including child reuse. Twelve added checks cover transport, reference safe area, both colors, three versus four passes, and child reuse. Six Chrome SGF import → region drag → WASM analysis workflows passed at 1280×800 and 390×844. The worker now receives all eight moves: Chinese skips the settled region, while New Zealand and Tromp–Taylor explore it. A native-worker transfer benchmark measured median main-thread posting of about 0.1 ms for 400 moves and 0.6 ms for 10,000 moves (40 samples, 0.1 ms timer resolution); this measures transport, not complete search time. |
+| Exact terminal evaluation for area rules | Only Chinese search counted a position after the second pass. AGA, New Zealand, Tromp–Taylor, and Ancient Chinese continued neural evaluation beyond the end of the game. All five area rules now count terminal positions, including rule-dependent area and independent-life group tax. Ownership remains per-point, and handicap compensation stays in the caller's adjusted komi. | Eight failing regressions showed wrong scores and ten network calls instead of one. Twenty-six new checks cover both colors, draws, ownership, self-capture-sensitive reference scores, tax, first-pass continuation, child reuse, and rejection of territory rules by the area-only counter. Ten real Chrome import → region selection → pass-analysis workflows passed at 1280×800 and 390×844. The settled test position now evaluates to B+14 (ordinary area) or B+16 (group tax), with zero score uncertainty. This does not establish full seki, superko, model-version, or territory-encore parity. |
+| Manual scoring and saved results | The panel omitted rules and handicap inputs, used Japanese scoring for every game, and saved the wrong winner after two passes. The count now follows the game's rules and handicap, updates when root metadata changes, and exposes the same signed point contributions in Details. Area rules show living stones, applicable group tax, and White's handicap bonus. The desktop Details popover now opens above the bottom toolbar instead of outside the viewport. | Ten original desktop/phone workflows recorded W+9 instead of B+14/B+16. Twelve added unit checks validate contributions for seven rules, tax, dead marks, and handicap. Thirty native import → Score → Done → SGF download workflows pass at 1280×800, 390×844, and 320×568, including Japanese/Korean controls, two handicap rules, preserved official results, and dead-mark clearing. The browser gate also changes rules and handicap while scoring remains open, checks reachable breakdown rows, and reparses the actual completed download. |
+| Game Info rule picker | The editor displayed Japanese for imported AGA, New Zealand, Tromp–Taylor, and Ancient Chinese games because it listed only three rules. It now uses the shared seven-rule list and explains the selected rule through visible help and an accessible description. | Twelve real import → Review → Edit workflows reproduced the wrong displayed selection at desktop and two phone widths; all twelve now show the imported rule. The regular scoring gate checks all seven editor selections, accessible help, and the control’s change handler through to SGF metadata, scoring, and completed downloads. Select changes use the DOM value/change path because CDP keys did not operate the macOS native popup; imports, navigation, scoring actions, and downloads use browser input. |
+| UI superko history checks | Every candidate rebuilt text for every ancestor board, including repeated annotation positions. Checks now pack three intersections per character and weakly cache only immutable stored boards. Candidate simulations stay uncached, and traversal follows current parent links and side-to-move metadata. | On synthetic 400-position histories in Chrome, checking 361 candidates measured 359.13 ms → 2.25 ms for shared boards and 421.57 ms → 1.55 ms for distinct boards. These isolate repetition checks, not total AI latency. The study gate now enforces a 50 ms budget. Ten added regressions cover exhaustive 3×3 encodings, supported board sizes, both colors in a three-ko cycle, changed branches/positions, mutable candidates, 12,000 shared annotation boards, and setup replay/undo/redo. The engine's separate history gap is addressed in the next change. |
+| Engine superko and history-aware reuse | Analysis explored three-ko repetitions that the board rejected. Every search/evaluation caller now sends exact full-line repetition keys separately from neural move history. Root and deep expansions exclude repeats, neural plane 6 receives the bans, and cache/re-root/graph/symmetry handling retains the relevant history. Passes remain legal and preserve superko history. | Six failing model regressions became green, with Chinese controls unchanged. Thirty-seven added checks cover both colors, deeper search and actual tensors, self-capture, pass persistence, history transport through eight workflows, cache identity, symmetry and child reuse. Eight native desktop/phone SGF → region drag → WASM analysis → attempted-move workflows pass. Six browser reuse probes keep board/position IDs fixed while changing history and observe B3 policy −1 → legal → −1. A generated 400-move 19×19 game measured 1.44 ms to build history, 0.08 ms to compute bans, and 0.035 ms main-thread posting (medians); its encoded history is 51,730 JSON bytes. These measurements isolate history overhead, not search strength or total analysis throughput. |
+| Endgame move-selection adjustments | AGA, New Zealand, Tromp–Taylor, and Ancient Chinese incorrectly received the territory-scoring pass and cleanup-capture penalties. The connection exemption also computed safe area with self-capture forbidden. Adjustments now use the selected scoring and self-capture rules. | Fourteen failing regressions exposed the two errors. Twenty-four added checks cover seven rules, both colors, cleanup captures, a recorded KataGo safe-area fixture, and the actual bonus used during root creation and child reuse. Fourteen native desktop/phone SGF → WASM analysis → Stop → second-pass workflows pass. A read-only browser helper probe using returned root ownership records the incorrect one-third-point pass adjustment becoming zero for the four affected area rules; Japanese/Korean retain it. This validates the adjustment and workflow, not a measured strength gain. |
+| Long desktop notifications | The game-over message expanded the dashboard’s implicit grid column, clipping the header and analysis sidebar without creating a document scrollbar. The shell now explicitly allows its column to shrink inside the window. | Native SGF import → End → Pass reproduced 268 px of overflow at 1024×768 and 161 px at 1280×800. Applying/removing the grid constraint in the browser removed/restored the failure. The regular viewport gate now checks three desktop widths before, during and after the real notification, including actual panel bounds, reachable header controls, a stable board, full message text and its live region. The three targeted workflows pass. |
+| Unsaved-game navigation QA | Reload checks left the native unsaved-changes confirmation unanswered, pausing navigation and renderer evaluation. The browser helper now dismisses unexpected dialogs, accepts beforeunload only when a caller explicitly permits leaving its fixture, and bounds navigation setup with the same deadline. | Native traces reproduced the pause with the engine idle and with real WASM analysis. Answering the confirmation completed navigation in both cases. Seven failing helper regressions now pass, including default preservation, explicit acceptance, unrelated dialogs, failed responses, and stalled setup. The production analysis gate checks Cancel → Leave → Restore at desktop and phone sizes after real AI moves, verifies the same document survives Cancel, compares the saved SGF across navigation, and restores every stone, the move number and the next player. This resolves the previously recorded reload investigation; it was not evidence of an engine deadlock. |
+| Startup rules survive recovery | The initial game played with the saved rules preference but always wrote Japanese into its SGF root. Exporting or recovering that game silently switched every other preset to Japanese. Startup metadata now uses the loaded preference. | Six failing regressions reproduced the mismatch and rule change, with Japanese as a passing control. All seven now pass through actual settings loading, a move, SGF export and reload. Fourteen native desktop/phone startup → Pass → Cancel → Leave → Restore → WASM analysis workflows retain the original rules, metadata, komi, turn and move. The production recovery gate now checks the saved RU property and every resumed worker request's rules, in addition to the position. |
+| Duplicate interactive analysis requests | The layout effect, toggle/move timers, and continuous-search loop preempted one another while analyzing the same position. Automatic triggers now await compatible work already in progress, with one progress/completion handler. Explicit restarts and changed search contexts still replace it; canceled or stale queued work cannot be reused. | Three native trials per size reproduced three requests and two premature cancellations on desktop, and two requests and one cancellation on phone. The same six workflows now start one request each, retain live hints, and stop without retrying. Fourteen regressions cover gradual deepening, progress, completion, queued/active cancellation, replacement settlement, failures, explicit budget/report changes, positions, rules, regions, and ownership. Cold first-progress timings varied substantially (419–865 ms before, 467–847 ms after), so these samples establish fewer redundant requests, not a consistent latency improvement. The production gate now rejects duplicate startup requests and premature cancellation after recovery. |
+| Pass-history and ladder inputs | Conservative passing erased Japanese/Korean first-pass history as though normal play were the final scoring phase. Repeated-pass boundaries were omitted, three friendly-passing area presets were missing, and ladder planes could use more history than move planes. A shared history calculation now selects move/pass features, the phase-end signal, and previous ladder positions consistently. | Nineteen initially failing tests exposed the differences. Thirty new tests cover 132 expected history states recorded in the pinned native KataGo output, both komi signs, conservative/passing-hack modes, all seven presets, and actual root/child network tensors. Additional conservative-passing and winning/losing Tromp–Taylor checks pass. Fourteen native desktop/phone SGF → first-pass analysis → repeated passes → resumed-play analysis workflows completed with real WASM; read-only input probes also checked each phase boundary. Screenshots and board bounds remained within both viewports. This covers ordinary consecutive-pass endings with encore disabled; repeated-position endings, phase resets after irregular turns, territory encore, and model-specific history modes remain outside this correction. |
+| Saved metadata survives duplication | Duplicating a game rebuilt it from its SGF and discarded tags, favorite status, and saved metadata that was not in the record. Copies now preserve the complete file record, assign fresh identity/timestamps, and copy mutable tag/metadata containers so the original remains independent. Unchanged SGF no longer needs reparsing during duplication. | Two failing regressions became green; three added tests cover direct copying, nested/bulk copying, independent edits, backup round trips, and absent optional fields. Native desktop/phone Star → Edit tags → Duplicate reproduced the loss before the change. Six direct/folder/bulk workflows now retain classification, metadata, SGF, relationships and IDs through IndexedDB reload; changing/un-starring a copy preserves its original. Screenshots and document bounds pass at 1280×800 and 390×844. No end-to-end performance gain is claimed for this metadata correction. |
+| Clearing library tags | The shared name/tag dialog rejected empty input, making the final tag impossible to remove. Tag editing now explicitly accepts an empty or whitespace-only list; name-based actions still require text. | A new native browser regression reproduced the disabled Save button at 1280×800, 390×844 and 320×568 before the fix. All three now pass import → star/tag → duplicate → cancel clearing → save an empty list → clear via Enter → reload. It verifies source/copy independence, search results and tag-filter options, preserved metadata/favorites, and disabled blank Rename/New Folder/Save actions. This workflow now runs in the regular viewport gate, with per-size screenshots and recorded dialog bounds. |
+| Deep library folder pickers | Restoring a 12,000-folder chain overflowed recursive folder-option traversal and replaced the whole app with its error screen. Both save dialogs also generated indentation proportional to the full depth. Traversal is now iterative, retaining sorted depth-first order, exact depths, and existing orphan/cycle handling. Deep labels keep the full name and level with bounded indentation. | Two failing regressions exposed stack overflow and a single 36,015-character destination label; three added checks cover the deep backup, ordering/identity through disconnected cycles, and rendered destination text. Native backup restore reproduced the app-wide crash on desktop and phone. Restore → both save dialogs → save into the deepest folder → reload now retains every folder and the original tagged/starred game at 1280×800, 390×844 and 320×568. Folder selection uses DOM value/change; opening and saving use native mouse/touch/keyboard input. Final 12,000-option browser samples had 1.7–2.2 ms medians; both dialogs opened in 143–190 ms. All labels together contain 324,868 characters, with a 28-character maximum in this fixture. The broader study gate measured 4.90 ms for traversal. These are local Chrome measurements, not physical-phone or end-to-end throughput guarantees. The study performance gate now checks complete deep-folder traversal and bounded label size. |
+| Large-library copy and deletion | Folder duplication and descendant counting repeatedly scanned the full library; bulk deletion repeated that work for every selected game. These paths now index children once and visit each affected record once. Overlapping selections count and delete descendants only once. | Six data regressions cover a reverse-ordered 6,000-item hierarchy, every copied parent link and record, overlapping selections, unrelated additions, missing IDs, and cyclic descendant traversal. In the same isolated Chrome helper fixture, copy fell from 155.33 ms to 6.39 ms and deletion from 144.16 ms to 1.21 ms. Native desktop/phone workflows preserved all copied metadata, canceled without changes, deleted the intended records, kept the board unchanged, updated the loaded-game association correctly, and retained expected contents after reload. For these local samples, deep-folder confirmation fell from 242–420 ms to 32–35 ms, and deleting 10,000 selected games from 615–706 ms to 6–38 ms. Folder copy still took 233–252 ms through its DOM update, with 255–261 ms long tasks; one phone bulk-confirmation sample also took 170 ms. These are local browser timings, not physical-device or INP guarantees. The study gate now checks complete nested copy, overlapping selection/counting, and nested/bulk deletion with a 50 ms synchronous budget per operation. |
+| Empty-library persistence | An empty IndexedDB library was treated as a first visit, and fallback storage did not finish sample initialization on its first save. Deleting everything could therefore restore all eight bundled entries. Both loading paths now use the sample-version check, and successful writes record initialization only after the data is saved. | Native delete → reload reproduced all eight entries returning on desktop with IndexedDB and on desktop/phone with local storage; the phone IndexedDB check also failed to retain the empty saved state. The same four workflows now pass first-visit samples → Cancel → delete all → reload → import one game → restore an empty backup → reload, reading storage directly to avoid loader side effects. Seven unit regressions cover initial reads without saves, stable saved IDs, full and partial deletion, empty backups, older sample-version updates, and rejected writes. These native desktop/phone checks now run in the regular viewport suite. The change preserves the existing versioned sample-update policy. |
+| Library Save/Update recovery | The panel marked the game clean, cleared recovery data, associated new records, and showed success before its asynchronous save completed. It also refreshed recent games before persistence, allowing that read to activate the failed-IndexedDB-load guard during a rejected write. Save acknowledgements and recent-game notifications now follow successful persistence. A pending save only clears recovery when its exact SGF still matches the current game; storage errors offer Retry. The panel now uses the existing stable, current-state SGF getter. | Injected IndexedDB/local-storage write failures reproduced success messages and lost recovery data for Save and Update at 1280×800 and 390×844. The new browser regression covers both actions at those sizes plus 320×568: rejected writes leave stored records and recovery intact, Retry persists the exact game before clearing recovery, and a second rejected update survives reload and restores the full board. Two additional desktop cases delay real storage opens while another native move occurs, then verify the old snapshot is saved and the newer recovery copy remains. All eight scenarios now run in the standard viewport suite. These checks target the library panel; other save entry points and broader storage failover remain separate audit work. |
+| Main-menu and keyboard save completion | The shared completion callback replaced the clean-game baseline and cleared recovery even when an asynchronous save contained an older SGF. It now requires that supplied snapshot to match the current game before either action. | Seven browser cases reproduced newer recovery data becoming null: Ctrl+S, the desktop Save button, phone menu Save at 390×844 and 320×568, and Save Copy at desktop and both phone sizes. Each holds a real database open, makes another native move, then completes the original save. Save Copy additionally exercises the captured snapshot while its dialog is opening. All seven now retain the newer recovery copy; a subsequent ordinary save of the latest position clears recovery and retains that exact SGF after reload. The regular browser suite now runs these cases alongside the panel’s eight save/retry/recovery scenarios. This validates edits overtaking a save; ordering between multiple simultaneous save requests remains a separate check. |
+| Overlapping game saves | An older pending Ctrl+S could overwrite a newer successful save after recovery had been cleared. Complete library read/modify/write operations now run in request order. The panel mirrors completed saves without writing them again, and request IDs prevent older toolbar notifications from replacing newer panel-saved SGF. Initial storage failures retain a snapshot for Retry. | A native delayed-read reproduction lost the newer move with no recovery copy. A mixed toolbar/Update reproduction also lost it on a subsequent Star action. The browser gate now has 30 save scenarios: the previous 15, six overlapping toolbar/menu cases across desktop and both phone widths with delayed reads/writes, two desktop toolbar/panel overlaps followed by Star, four phone Library-opening → Update → Star checks, and three failed-initialization retries. Five unit checks cover task ordering, rejection recovery, simultaneous additions/naming, and preserving unrelated records. Broader overlapping metadata edits, full-library replacements, cross-tab writes, and failover recovery still need separate checks. |
+| Metadata edits during pending saves | Starring a record while Ctrl+S was waiting could later persist the panel’s stale full snapshot, erasing the just-saved move after recovery was cleared. Panel writes now apply only added/deleted records and edited fields to the latest stored collection, inside the ordered operation. Successful edit batches are acknowledged once; later batches do not replay them over intervening saves. | The native desktop reproduction stored the original zero-move record with favorite=true, no recovery copy, and a clean title. Six new desktop/phone cases now retain the exact game and favorite through delayed reads/writes and reload, bringing the save gate to 36 scenarios. Seven unit checks cover Star, tags, rename, unrelated imports/updates, deletion, duplicate-add avoidance, intervening saves, and retry of rejected edits. All local edit handlers use this path. Cross-tab coordination and complete backup replacements remain separate from field-edit merging. |
+| Edit palette follows the game strip | Linux CI reported the desktop edit palette overlapping the game-info strip at 1024×768 and 1024×500. Its top offset assumed fixed header/strip heights. It now follows the measured board-stage top and observes geometry changes. | A native local stress check with a 120px strip reproduced 67px of overlap at 1024×768, 1024×500 and 1280×800. The same six normal/enlarged-strip checks now retain a 10px gap below the strip. The regular viewport gate also expands and restores the strip while editing stays open, requiring the palette to follow both changes and reporting actual geometry on failure. |
+| Browser fixture module identity | After the layout checks passed, Linux CI failed when the long-metadata fixture dynamically imported the bare game-store URL. CI infers the `/web-katrain/` application base from `GITHUB_REPOSITORY`; root-relative imports bypass it. Fixtures now reuse recorded module URLs, including the app base and Vite timestamps, and exclude failed resource requests. The resource buffer is enlarged before app startup; components not yet loaded resolve their explicit first-import fallback against the document base. | Six unit regressions cover timestamp selection, failed requests, older timing APIs, required singleton identity, and first imports at root, project-base, and query/hash URLs. Targeted real-browser checks load long metadata into the visible app, exercise score-quiz request ordering with its actual engine client, and scroll preview boards by native touch. No application behavior is changed by this test-runner correction. |
+
+| Resolved save errors | A successful Retry persisted the game but left the old save error pinned over the phone board, with the success message queued behind it. Save status notifications now carry their request identity, allowing the successful retry to replace its own error while unrelated errors retain their place. | Linux's 320×568 screenshot showed the resolved error covering the next move. Five notification regressions cover visible and queued resolution, repeated failure, unrelated operations, and normal success dismissal. The six native failed-save/update checks now require the old error to disappear and the success notice to appear after persistence, before playing and recovering a second unsaved move. |
+
+The preview-board browser check now sends a complete native touch sequence.
+Linux Chrome reported no movement for the earlier synthetic scroll command;
+the check now verifies an unobstructed, scrollable fixture before dispatching
+input and reports geometry and touch-action on failure. It also checks that
+interactive boards retain their intentional gesture lock, so a test that ignores
+touch-action cannot pass both cases. Portrait and landscape checks pass locally.
+
+Position sharing relies on the store's existing invariant: board edits, replay,
+and komi changes replace `gameState` and its arrays. Do not mutate a stored
+position in place. The new regression freezes positions during setup edits and
+checks undo/redo across rebuilt descendants.
+
+Drawings remain session-only and are not part of SGF export. The drawing fixes
+do not change that storage contract.
+
+## Follow-up pass (2026-09-25, `claude/eloquent-euler-6uaxqr`)
+
+Each item was reproduced first -- a failing test or a browser run -- and each
+fix carries a regression test that fails on the code before it. Differential
+fuzzing of the engine's board code against `gameLogic`/`treeSuperko` and an
+independent KataGo-rules reference (2,620 games, ~590k moves, sizes 3-19, all
+offered rules) and of terminal area scoring (17.4k positions) found no
+disagreement; the two app-side bugs it surfaced are listed below.
+
+| Area | Problem and resulting behavior |
+| --- | --- |
+| SGF export | An emptied node holding variations beside a sibling wrote `((;..)(;..))(;..)`, which no parser opens. Empty nodes are now lifted, root children included. |
+| SGF load | A move in the root node copied the root's comment and game info onto move 1. Only move-level properties go with it. |
+| Ko | Simple ko compared with the grandparent node, so a comment node after a ko capture allowed the recapture and a setup node refused a legal move; the engine, given the same boards, could rank the illegal recapture. One helper now serves play, replay, load, the bots and every engine request. |
+| Replay | Setup stones on a pass node were dropped whenever the line was rebuilt. |
+| Tree edits | Insert mode lost copied moves' comments and markup; pinned lines recalled the wrong node after variations moved; drag-painting relabelled labels; a handicap change removed moves without a word. |
+| Clock | A tick crossing the end of main time charged its overshoot to nothing. |
+| Scoring | A counted draw was written `RE[Jigo]` (now `RE[0]`), and recorded draws were not shown as results. Stone-scoring tax counted chains rather than KataGo's regions. |
+| Bots | Jigo and score-loss did not pass when the top move was a pass; the fallback bot's superko filter ignored suicide. |
+| Navigation | Next mistake stuck after the first jump and used a different points-lost measure from the rest of the app. |
+| Library | Select all then Move flattened every folder; moves could duplicate names; metadata missed legal SGF whitespace and counted `AB[aa:cc]` as one stone. A drop on a subfolder also landed on its parent, and dragging to Root skipped the unique-name check. Resizing with the header menu open called `window.close` (now barred by lint). |
+| Import | Pasted diagrams: `+` corners, a white `0` at a row edge, and the side to move. |
+| Study | Problem grading ignored whose GB/GW marker it was, and Show solution could show the refuted line; a 0 tsumego wall recoloured the problem; ladder and gauntlet left the bot's 20k-6d range. |
+| Inputs | Game Info fields could not take a trailing space; a cleared komi started a game at 0. |
+| Keyboard | Enter on palette buttons ran a command; Shift+Space and Option-altered Alt shortcuts never matched; resetting a shortcut could re-create a clash. |
+| Settings | A chosen 500 visits reloaded as 5000. |
+| Offline | Activation deleted other apps' caches on the shared origin; reported bundles accumulated in the shell cache across deploys. |
+| Display | Score leads rounded their sign, not their margin (B+0.2 against W+0.1 for one lead); PV tiles ignored the player's quality thresholds; arrow keys moved the board cursor against the rotation. |
+| Drill and report | Replaying the drilled move graded as better or solved; pass-only positions were drilled; a phone tap or Enter played the guess instead of answering; report graph phases were windowed by line position, shifted by setup nodes. |
+| Game replacement | Ladder and gauntlet games replaced unsaved work without asking, and Save then overwrote the library game still named in the title; a share link or launched file at startup destroyed the previous session's recovery snapshot (now kept in the Library). |
+| Engine flows | A board edit left the play-elsewhere readout on "Checking..." or a stale price; play-to-end folded the real game when the engine chose its next move; the AI opponent answered the set-up position generator's moves. |
+| Pointer input | A stale click-suppression flag swallowed the click after a right-click; a scroll that began on the score graph jumped the game. |
+| Photo board | Play move was never offered for a move that captures; auto-trace found no black stones on a transparent PNG. |
+| Phone controls | The branch-number editor in More Controls closed as it opened; Enter or Escape in a number field dropped focus to the page; the move strip clipped the turn stone off its left edge on narrow and landscape phones. |
+| Kifu and quizzes | Printing a kifu gave one page however many diagrams it had; a diagram left out earlier stones captured within it; Guess the Move graded a click on a stone as a guess. |
+| Series and edit dialogs | A gauntlet game started while the ladder awaited a result was scored by both; the tsumego wall distance clamped per keystroke and its dialog never took focus; the pro-games search lost its focus to the dialog; the edit toolbar's branch count went stale after Add PV and Copy was offered on setup nodes. |
+| Analysis surfaces | Re-analyze's visits and range fields clamped per keystroke (500 became 1600); a Quick graph disabled the bar's Fast review as "Reviewed"; the review ETA carried a replaced run's start time; sorting candidates by win or score put White's worst move first; a candidate preview survived navigation, so one Enter played it. |
+| Setup dialogs | New Game and Settings number fields rewrote their clamped value under the cursor (60 seconds became 160) and refused negatives; switching the AI's side left KataGo as the human's name; an unmarked White-to-play problem in a collection was posed and graded as Black; shortcut recording stayed armed while typing in search; camera capture stuck on "Capturing..." in development. |
+| Desktop tree and dashboard | Dashboard navigation ignored insert mode and finishing then grafted the game onto the new moves; the desktop tree never scrolled to the current move, so Center did nothing; Make main branch hid on lines that left the main line at an earlier fork; the phone branch editor dropped focus; the Swing tooltip stayed stale after analysis. |
+| Report and graph | The report's Review Queue closed and Show all folded whenever analysis landed; its graph was rebuilt every 0.9s during a review, losing focus; on games under 16 moves the graph previewed and jumped to the wrong move; a phase graph skipped its first move's marker; a clock-only graph showed invented win rates and scores. |
+| Board | The Swing wash and next-move rings ignored analysis and Add PV landing on the current node; wheel, swipe and the mistake keys navigated mid-insert; Enter on the board cursor played a stone during region selection. |
+| Edit history and saved analysis | A pending recovery auto-save was lost if the page was hidden and killed within its half-second wait; Undo edit restored a snapshot from before later moves and notes, deleting them for good once redo was cleared; 9x9/13x13 analysis reloaded with empty ownership and policy; a no-op Add PV wiped redo; undo dropped the id pins are stored under; a reordered variation could not be pinned. |
+| Analysis pipeline | Reviews overwrote deeper results that landed while they waited, and stored the pre-edit position's result on an edited node; live progress replaced a 500-visit result with a 12-visit snapshot; Undo edit left review and play-to-end flags on; Quick review silently skipped a chunk after its third preemption. |
+| Library storage and import | A save that fell back to localStorage vanished after a reload; clearing the library after such an outage brought its games back; stored metadata and move counts overrode what the SGF says, so reading fixes never reached existing games; an NGF with a blank title line failed to import. |
+| Sharing and offline updates | An unreadable share link did nothing silently; copied links carried analysis and grew past what the app will read; the app's own link failed in Paste SGF and the share sheet; a link opened in an existing tab was ignored; a waiting service-worker update overwrote the running version's offline shell. |
+| Layout and access | Board coordinates ran under edge stones; Tab on a focused control toggled analysis instead of moving focus, so the keyboard could not get past it; active report toggles were white on a 30% tint (1.5:1); faded 11px counts and hints fell below 4.5:1; Settings showed 101px of content on a 568x320 phone. |
+| Efficiency | Six :root/body :has() rules restyled the whole page on every DOM change (4.9ms style + 3.0ms layout per move, now 0.45 + 1.1); each move re-rendered the app twice; the idle clock rendered 14 times a second; opening the Library rewrote every record (2.6s to rows at 3,000 games, now about 0.5s). |
+| Everyday flows | Resigning while the engine thought recorded the engine's resignation; Enter in Library dialogs reopened them and saved duplicates, and a first save was "Game 9"; the desktop move rail wrapped at move 10 and moved the board; Fast review graded unlisted moves "Blunder, 0% of top"; Coach said "behind the best move" for a cost measured against the position; a chosen clock never started. |
+| Accessibility | Closing an autofocused dialog dropped focus to <body>; the board had no role and its keyboard cursor was silent; dashboard toggles said "Hide analysis, pressed"; buttons were named unlike their visible text; review progress was never announced; ARIA the roles do not allow; a heading-less sheet; a tab bar outside any landmark and a second <main>. |
+| AI opponents | Influence and Territory bots ranked sampled moves by raw policy, not policy times line weight, so the style barely mattered; the AI stored its own search as the position's analysis, including Handicap's and Human's deliberately biased ones, and over deeper stored results. |
+| Data, language and gamepad | The Pro Game Library never showed a result or rank (its header reader missed properties that follow a value directly); a non-English browser marked the English UI as that language for screen readers, and the chip claimed to set the SGF's language; a second connected gamepad took input over from the one in use. |
+| UI | Theme previews (Hikaru's square SVG, Bamboo's missing lines), a repeated AI-strength sentence, tooltips off-screen on phones, filled "unselected" library boxes, library names squeezed by hover actions, menu header gap, start-rail wrapping and reserve, lesson/quiz board size on tall phones, kifu stones in the wrong colour, large-tree centring, stale setup labels, phone move-list columns, OGS progress counter. |
+
+## Follow-up pass (2026-09-26, `claude/bug-fixes-ui-polish-hpws9z`)
+
+Found by reproducing in the browser (dev server and production build) and by
+parallel read-only audits; each fix has a regression test that fails before
+it (the Settings rows, the coordinate highlight and the start rail were
+checked in the browser).
+
+| Area | Problem and resulting behavior |
+| --- | --- |
+| AI games | A second Pass or a board click on the AI's turn was recorded as the AI's move (two passes ended the game on a pass it never chose); now refused, and a stalled AI is woken. Undo when the AI's reply was move 1 stalled the game at the root; it now declines. Resigning wrote over a recorded result. |
+| Clock | Kept counting after a resignation or two passes and ran finished games out of time; ticked 14 times a second while paused. |
+| SGF load | `HA[1]`, or handicap stones in the first child node, placed phantom stones and dropped the whole game. An empty `CA[]` refused to open. The app's own share link failed on drop and from the share sheet. The Library move counter missed `B [ee]` and `Black[dd]`. |
+| Library and settings | A localStorage copy left after an IndexedDB outage came back after a later read failure, restoring deleted games and reverting edits. A corrupt stored setting crashed the desktop UI. Duplicate ids in a backup lost records. Names sort by number; names never split an emoji. |
+| Report and graph | The tooltip showed smoothed, not per-move, values; an unreached phase plotted another phase's move; the result guess rounded halves toward Black; `-0.0`, `-0.00pp` and `#?` chips; the played-move readout missed "Best"; 99,950 visits read "100.0k". |
+| Study | Tsumego with set-up in the second node were unsolvable; games branching at move 1 and handicap games were posed as problems; goproblems' `C[RIGHT]` was not read; the punish quiz's answer showed in the side panels; the drill passed guesses worse than the played move; Score quiz re-counted re-guessed positions. |
+| UI | The offline/update card covered the desktop start rail (its offset summed two 56px bars under a 50px navbar). Phone Review status wrapped in body type. Landscape home and menu grids had stray borders and ghost cells. Settings rows squeezed labels, tabs opened mid-scroll, Teach Mode bands were unlabeled. The cursor coordinate highlight was ~1.2:1 in dark mode and overflowed the board. "Recent" listed unopened bundled games dated today. |
+| Efficiency | Every analysis update re-serialized the whole game to test for unsaved changes (3-4 ms and 570 KB of garbage per update on an analysed 231-move game); the phone move list re-centred on every update. Production main-thread script during live analysis measured about 4%. |
+
+Left as is: byo-yomi periods refresh when stepping back and forward (KaTrain
+parity); New Game with handicap 1 still places one stone (saved explicitly).
+
+## Validation and measurement
+
+The baseline passed 2,384 tests, with one intentionally skipped benchmark. After
+scoring, rule-editor, engine/UI superko, ending-adjustment, navigation-QA, startup-rules, interactive-request, pass-history, library-metadata, tag-editing, folder-picker, hierarchy, initialization, panel-save, shared-save acknowledgement, save-order and field-edit fixes, `npm run verify` passed 2,788 tests, with the same skip,
+plus app/test typechecks, lint, and the production build. `npm audit` reported
+zero vulnerabilities in the lockfile dependency graph on 2026-09-12.
+
+A full-suite run exposed a timing assumption in the CPU cancellation regression:
+its 500 ms search deadline could expire before a batch completed under contention.
+The test now allows 10 seconds for the search while still requiring the queued
+cancellation and a resumable tree; production browser Stop retains its one-second
+latency budget.
+
+The initial installed Vitest was 4.1.8, below the lockfile's 4.1.11. Before the
+deep branch editing commit, `npm ci` refreshed dependencies from the unchanged
+lockfile. The full verification passed again on Vitest 4.1.11, and `npm ls`
+reported no invalid top-level dependencies.
+
+Every code commit was followed by the existing Chrome viewport suite. All 11
+sizes passed: 1280×800, 1024×768, 1024×500, 768×1024, 390×844, 360×800,
+320×568, 844×390, 568×320, 1280×460, and 1440×900. Screenshots were visually
+inspected for desktop, phone drawing tools, the phone review notice, beginner
+lessons, and deep branch editing. Deep copy/paste/setup/undo/redo also passed
+through real pointer controls at 1440×900 and 390×844.
+
+The first viewport run after refreshing dependencies reproduced a failure at
+768×1024. A cold-cache diagnostic traced it to a Vite worker dependency reload,
+followed by the helper replaying the interrupted test before React mounted.
+Warm-cache runs had hidden it. Fresh browser profiles also exposed a QA setup
+error: the test ignored an existing install banner hidden by the start screen,
+then expected an offline-ready event to replace that occupied slot. The setup
+now dismisses an existing banner whether or not the start screen hides it.
+Component probes also resolve the page's actual React runtime instead of
+hardcoding a default Vite cache path. The complete cold-cache sweep now passes,
+including score-quiz request ordering and real touch scrolling of static boards.
+
+Production response checks after `dbcdb55` measured:
+
+| Operation | Result | Existing budget |
+| --- | ---: | ---: |
+| First board move, synchronous handler | 3.91 ms | 25 ms |
+| Median subsequent board move | 0.37 ms | 5 ms |
+| Warm Settings dialog | 10.6 ms | 120 ms |
+| Trusted-input event timing, p98 | 24 ms | 150 ms |
+| Longest observed long task | 0 ms | 200 ms |
+
+These are local Chrome measurements, not a claim about all devices. The large
+study benchmark uses a synthetic pass-move line to isolate snapshot cost. Its
+speedup does not measure neural inference, normal-game strength, or rendered
+interaction latency. Run both kinds of check:
+
+```sh
+npm run verify
+npm run test:viewport
+npm run test:responsiveness
+npm run test:analysis
+npm run test:study
+```
+
+`test:study` starts its own dev server and isolated Chrome profile. It reports
+five marker-edit samples for a 2,001-node game and checks that a 12,000-comment
+export can be parsed back without lost or reordered comments. Its budgets are
+25 ms for the median edit and 500 ms for export. A recorded run measured
+0.390 ms and 13.10 ms respectively. Production response checks require a fresh
+build; dev-store timings are deliberately reported separately.
+It also copies and pastes a 12,000-comment branch, rebuilds both variations
+after a setup edit, and checks that displayed and stored positions agree.
+Nested SGF import and solution lookup are checked at the same depth, with
+500 ms budgets per operation and assertions on the complete resulting paths.
+The library naming probe adds 10,000 same-named imports to 10,000 existing
+entries, checking every resulting name within a 500 ms budget. It measured
+3.35 ms locally; this isolates naming and does not measure ZIP decoding,
+persistence, rendering, or input latency. The real ZIP import above includes
+file selection through the success toast and checks persisted content afterward.
+
+## Research and implications
+
+| Primary reference | What matters here | Next implication |
+| --- | --- | --- |
+| [KaTrain](https://github.com/sanderland/katrain#analysis) | Teaching, mistake-focused review, alternative-move analysis, and play/analyze separation are established workflows. Its documentation bases teaching feedback on full-strength engine analysis. | Preserve the existing Coach/Pro distinction, make strength and analysis confidence understandable, and validate search behavior before claiming professional equivalence. |
+| [Sabaki](https://github.com/SabakiHQ/Sabaki#features) | SGF collections, GIB/NGF import, variation copying, undo/redo, comment search, and a fast game tree support serious editing. | Reliability of annotations and large trees comes before adding more analysis controls. GIB/NGF import now uses the same validated import pipeline. Mixed-charset collections remain a separate design task. |
+| [SGF charset specification](https://www.red-bean.com/sgf/properties.html#CA), [PySGF file reader used by KaTrain](https://github.com/sanderland/pysgf/blob/main/pysgf/parser.py), and [browser Encoding Standard](https://encoding.spec.whatwg.org/) | SGF declares text encoding with `CA` and defaults to Latin-1. PySGF reads that declaration before parsing. Browsers provide decoders for the common East Asian formats. | The reproduced corruption is fixed at the byte boundary with native decoders. Undeclared UTF-8 remains compatible; undeclared East Asian encodings need explicit conversion. Multi-game and mixed-charset collections require a separate import design. |
+| [Lizzie](https://github.com/featurecat/lizzie) | Continuous analysis, full-game review, and configurable native-engine execution are central to its workflow. | Measure navigation and board responsiveness during real analysis, not just with an idle engine. |
+| [KataGo analysis protocol](https://github.com/lightvector/KataGo/blob/master/docs/Analysis_Engine.md) | Native analysis supports asynchronous requests and multiple positions, with cross-position batching for capable GPUs. | An optional native-engine connection is a promising professional throughput path. This is an architectural inference, not a measured speedup for this repository. |
+| [KataGo self-capture rules](https://lightvector.github.io/KataGo/rules.html) and [board legality implementation](https://github.com/lightvector/KataGo/blob/master/cpp/game/board.cpp) | A configured multi-stone self-capture removes the friendly group after resolving opponent captures; single-stone self-capture remains forbidden. | Policy masking, move simulation, undo, and previous-position replay must agree with the UI. The reproduced search gap is fixed; broader rule-specific evaluation remains under audit. |
+| [KataGo area fixtures](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/tests/testboardarea.cpp) and [v7 neural inputs](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/neuralnet/nninputs.cpp) | The “Area 2” fixture distinguishes self-capture-dependent territory. Native input preparation carries that rule into area calculation. Newer native history modes can additionally select pass-alive behavior from model metadata. | The missing selected-rule flag is fixed in all three input paths, root pruning, and terminal area counting. Model-version migration flags and broader seki/endgame positions still need reference checks. |
+| [KataGo root move pruning](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/search/searchhelpers.cpp) and [root safe-area calculation](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/search/search.cpp) | Four opponent passes trigger pruning inside strictly safe area, whose calculation depends on self-capture rules. Raw policy can still list a move that search prunes. | Restored the required history and selected-rule calculation. Regressions inspect actual visited candidates, rather than treating raw policy as evidence of pruning. |
+| [KataGo terminal area scoring](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/game/boardhistory.cpp) | Untaxed area scoring uses area calculation with the self-capture rule. Taxed area scoring uses independent life; the all-group tax subtracts two points per independent region. | Terminal search now follows this split for every supported area ruleset. Separate the resulting exact terminal score from the root's remaining mixture of neural and searched values. |
+| [KataGo superko history](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/game/boardhistory.cpp) | Native history tracks complete position hashes, includes the next player for situational superko, and computes banned moves for the next player after each move. Ordinary AGA/New Zealand/Tromp–Taylor passes do not clear that history. | The three-ko disagreement is now fixed through all evaluation/search callers, neural plane 6, deep expansion, graph identity, symmetry and child reuse. Exact encodings decide legality; graph fingerprints separate differing history sets. Broader native rule parity remains under audit. |
+| [KataGo ending adjustments](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/search/searchhelpers.cpp) and [root safe area](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/search/search.cpp) | Native search selects ending adjustments by scoring rule and uses self-capture-aware safe area for the connection exemption. | Removed the Chinese-only branch and fixed the safe-area flag, including reused roots. Friendly-pass neural suppression is separate: native Tromp–Taylor disables friendly passing, unlike the other offered area presets. |
+| [KataGo recorded input output](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/tests/results/runOutputTests.txt), [input test setup](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/tests/testnninputs.cpp), and [v7 feature generation](https://github.com/lightvector/KataGo/blob/d3263466bd61c9e6aaee51b48c08826e18026506/cpp/neuralnet/nninputs.cpp) | Native input generation distinguishes ending a phase from ending the game, retains only one history turn immediately after a normal phase ending, and applies the same history count to previous ladder boards. The output fixture records repeated passes and resumed play with encore disabled. | The reproduced consecutive-pass differences now have recorded reference regressions. Friendly passing follows the native preset, including Tromp–Taylor’s explicit false setting. Extend reference coverage to repeated-position endings and model-specific modes before claiming complete history parity. |
+| [Chrome DevTools dialog events and responses](https://chromedevtools.github.io/devtools-protocol/tot/Page/#event-javascriptDialogOpening) | The protocol exposes beforeunload confirmations and explicit accept/dismiss responses; an unanswered dialog can pause page execution. | Navigation QA now handles the real confirmation and exercises both staying and leaving. The app’s unsaved-game protection remains intact. |
+
+## Highest-priority remaining work
+
+| Priority | Finding or opportunity | Evidence and next step |
+| --- | --- | --- |
+| High | Check remaining asynchronous save acknowledgements and storage recovery. | Panel Save/Update, Ctrl+S, the desktop Save button, phone menu saves, and Save Copy now preserve newer recovery data when a save finishes late. Overlapping game saves now run in request order and the panel rejects older game-save notifications. Metadata edits now merge changed fields into the latest stored collection. Restoring a backup replaces the library rather than merging into it and asked nothing first: choosing a one-game backup against the bundled library turned eight items into one, with no dialog and nothing to undo it with, while Clear Library -- equally destructive, more obviously named -- did ask. Restore now reads and parses the file, then asks with both counts, and writes only on yes. Remaining full-library replacement and cross-tab writes still need adversarial checks, along with failed Save choices during game replacement. Also inspect recovery from a genuine IndexedDB read failure followed by fallback writes and later database availability. |
+| High | Validate remaining manual-count and handicap conventions. | The panel now passes the game's rules and handicap and saves the corresponding count. Its underlying manual estimator still floods empty regions and taxes connected living stone chains; broader seki and independently connected life regions need reference checks. Also compare root-declared `HA` compensation with the engine's root-board-based helper. These are separate from the proven omitted-input bug. |
+| High | Confirm the restored browser gate on Linux CI. | The formerly recorded first-mobile failure now reproduces locally with a cold cache and has a traced cause and fix. The full viewport gate is enabled with failure screenshots. GitHub-hosted validation is tracked by the CI run on the final main commit. |
+| High | Continue auditing large-tree operations. | Snapshotting, export, clipboard/replay, nested SGF parsing, and solution search are now iterative after reproduced failures. Inspect broad trees, library folder recursion, redundant position copies during import, and responsiveness during analysis next. |
+| High | Professional engine validation needs broader evidence. | The bundled model comes from KataGo's test fixtures. Existing golden/invariant tests are useful but do not prove b18 search equivalence across all supported rules and endgames. Self-capture, area inputs, search-history transport, root pass-alive pruning, and terminal area scoring now have direct regressions. Full-history superko now also has root/deep/browser regressions. Ending bonuses now also follow every offered rule. Consecutive-pass neural history, phase-end signals, friendly-pass presets, and previous ladder selection now also match the recorded reference cases. Validate repeated-position/irregular-turn phase resets, stronger weights, model-specific history modes, seki, handicap compensation, and territory encore next. |
+| High | Analysis provenance is not carried comprehensively through imported records and reports. | `AnalysisResult` exposes evaluation data without model/search identity. The undo revision fix prevents one stale-data path, but imported external analysis can still have unknown provenance. Design explicit origin, model, and settings metadata before presenting mixed-source comparisons as equivalent. |
+| Medium | Continue profiling large-library operations. | ZIP export preparation, batch import naming, single-folder duplication, and selection/deletion now use indexes, with measured gains on large fixtures. OGS sync now merges against current state; dropped-text imports and naming dialogs still use separate paths. Compression still takes most of total export time. The 12,000-folder picker crash and duplication metadata loss are fixed. Bulk duplication across multiple roots still repeats naming, indexing, and array copies. Fully expanded deep folder rendering and breadcrumb traversal remain separate checks. Native folder-copy timing varied: the first post-fix sample took 233–252 ms through its DOM update with 255–261 ms long tasks; the post-commit repeat took 45–72 ms with 68–70 ms long tasks. Profile repeated normalization, whole-store persistence, and rendering under controlled conditions before choosing the next optimization. Intentionally empty library reload now passes in both storage modes. Its empty state now offers a visible Import files button rather than pointing at the overflow menu. |
+| Medium | Initial bundle size and slower-device behavior need targeted profiling. | The current production entry is about 724 kB uncompressed / 213 kB gzip. Idle dialog warming and worker inference already help. Measure cold network loading and CPU-throttled interaction before choosing further split points; do not infer gains from line counts alone. |
+| Medium | Broaden browser and device coverage. | Chromium has the full viewport suite. Selected editing, export, theme and keyboard flows now also pass in Firefox 153 and WebKit 26.5 at three viewport sizes, with real WASM analysis on desktop. Physical phones and broader browser-specific engine fallbacks remain unvalidated. |
+
+## Feature order for beginners and experienced players
+
+1. **Guided first game:** Learn Go now exposes the existing fundamentals lessons
+   on both start screens. Next add a guided 9×9 first game. Keep Coach as the
+   plain-language path and let players reveal technical detail when useful.
+2. **Professional import compatibility:** GIB/NGF now work through normal
+   file, drop, launch, and library/ZIP paths. Auto tries UTF-8 then Korean;
+   other unmarked encodings require the explicit setting. Rejected archive
+   games now report their count and first reason. A multi-game collection
+   imports as one item that opens at its first game; measured on a three-game
+   file, the row read "Alice vs Bob · 9 moves" and opened at move 3, because
+   the move count spanned the file while every other reader described game one.
+   The count now describes the game that opens, and import says when a file
+   holds more. Saving such a record used to delete the games behind the one
+   being edited -- 187 bytes of three games became 165 bytes of one, with no
+   prompt and no undo -- so the trailing games are now carried across as the
+   verbatim text nothing ever parsed. Splitting a collection into separate
+   library items remains the design task noted above.
+3. **Reliable study archives:** harden deep branch editing, add meaningful
+   large-library measurements, and keep saved/exported content recoverable.
+4. **Analysis provenance and comparison:** show which model/settings produced
+   an evaluation and make any comparison between unlike analyses explicit.
+5. **Optional native analysis:** retain the browser-only quick start while
+   offering a documented connection to native KataGo for demanding review.
+   Assess transport, cancellation, progress, and setup cost before implementation.
+
+## Audit coverage so far
+
+The first pass mapped the repository, read architecture/engine/development and
+deployment material, traced edit history and SGF serialization in detail,
+inspected the analysis queue and worker boundary, checked model selection and
+both UI shells, scanned recursive functions across TypeScript sources, and read
+the library/persistence paths relevant to the next investigations. Full existing
+tests and repeated browser sweeps supplied broader regression coverage.
+
+Detailed line-by-line review of the full neural graph/search implementation,
+all import formats and storage failure modes, every study modal, and every
+accessibility path remains incomplete. The remaining investigations above are
+follow-up work beyond this audit’s wrap-up.
+
+## 2026-10-27 continuation: keyboard and metadata editing
+
+- Reproduced a command-palette selection at y=1396–1440 while its visible list
+  ended at y=692. Arrow navigation now keeps the selection visible, skips
+  unavailable commands, and wraps at either end. Clearing the search returns
+  focus to the input.
+- Reproduced Escape saving a komi draft of 12.5 instead of retaining 6.5. Komi
+  and handicap cancellation now bypass blur commits synchronously. Empty or
+  incomplete decimal input and malformed handicap values restore the saved
+  value; negative fractional komi and valid handicap edits still commit.
+- Composition keys now stay with the IME in the palette, Settings search,
+  game-info fields, library naming, Save Copy, and the note editor. The shared
+  Escape and app-shortcut handlers also respect composition, including the
+  Safari key-code 229 confirmation case. Save Copy uses the shared initial-focus
+  hook and selects its proposed name when focused.
+- Native Chrome key/pointer checks pass at 1280×800 and 390×844, including
+  unchanged game state and edit history after cancellation, selection visibility,
+  search focus, Save Copy focus, and normal commits. Composition events are
+  synthetic; this does not establish operating-system IME compatibility.
+- `npm run verify` passed with 3,269 tests, five intentional skips, both
+  typechecks, lint, and a production build. The new keyboard workflow check is
+  included in the viewport suite.
+
+## 2026-10-27 continuation: Find notes
+
+- Added Find notes to the Comment header in both layouts and to the command
+  palette. It searches complete saved comments, SGF position names, and move
+  coordinates across the main line and every variation, including collapsed
+  branches. A result identifies its move, color, and variation and opens that
+  exact node. Long comments show the passage around the match.
+- Results render 50 positions at a time, with Show more. Keyboard wrapping stays
+  within the rendered page, so Arrow Up cannot accidentally mount an entire
+  large study. Search is capped at the same 200 characters as other filters.
+- Collection and numbering use an explicit traversal and carry depth and
+  variation membership forward; a 12,000-comment regression passes without
+  recursion or repeated ancestor walks. Search snapshots saved annotations when
+  opened, so live analysis cannot repeatedly scan the study or reset selection.
+- Corrected a related palette issue discovered during this pass: rebuilding
+  commands for background analysis must preserve a valid keyboard selection.
+  Its browser regression advances the store's tree revision and checks both the
+  selected command and the visible search workflow.
+- Native Chrome workflows pass at 1280×800 and 390×844: variation navigation,
+  matching text below the first line, paging 130 notes, search focus, and
+  returning focus to the Comment trigger. The full 11-size viewport suite,
+  including dialog contrast and existing library/scoring workflows, passes.
+- `CI=1 npm run verify` passed: 3,203 tests, 77 intentional CI skips, both
+  typechecks, lint, and production build. The earlier non-CI run exercised the
+  real engine tests; this UI change did not alter engine code. Production
+  responsiveness passed: 6.58 ms first-move synchronous work, 1.01 ms median
+  move work, 48.3 ms warm-dialog open, 40 ms input-latency p98, no long tasks.
+
+## 2026-10-27 continuation: Library navigation
+
+- Reproduced a 40-folder path consuming a 783 px-high phone toolbar, with the
+  game tree beginning at y=839 in an 844 px viewport. The path now stays on one
+  horizontally scrollable row and starts at the current folder. Its complete
+  ancestry remains available to pointer and keyboard navigation. The same
+  fixture now has a 207 px toolbar and a visible tree starting at y=263.
+- Breadcrumb and loaded-game ancestry walks now use the panel's existing ID
+  index rather than searching the complete library for every parent. A
+  12,000-folder path test retains every level with exactly 12,000 lookups and
+  covers cycles and missing parents without mutating the records. Five local
+  calculation samples measured a median 346.94 ms before and 2.54 ms after;
+  these isolate the path walk and do not measure library loading or rendering.
+- Clearing Library and shortcut-reference searches now returns focus to the
+  input, so subsequent typing continues the search. Command and note-search
+  options stay out of the Tab sequence: arrow keys choose options, while Tab
+  reaches the dialog controls.
+- Native Chrome checks pass at 1280×800, 390×844, and 320×568 for path bounds,
+  current-folder visibility, all 40 keyboard-reachable ancestors, navigation,
+  the phone's 44 px target floor, and continued typing after Clear. The full
+  11-size viewport suite and `CI=1 npm run verify` pass (3,206 tests, 77 CI
+  skips, typechecks, lint, and production build).
+
+## 2026-10-27 continuation: Practice board sizes and saved defaults
+
+- New Game, Settings, SGF, NGF, text diagrams, photo-board setup and OGS
+  library sync now support every odd square board from 5 through 19. Existing
+  9/13/19 star points and handicap patterns are preserved. New sizes use
+  distinct in-bounds setup points, including all nine handicap stones.
+- Startup used to construct an empty 19x19 game before loading preferences.
+  It now honors saved board size and handicap, including White to play and
+  SGF setup properties. Changing a default still leaves the live game intact.
+- Text-diagram parsing checks both dimensions before treating an all-dash
+  row as a border. A bordered 9x9 is eleven rows tall; supporting 11x11 must
+  not turn it into the wrong board or strip genuine empty grid rows.
+- Regression coverage includes corner play, undo/redo, SGF round trips,
+  startup preferences, OGS filtering, NGF coordinates and bordered diagrams.
+  Real engine evaluation passes for all sizes 2–19 (18 engine cases).
+- Native desktop and 390/320 px phone checks pass for all five added sizes:
+  create, corner play, real WASM analysis, SGF file download and re-import,
+  changing the saved default, and opening that default after reload. The
+  reload deliberately accepts the private fixture's unsaved-game guard.
+- `CI=1 npm run verify` passes: 3,226 tests, 77 intentional CI skips,
+  typechecks, lint and production build. Production responsiveness remains
+  within every budget: first move 14.29 ms, median move 1.00 ms, warm dialog
+  50.3 ms, input latency p98 48 ms, longest observed task 68 ms.
+
+## 2026-10-27 continuation: Mobile landmarks and immediate search actions
+
+- Full-screen Tree, Review and Library tabs now have named landmark regions,
+  including their tab-panel containers. The wrapper maintains bounded flex
+  height so the content retains its original scrolling behavior. An empty or
+  loading library no longer declares a tree without any tree items.
+- Settled axe-core 4.14.0 scans report no violations across the sampled board,
+  Review, notes search, Settings, pro-game browser, score quiz and Library
+  states on desktop and phone. These are scoped samples, not a claim about
+  every state of the application.
+- A broad browser run caught a notes-search timing failure: filtering 100
+  shown results down to one and immediately pressing Enter could consult the
+  previous selection index. Input changes now reset selection synchronously;
+  the palette also keeps selection by command ID through background updates.
+- The keyboard workflow regression passes on desktop and phone, including
+  paging and immediate filtered-result activation. Library navigation checks
+  also verify landmark ancestry and valid empty-search semantics.
+
+## 2026-10-27 continuation: Candidate controls
+
+- Reproduced two Pro candidate rows failing axe's `nested-interactive` rule:
+  each variation disclosure was a focusable span inside its play button. The
+  disclosure is now a separate native button with expanded state and a linked
+  content region. Shared grid columns keep it aligned beside the move.
+- Native phone input reproduced an unintended first-tap move. Touch-generated
+  mouse and focus events selected the preview before the click handler ran,
+  so the handler treated the same tap as confirmation. Hover previews now use
+  non-touch pointer events; keyboard focus previews only when focus is visible.
+  Coach and Pro both preview on the first tap and play on the second.
+- Opening all Pro columns at 320 px squeezed the detail button to 8.4 px and
+  clipped the score-spread column. Candidate content now has one bounded
+  scroller for both axes, with a sticky header, consistent column widths, and
+  a non-shrinking detail control. Expanded text belongs to its current node
+  and does not automatically reopen on another position with the same move.
+- Native Chrome regressions pass at 1280×800, 390×844 and 320×568: independent
+  disclosure, Space/Enter, keyboard and mouse play, touch confirmation in both
+  experiences, complete horizontal access, aligned columns and sticky headers
+  over a long list. The regression is included in the viewport suite.
+- Settled axe scans are clear for the sampled Pro lists at 1280, 390 and 320 px,
+  including expanded detail columns on the narrowest phone. The wider code
+  checks pass with 3,226 tests and 77 intentional CI skips.
+- The complete 11-size viewport suite passes, including the new practice-board
+  and candidate checks, keyboard workflows, library save recovery and scoring.
+
+## 2026-10-28 continuation: Report PDF pagination
+
+- Reproduced a 30-move synthetic report producing 23 PDF pages for ten
+  positions. Each board's continuation split onto another page and a blank
+  page remained at the end. Hiding the app with visibility left its layout
+  in the print flow, and viewport-relative figure sizes exceeded the paper.
+- The report now uses a body portal, as kifu printing already does. Print CSS
+  removes the app from flow, uses the full paper width and places a bounded
+  diagram beside its continuation. Header duplication, page spacing and the
+  empty trailing page are removed. The nested on-screen guide stays off paper.
+- Diagrams include standard coordinates on all four sides, including Go's
+  skipped I. A legend identifies the played-move circle and suggested-move
+  square. Printed wording now identifies Web KaTrain and calls the engine line
+  a suggested continuation rather than a correct move tree.
+- The browser's own Print command prepares diagrams through `beforeprint`,
+  as well as the app's Print / Save PDF button. Existing game state and filters
+  are retained, and the report remains usable on screen after printing.
+- Native Chrome checks generate and inspect actual PDF page/image objects on
+  desktop and phone. The fixture now produces 12 pages including all ten
+  diagrams; a single position with 24 continuation moves produces one page.
+  The app-button and direct-browser paths pass, including guide dismissal and
+  unchanged game state. These checks are included in the viewport suite.
+- `CI=1 npm run verify` passes with 3,228 tests, 77 intentional CI skips,
+  typechecks, lint and production build. The complete 11-size viewport suite
+  passes with the generated-PDF checks included. A final print-only shadow
+  removal is covered by rerunning the native PDF regression.
+
+## 2026-10-28 continuation: Readable analysis text
+
+- Reproduced candidate contrast failures in all four UI themes, Coach and Pro,
+  and both move-quality palettes. Coach words inherited board-marker colors
+  (Best measured 3.87:1 on Light); low-visit text was additionally faded to 55%
+  opacity (a selected quality word measured 1.17:1).
+- Quality words now inherit the row's readable theme color. Low-visit numbers
+  use italics and a faded quality dot while the text stays opaque. Selected
+  and keyboard-focused numeric columns inherit the selected row's text color.
+  The existing visit-count explanation remains available to assistive tech.
+- Small score and win-rate axis labels also fell below 4.5:1. Their shades now
+  retain contrast against the graph surface; the plotted line colors remain
+  the same.
+- The browser contrast guard now composes both text and background through
+  ancestor opacity. Its former calculation ignored opacity. Disabled controls
+  and their associated labels are exempt, while other faded text remains
+  audited. Seven regressions
+  include 50%-opacity black on white (3.98:1), group opacity, transparent text,
+  the large-text threshold, inactive controls, and their associated labels.
+- Native browser coverage checks complete analyzed views in 16 combinations of
+  UI theme, experience and move-quality palette, including selected low-visit
+  candidates. The shared computed-color audit and independent settled axe
+  samples pass all 16 cases.
+- The code checks pass, including the full CI test suite and production build.
+  Focused contrast regressions and the complete 11-size viewport suite pass
+  with the inactive-label exemption included.
+
+## 2026-10-28 continuation: Candidate preview placement
+
+- Reproduced a center-board 80-move preview with a 346 px card but only 282 px
+  visible; the board clipped its final lines. The board's own container has
+  little side space, while the surrounding desktop stage has usable margins.
+- Candidate cards now use that stage and prefer an available side margin,
+  reserving room for panel handles. Width and measured height determine the
+  final position; resize and rotation update it without resizing the board.
+  A small board's larger stones do not consume the outside margin gap.
+- Short views retain all metrics and show the PV count instead of squeezing
+  an entire sequence into the card. Full continuation text, Copy and Keep in
+  tree are now available in both Coach and Pro. B win and B score identify
+  the Black perspective. Touch gestures do not display a hover card under the
+  finger, and the card never captures pointer input.
+- Moving mouse focus from a variation disclosure to its play button now keeps
+  the existing preview, so the mouse still plays with one click. An unpreviewed
+  touch candidate still needs a preview tap and a confirmation tap.
+- Native Chrome checks pass at 1280×800, 1024×500, 390×844, 320×568 and
+  568×320, including center/corner candidates, an 80-move sequence, all ten
+  metrics, pointer ownership, unchanged game state and clockwise rotation.
+  Card text passes contrast checks in all four UI themes. Nine placement
+  regressions also cover fallback geometry, edge handles and small boards.
+- Relative text sizing follows the browser font preference. With a 20 px root
+  font in a short landscape view, the card reflows its metrics into two
+  columns and remains inside the usable stage. Reserved padding for bars and
+  notices is excluded from the card's vertical space.
+- The full code checks and complete 11-size viewport suite pass. Final targeted
+  checks cover all 11 sizes plus the enlarged-text case, followed by a fresh
+  production build. Production responsiveness passes: 4.93 ms first move,
+  1.09 ms median move, 63.9 ms warm dialog, 40 ms input latency p98, 51 ms
+  longest observed task.
+
+## 2026-10-28 continuation: Live candidate previews
+
+- Reproduced a stationary board hover retaining 70 visits, 55% win rate and
+  its original continuation after the candidate list had updated to 12,345
+  visits, 60% and a different line. Board and candidate-panel previews now
+  resolve their selected coordinate against the current analysis. Removing
+  a candidate or clearing analysis removes its old preview immediately.
+- Search refinements preserve the continuation's animation progress instead
+  of restarting it. Moving from the candidate list onto the same board point
+  records the board's hover before the list releases its selection.
+- Hover ownership belongs to each visit to a position. Navigation clears both
+  board and panel previews, including cached-analysis positions and returning
+  to an earlier node; queued input from a previous position cannot revive it.
+- Explicit previews respect scoring, setup editing and analysis-region tools.
+  Historical report rows still preview their own continuation, and the report's
+  review queue retains its place when Next navigates to another position.
+- A native Chrome regression exercises these cases on desktop and phone and
+  is included in the complete viewport suite. Its deterministic analysis
+  fixtures verify display and interaction behavior rather than engine strength.
+- `CI=1 npm run verify` passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build. The complete 11-size viewport suite
+  passes with the stationary-pointer and historical-report checks included.
+
+## 2026-10-28 continuation: Continuation mouse gestures
+
+- Reproduced the help's advertised wheel gesture advancing the game from
+  move 0 to move 1 instead of reading a candidate's continuation. Middle-click
+  left the tree unchanged. Both board callbacks existed but were not connected.
+- Wheel input over a candidate now steps between the first and final move,
+  pausing the automatic reveal. Search updates refresh the displayed line and
+  clamp the visible prefix when the engine returns a shorter continuation.
+  Moving away restores ordinary wheel navigation; Shift-wheel still uses the
+  existing mistake-navigation path and browser zoom gestures remain available.
+- Middle-click keeps the visible prefix, preserves the current position and
+  existing game branches, and uses the existing undoable tree action. Repeating
+  it reuses the branch. The browser's middle-button autoscroll is suppressed.
+- The candidate card shows the step count and gesture hint, using its existing
+  bounded placement and compact layout. It does not add another panel over
+  continuation stones. Candidate text and mobile tiles retain their explicit
+  Keep in tree controls for keyboard and touch access.
+- Native Chrome coverage exercises bounded stepping, paused animation, live
+  refinements, prefix length, duplicate prevention, Undo/Redo and normal game
+  navigation on desktop, phone and short landscape layouts, including enlarged
+  text and all ten candidate metrics. It is included in the viewport suite.
+- Code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build. The final complete 11-size viewport
+  suite passes, including all four gesture cases. An earlier run encountered
+  an intermittent Chrome practice-board reload abort; its 15 isolated cases
+  and the final full suite passed without a navigation behavior change.
+
+## 2026-10-28 continuation: Game-specific metadata drafts
+
+- Reproduced a pending player-name draft surviving native SGF file import on
+  desktop and phone. The imported name initially read correctly in the store;
+  pressing Tab then overwrote it with the old game's draft and added an undo
+  entry. A komi draft of 42.5 similarly replaced the imported game's 7.5.
+- Game-info editor state is now keyed to the game root, resetting text, komi,
+  handicap and editing state together on replacement. Text-field blur and
+  unmount cleanup also check ownership before writing, while closing a panel
+  within the same game retains its pending-text save behavior.
+- The native regression uses actual SGF file input with an unfinished name,
+  komi or handicap edit. It checks the imported metadata, root setup stones,
+  board size, move sequence and empty undo history, then verifies fresh input
+  values, spaced player names, Enter, Undo and Done on desktop and phones.
+- All nine native cases pass at 1280×800, 390×844 and 320×568, as do the
+  existing desktop/phone keyboard workflows. `CI=1 npm run verify` passes
+  with 3,244 tests, 77 intentional CI skips, typechecks, lint and build.
+
+## 2026-10-28 continuation: Pass recommendations
+
+- Reproduced a pass-only analysis displaying "No candidates for this position
+  yet" on desktop and an empty continuation strip on mobile. Both controls
+  discarded negative coordinates, including the engine's canonical pass.
+- Coach and Pro now rank Pass alongside point moves, preserving its metrics
+  and continuation. Pass rows invoke the ordinary pass action, retaining the
+  existing preview/confirmation behavior. Mobile tiles can pin and keep lines
+  beginning with a pass, including later passes in the same continuation.
+- Six native cases cover Coach/Pro at 1280×800, 390×844 and 320×568: ranking,
+  pass-only results, disclosure, keeping Pass → D4 → Pass, Undo, mobile tile
+  preview, keyboard activation and two confirmed passes. They verify the
+  expected players in saved variations and that passing places no stones.
+  The regression is included in the complete viewport suite.
+- The existing native candidate-control and live-preview checks also pass.
+  `CI=1 npm run verify` completed with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build before the execution disconnect.
+
+## 2026-10-28 continuation: Unfinished notes across panel changes
+
+- Reproduced mobile Comment collapse discarding an unfinished note. Desktop
+  collapse kept its mounted editor, but switching to the mobile shell also
+  discarded that draft when the desktop panel unmounted.
+- Unmount now preserves a changed draft on its original position, following
+  the existing navigation-rescue behavior. Cancel and explicit Save clear the
+  pending draft; untouched editors do not write. Empty drafts preserve a
+  deliberate deletion. Saved changes use the existing undoable note action.
+- Ownership is tracked before navigation synchronization, so simultaneous
+  navigation and collapse cannot assign the outgoing note to the arriving
+  position. Replacing the game cannot write into the replacement's note.
+- Native checks pass at 1280×800, 390×844 and 320×568, covering responsive
+  shell handoff, collapse, Undo/Redo, Cancel, deletion, untouched editors,
+  replacement games, concurrent navigation and explicit Save. The regression
+  is included in the viewport suite; 21 focused note tests also pass.
+- Full code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and build. The browser run passed keyboard and note-draft
+  coverage, then stopped at the previously observed Chrome practice-board
+  reload abort (`ERR_ABORTED`); that navigation is being isolated separately.
+
+## 2026-10-28 continuation: Browser navigation readiness
+
+- Isolated the intermittent mobile practice-board reload abort. Closing
+  Settings removes its dialog before the Back-gesture history marker is
+  popped. The trace shows a same-document history traversal starting after
+  the requested reload and aborting it.
+- The practice check now waits for both dialog dismissal and history cleanup.
+  A controlled delayed Back call and network latency reproduce the failure
+  without the barrier; the same case completes with the barrier. The 320 px
+  practice case keeps that coverage in the browser suite.
+- Note retention input also waits two animation frames after scrolling before
+  measuring its target. An earlier fast click had reached Add board when a
+  focus-related scroll moved the Comment header.
+- All 15 practice-board cases and all three note-retention viewport flows pass
+  with these readiness checks, including the delayed-history case at 320 px.
+
+## 2026-10-28 continuation: Note recovery on page exit
+
+- Reproduced native reload silently losing an open note draft on desktop and
+  phone, without a before-unload warning or recovery copy. React unmount
+  cleanup does not run when the browser destroys its document.
+- Pending note text is now committed on before-unload, page-hide and hidden
+  visibility events, using its original node ID. The exit callback claims the
+  browser warning for a changed draft and requests an immediate recovery
+  flush after committing, independent of lifecycle-listener order.
+- Typing and append actions update the pending snapshot synchronously, so a
+  hide event can preserve text before passive effects run. Cancel clears it;
+  unchanged editors do not create a recovery copy or exit warning.
+- Recovery writes track the store's tree revision. A draft committed during
+  exit is written even when the prior revision's debounce already completed;
+  repeated lifecycle events do not rewrite the same revision.
+- Nine browser cases pass at 1280×800, 390×844 and 320×568. Native reloads
+  exercise warning cancellation, recovery of the latest Unicode draft,
+  clean Cancel and untouched-editor reloads, and recovery after deletion.
+  Synthetic hide events also verify immediate persistence and one write per
+  revision. These checks are included in the viewport suite; 23 focused tests,
+  typechecks and lint pass.
+- Full code verification passes with 3,244 tests and 77 intentional CI skips.
+  The complete 11-size viewport suite passes, including note retention and
+  exit recovery, delayed-history navigation, Pass controls, print output,
+  continuation gestures and game-info replacement checks.
+
+## 2026-10-28 continuation: Game-info recovery on page exit
+
+- Reproduced unfinished player-name and komi edits disappearing on native
+  reload at desktop and phone widths, without a warning or recovery copy.
+  Their normal blur/unmount commits do not cover document destruction.
+- Notes and game-info fields now share a lifecycle hook for owned drafts.
+  Text, komi and handicap values commit through their existing store actions,
+  request immediate recovery persistence and claim the browser warning when
+  a value changes. Root identity guards still reject writes into another game.
+- Input changes keep pending values current before a render. Escape clears
+  them before blur; invalid numbers do not change the game. Done explicitly
+  finishes numeric edits, including platforms that do not focus the button.
+- Eighteen native cases pass at 1280×800, 390×844 and 320×568. They exercise
+  name deletion, latest-value recovery for names/komi/handicap, correct handicap
+  setup stones, Cancel, invalid and untouched fields, and simultaneous note
+  and metadata recovery. The new regression is included in the viewport suite;
+  26 focused tests, typechecks and lint pass.
+- Full verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and build. The complete 11-size browser suite also passes,
+  including the existing replacement, note recovery and library save checks.
+
+## 2026-10-28 continuation: Open drafts in saved and shared games
+
+- Reproduced Save SGF, Copy SGF, share links and Save Copy to Library taking
+  their snapshot before an open note editor committed. The downloaded, copied
+  and stored games contained the older note while the newer text stayed visible.
+- User-requested save and export actions now synchronously finish owned drafts
+  through the shared lifecycle hook before serializing. Clipboard and share
+  actions read the current store after the commit, avoiding an older render's
+  tree. Background serialization and asynchronous save comparisons stay pure.
+- Seventeen native cases pass across 1280×800, 390×844 and 320×568. They inspect
+  actual downloads, clipboard SGF, decoded share URLs and stored Library games,
+  covering Unicode text, deliberate deletion, Cancel, loaded-game updates,
+  the desktop Library panel, keyboard copy and mobile panel handoff. The new
+  checks are included in the viewport suite.
+- The existing nine note-exit and eighteen metadata-exit cases also pass.
+  Full code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build.
+- The complete 11-size browser suite passes at `62a3fb4`, including all new
+  save/export cases and existing library failures, overlapping saves, recovery,
+  analysis, print output, keyboard and responsive-layout workflows.
+
+## 2026-10-28 continuation: Protect drafts before game replacement
+
+- Reproduced native SGF import replacing a clean game with an unfinished note
+  without offering Save, Discard or Cancel. The visible note disappeared and
+  no recovery copy remained because the guard only compared the stored tree.
+- The replacement guard now finishes owned editor drafts before checking for
+  unsaved changes. Existing choices then apply to the latest text: Save retains
+  the original game, Discard replaces it, and Cancel keeps its edited contents
+  and recovery copy. Untouched editors and invalid numbers do not make it dirty.
+- Twenty-seven native cases pass across 1280×800, 390×844 and 320×568: all three
+  choices for note and player-name drafts, actual outgoing SGF downloads, and
+  clean imports with untouched notes or invalid komi/handicap. Nine metadata
+  replacement flows also pass with explicit Discard and direct store replacement
+  coverage, retaining the root ownership guard during editor cleanup.
+- Full code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build.
+
+## 2026-10-28 continuation: Compact, reliable live-depth editing
+
+- Reproduced typing 37 live-analysis visits and dismissing the selector with
+  an outside click retaining 16. The document pointer handler removed the input
+  before native focus could deliver its blur commit. Pointer dismissal now
+  explicitly blurs the mounted input; Escape continues to cancel its draft.
+- Phone/tablet selectors now fit their content and scroll within the available
+  space. The previous fixed top/bottom layout left a large blank area over the
+  board. A ResizeObserver measures the bottom dock so enlarged text cannot make
+  the exact-visits field extend behind navigation controls.
+- Twenty-seven native checks pass at 390×844, 320×568 and 768×1024: outside taps,
+  Enter, Tab, Close, Escape, preset changes and empty input. They verify persisted
+  settings, a stopped engine, unchanged game positions, compact bounds and
+  reachable touch input at 100% and 200% text. The regression joins the viewport
+  suite; the original real-analysis reproduction also keeps 37 after dismissal.
+- Full code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build.
+- The complete 11-size browser suite passes at `56ebb66`, including the new
+  replacement-choice and depth-selector checks alongside the save/export,
+  library recovery, analysis, print and responsive-layout regressions.
+
+## 2026-10-28 continuation: Main-line note search
+
+- Find notes now offers a Main line only switch. Searches include every
+  variation by default; limiting them retains the query and includes annotated
+  starting positions and all descendants on the SGF main line. Changing scope
+  resets pagination and selection without navigating or editing the game.
+- Empty states distinguish a query with no matches from a main line with no
+  notes. Reopening the dialog includes every variation again.
+- Scope controls, counts and results share the scrollable content area, while
+  the search field and close button stay visible. This fixes enlarged text
+  consuming the entire results area on a 320 px phone.
+- Native keyboard workflows pass at 1280×800, 390×844 and 320×568. They cover
+  filtering five annotated positions to four, retaining a variation-only query,
+  Space activation, navigation, reopening defaults, resetting a 100-item page,
+  variation-only empty states and reading results at 200% text.
+- Full code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build.
+
+## 2026-10-28 continuation: Bounded search pastes and readable empty states
+
+- Native pastes of 10,000 characters into the command palette, shortcut help,
+  Settings and pro-game search were accepted in full. Filtering already limited
+  its work, but the input and empty-state messages still held the entire paste;
+  those messages measured roughly 66,000 px wide in desktop Chrome.
+- The four fields now use the existing 200-character search limit. Empty
+  messages in those dialogs and Find notes wrap unbroken query text within their
+  containers, keeping the dialog width stable.
+- Fifteen native cases pass at 1280×800, 390×844 and 320×568. Each pastes 10,000
+  characters, verifies the native input limit, bounded message length and no
+  horizontal overflow, then replaces it with an ordinary query and finds results.
+  Current game identity, annotations, board and tree revision stay unchanged.
+  These cases are included in the viewport suite.
+- Full code verification passes with 3,244 tests, 77 intentional CI skips,
+  typechecks, lint and production build.
+- The complete 11-size browser suite passes at `5e8e9d0`, including main-line
+  search, enlarged-text results and all fifteen search-paste cases.
+
+## 2026-10-28 continuation: Theme report verification
+
+- The reported theme-selection issue does not reproduce at 1365×633 in the
+  current app. Native Settings selection gives Dark, Kaya, Studio and Light
+  distinct shell and panel colors. System follows dark/light media changes,
+  and Dark survives a reload. No theme implementation change was needed.
+
+## 2026-10-28 continuation: First-visit offline board and analysis
+
+- The production offline check reproduced three failed requests for the
+  default Hikaru board and stone SVGs after a first visit. They were absent
+  from the precache. The existing asset guard matched only `katrain/` paths,
+  silently skipping every SVG in the default theme.
+- The default SVGs now join the precache. The guard derives all resolved board,
+  stone and variation assets, so another default theme cannot evade it. Its
+  revised assertion failed before the fix; all 35 focused asset/worker tests
+  pass afterward.
+- Speculative dialog downloads now pause while offline and restart on a
+  reconnect, retaining Data Saver and slow-connection checks. The stricter
+  production probe had caught unused dialog chunks being fetched while offline.
+- `test:offline` now uses a private profile, disables HTTP caches, restores its
+  owned recovery and plays a new position. A real worker response must report
+  at least 16 WASM visits for that one-stone position with White to play. An
+  uncached CORS endpoint succeeds in the online worker and fails in the new
+  offline worker, proving the boundary independently of `navigator.onLine`.
+- The former offline-analysis timeout was blocked by the recovery modal; its
+  repeated synthetic shortcuts never reached the engine. The new check uses
+  native controls and cannot pass with the restored position's cached result.
+- All 44 focused cache/warming tests, the production build and the strengthened
+  production offline check pass, including no failed page resource requests.
+- Full verification passes with 3,245 tests, 77 intentional CI skips,
+  typechecks, lint and build. The production offline check also passes with
+  `/web-katrain/` as the deployment base; the normal local build is restored.
+
+## 2026-10-28 continuation: First-ever offline analysis
+
+- A separate cold-install probe reproduced an engine error: no analysis had
+  run online, so the lazy hashed engine worker was absent from CacheStorage.
+  The model and WASM were available, but the browser could not start the worker.
+- The production build now records the actual worker URL in index metadata.
+  Install caches it alongside the optional model assets without starting the
+  engine. A failed download preserves the offline shell; cache cleanup retains
+  the current worker and removes older workers. Staged updates keep the new
+  worker separate until activation.
+- The production offline check now covers two fresh profiles. One never starts
+  KataGo online and uses a test-owned worker only for the positive network
+  control. The other analyzes online and restores its recovery offline. Both
+  disable HTTP caches, verify network isolation and require a real 16-visit WASM
+  result for a newly played position with White to play.
+- All 34 focused worker/asset tests pass, including deployment-prefix URLs,
+  optional worker-download failure, cache retention and update staging. Both
+  production scenarios pass at `/` and `/web-katrain/` with no failed page
+  resource requests.
+- Full verification passes with 3,247 tests, 77 intentional CI skips,
+  typechecks, lint and build; the default local build is restored.
+
+## 2026-10-28 continuation: Shortcut reference with enlarged text
+
+- Native checks reproduced a default-size shortcut row painting into the next
+  column. At 200% text, the reference gained a horizontal scrollbar on desktop;
+  a 320 px phone had roughly 531 px of content inside its 270 px dialog body.
+- Reference grids now choose columns using the available space and text size.
+  Labels and binding chips wrap within their rows, including long pointer and
+  gamepad labels on the narrowest phone.
+- The existing native keyboard workflow now checks every reference row for
+  overlap and horizontal overflow at 100% and 200% text. All six layout cases
+  pass at 1280×800, 390×844 and 320×568, alongside search, focus, IME ownership,
+  game-info edits, note filtering and pagination. Reading help leaves the game
+  unchanged.
+- Typechecks, lint, production build and all 3,247 tests pass, with 77
+  intentional CI skips.
+
+## 2026-10-28 continuation: Library action keys and focus
+
+- Native Enter on a file's Select and More actions buttons opened the game
+  instead. Folder collapse stayed expanded and changed the current folder.
+  The row's key handler was intercepting its descendants' native button keys.
+- File and folder row handlers now act only when the row itself owns the key,
+  retaining their direct navigation and context-menu shortcuts.
+- Closing a row actions menu also dropped focus. Escape now returns to its
+  opener, and menu actions restore that opener before mounting a dialog, so
+  Rename receives focus and Cancel returns to a connected control. Outside
+  pointer dismissal continues to focus the newly clicked control.
+- All 27 native check groups pass at 1280×800, 390×844 and 320×568: Tab reaches
+  controls; Enter and Space select and deselect files/folders, open menus and
+  expand/collapse folders; Rename owns focus; Escape returns to its opener;
+  outside dismissal preserves search focus. Arrow navigation, Shift+F10 and
+  Enter on the row itself retain their behavior. The current game and stored
+  records remain unchanged until the explicit final game-open check.
+- These checks join the viewport suite. All 25 focused library keyboard and
+  accessibility tests pass, alongside typechecking and focused lint.
+- Full verification passes with 3,247 tests, 77 intentional CI skips,
+  both typechecks, lint and production build.
+- The full 11-size viewport suite passes at `3396515`, including the enlarged
+  shortcut reference and all 27 Library keyboard/focus check groups.
+
+## 2026-10-28 continuation: Canceling OGS sync at every stage
+
+- A native controlled-response probe confirmed that Cancel closed the dialog
+  while its player lookup continued. Releasing that obsolete response started
+  a game-list request and changed the remembered username after cancellation.
+- One controller now owns the entire sync: lookup, paginated listing, SGF
+  downloads and shared-queue backoff. Cancel, Close, Escape and unmount abort
+  that controller. Obsolete completions cannot update preferences, import
+  games or change a later dialog's state. A synchronous request guard prevents
+  duplicate starts before React updates the running state.
+- OGS request utilities accept the same cancellation options. Canceled
+  downloads do not count as failures, and stopping one sync retains the
+  server's rate-limit deadline for the next. Username IME confirmation no
+  longer starts a sync.
+- All 39 focused OGS tests pass, including six new cancellation regressions
+  for active/queued requests, pagination, downloads and cooldown preservation.
+- Twelve native cases pass across 1280×800, 390×844 and 320×568. Every stage
+  aborts through its dialog controls; a newly opened sync then imports a real
+  fixture SGF through the normal library path. Canceled attempts leave saved
+  records untouched, and sync never replaces the current game. Synthetic IME
+  confirmation keys do not submit; an ordinary native Enter still does.
+  All OGS requests are intercepted fixtures, with no real account or service
+  traffic. These cases are included in the viewport suite.
+- Full verification passes with 3,253 tests, 77 intentional CI skips,
+  both typechecks, lint and production build.
+
+## 2026-10-28 continuation: Score-quiz answer validation
+
+- Native Enter in a cleared answer field started evaluation, displayed a
+  zero-point Black guess and counted a round. No answer had been entered.
+- The quiz now requires a nonnegative decimal in the half-point steps already
+  specified by its input. Invalid drafts keep Reveal disabled, explain the
+  constraint through an accessible description and cannot start evaluation
+  through Enter. IME confirmation leaves the draft alone. An explicit zero
+  remains valid and is displayed as Even.
+- Fifteen native check groups pass at 1280×800, 390×844 and 320×568. Blank,
+  negative, unfinished and off-step input produces no evaluation or round;
+  zero submits with native Enter, White +4.5 submits by pointer/touch, and
+  repeat practice retains one scored round. The current game stays unchanged.
+  Fixed model responses isolate input behavior from engine quality.
+- The prior request-ordering checks also pass at desktop and narrow-phone
+  sizes, covering late results, errors, retries and close/reopen. All ten
+  focused quiz/numeric tests, both typechecks and lint pass. The native answer
+  checks are included in the viewport suite.
+- Full verification passes with 3,253 tests, 77 intentional CI skips,
+  both typechecks, lint and production build.
+- The full 11-size viewport suite passes at `15a26db`, including all twelve
+  OGS cancellation cases and fifteen native quiz-answer check groups.
+
+## 2026-10-28 continuation: Firefox and WebKit core-flow checks
+
+- Firefox 153 and WebKit 26.5 pass selected core flows at 1280×800, 390×844 and
+  320×568: note search with main-line filtering and Enter navigation; note
+  editing, Save and Cancel; a real downloaded SGF containing the edit; four UI
+  themes and System color changes; the shortcut reference at 200% text.
+- Both engines also produce a real 16-visit WASM analysis on desktop. These
+  passes report no uncaught page errors. No browser-specific product repair
+  was needed for the tested flows.
+- Test browsers and supporting runtime libraries live in temporary directories;
+  the app and its package dependencies are unchanged by that setup. This tests
+  the Linux browser engines, not physical phones or macOS/iOS Safari.
+
+## 2026-10-28 continuation: Quiz practice feedback and landscape results
+
+- Quiz statistics now explain that each position counts once and subsequent
+  guesses are practice. The three statistics wrap instead of colliding in a
+  narrow column.
+- The short-landscape grid allowed the feedback row to be smaller than its
+  contents. At 568×320, the result started 22 px above the scrollable body even
+  at scrollTop 0, making its title unreachable. The row now keeps its content
+  height; a cancellable reveal-frame scroll brings the complete feedback into
+  view.
+- All 25 native answer check groups pass across desktop, both portrait phones
+  and 844×390/568×320 landscape layouts. The reveal card must fit inside the
+  visible scroll region. Prior stale-result, retry and close/reopen checks also
+  pass, along with all ten focused quiz/numeric tests and lint.
+- The production build also passes.
+
+## 2026-10-28 continuation: Readable nested libraries
+
+- Thirty expanded folders reproduced almost blank library views: indentation
+  pushed the last game outside the pane, leaving four pixels for its name.
+  At the default desktop width, names were already too narrow after six levels.
+- Tree indentation is now bounded by panel width, nested names can use two
+  lines, and rows announce their actual hierarchy level. Nested pagination
+  includes its indentation in its width and keeps a 44 px touch target.
+- WebKit's stable scrollbar gutter also made mobile child rows eight pixels
+  wider than their scroll area. Reserving the native scrollbar consistently
+  fixes that overflow without changing the outer panel width.
+- Expanded 40-level paths with 105 nested games pass in Chromium, Firefox 153
+  and WebKit 26.5 at 1280×800, 390×844 and 320×568. Names remain readable,
+  horizontal overflow is absent, pagination fits, collapse/expand retains
+  revealed rows, hierarchy levels remain accurate and the final game opens.
+- All 38 focused library tests, both typechecks, lint and the existing 27
+  keyboard/focus check groups pass. The expanded navigation check joins the
+  viewport gate. The dependency audit reports zero vulnerabilities.
+
+## 2026-10-28 delivery: Depth-check readiness
+
+- The PR browser gate reached the 320×568 enlarged-text depth check but did
+  not observe its expected saved value. That path sent text and dismissed the
+  editor without confirming native focus or the new input value.
+- The check now waits for opening focus, verifies input focus after the touch,
+  and confirms the enlarged-text draft before dismissing. All saved-depth,
+  persistence, cancellation and stopped-engine assertions remain in place.
+  Failures also report input, focus and store state for diagnosis.
+- The focused native check passes on both phone widths and tablet at normal
+  speed and with sixfold CPU slowdown. Script lint and syntax checks pass.
+- The next CI run localized the failure to native focus. Chrome 156 reproduced
+  it locally: nearest-edge scrolling put the input at the popover's clipping
+  edge while the enlarged dock was still changing its height. The touch could
+  miss even though the earlier DOM hit test accepted that coordinate.
+- The helper now centers the control and requires its full height inside the
+  popover before touching it. The same assertions pass in Chrome 154 and 156,
+  with sixfold CPU slowdown and on the CI `/web-katrain/` base path. Failure
+  diagnostics report the active control without dumping the entire page DOM.
+
+## 2026-10-28 delivery: Practice-board pointer readiness
+
+- Another CI run reached the practice-size interaction but placed the test
+  stone one intersection away from the expected corner. The check aimed as
+  soon as the board-size attribute changed and reused that pixel coordinate
+  for touch confirmation while the container could still resize.
+- The helper now waits for three frames of stable board bounds and grid
+  geometry, then calculates each tap from the current layout. The exact-corner,
+  real-analysis, download and re-import assertions remain unchanged. Failures
+  report board geometry and the actual move.
+- All 15 size/viewport combinations pass in Chrome 156 on the CI base path,
+  both normally and with sixfold CPU slowdown. Script lint and syntax pass.

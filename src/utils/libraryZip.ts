@@ -1,5 +1,8 @@
 import JSZip from 'jszip';
 import { stripUnsafeFilenameControls } from './filename';
+import { MAX_SGF_IMPORT_BYTES, MAX_SGF_IMPORT_LABEL } from './sgfImportLimits';
+import { normalizeSgfUtf8 } from './sgfEncoding';
+import { decodeGameRecordBytes, gameRecordFormat, GAME_RECORD_EXTENSION, type LegacyGameEncoding } from './gameRecordImport';
 import {
   createLibraryFolder,
   createLibraryItem,
@@ -12,14 +15,16 @@ import { assertValidLibrarySgfImport } from './libraryImportValidation';
 const ZIP_SGF_EXT_RE = /\.sgf$/i;
 
 function sanitizeZipPart(part: string): string {
-  return (
+  const sanitized = (
     stripUnsafeFilenameControls(part)
-      .replace(/\\/g, '/')
-      .replace(/[<>:"|?*]/g, '_')
+      .replace(/[/\\<>:"|?*]/g, '_')
       .replace(/\s+/g, ' ')
       .trim()
-      .replace(/^\.+$/, '') || 'Untitled'
+      .replace(/\.+$/, '') || 'Untitled'
   );
+  // Our importer ignores the conventional macOS metadata directory. A real
+  // library folder with that name must not disappear from its own export.
+  return sanitized === '__MACOSX' ? '__MACOSX_' : sanitized;
 }
 
 function splitZipPath(path: string): string[] {
@@ -42,47 +47,41 @@ function isFile(item: LibraryItem): item is LibraryFile {
 function collectExportItems(items: LibraryItem[], selectedIds?: Set<string>): LibraryItem[] {
   if (!selectedIds || selectedIds.size === 0) return items;
 
+  const childrenByParent = new Map<string, string[]>();
+  for (const item of items) {
+    if (!item.parentId) continue;
+    const children = childrenByParent.get(item.parentId) ?? [];
+    children.push(item.id);
+    childrenByParent.set(item.parentId, children);
+  }
   const included = new Set<string>();
-  const addWithDescendants = (id: string) => {
-    if (included.has(id)) return;
+  const pending = [...selectedIds];
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (included.has(id)) continue;
     included.add(id);
-    for (const item of items) {
-      if (item.parentId === id) addWithDescendants(item.id);
-    }
-  };
+    for (const child of childrenByParent.get(id) ?? []) pending.push(child);
+  }
 
-  for (const id of selectedIds) addWithDescendants(id);
   return items.filter((item) => included.has(item.id));
 }
 
-function uniqueZipPath(path: string, used: Set<string>): string {
-  if (!used.has(path)) {
-    used.add(path);
+function uniqueZipPath(path: string, used: Set<string>, nextSuffix: Map<string, number>): string {
+  const key = path.toLowerCase();
+  if (!used.has(key)) {
+    used.add(key);
     return path;
   }
 
   const dot = path.toLowerCase().endsWith('.sgf') ? path.length - 4 : path.length;
   const base = path.slice(0, dot);
   const ext = path.slice(dot);
-  let i = 2;
-  while (used.has(`${base} (${i})${ext}`)) i++;
+  let i = nextSuffix.get(key) ?? 2;
+  while (used.has(`${base} (${i})${ext}`.toLowerCase())) i++;
   const next = `${base} (${i})${ext}`;
-  used.add(next);
+  used.add(next.toLowerCase());
+  nextSuffix.set(key, i + 1);
   return next;
-}
-
-function buildFolderPath(itemById: Map<string, LibraryItem>, folderId: string | null): string[] {
-  const path: string[] = [];
-  const seen = new Set<string>();
-  let currentId = folderId;
-  while (currentId && !seen.has(currentId)) {
-    seen.add(currentId);
-    const item = itemById.get(currentId);
-    if (!item || !isFolder(item)) break;
-    path.unshift(sanitizeZipPart(item.name));
-    currentId = item.parentId ?? null;
-  }
-  return path;
 }
 
 export async function createLibraryZipBlob(
@@ -92,20 +91,45 @@ export async function createLibraryZipBlob(
   const exportItems = collectExportItems(items, selectedIds);
   const itemById = new Map(items.map((item) => [item.id, item]));
   const usedPaths = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+  const folderPaths = new Map<string, string>();
+  const folderPath = (folderId: string | null): string => {
+    const pending: LibraryFolder[] = [];
+    const seen = new Set<string>();
+    let currentId = folderId;
+    while (currentId && !folderPaths.has(currentId) && !seen.has(currentId)) {
+      seen.add(currentId);
+      const folder = itemById.get(currentId);
+      if (!folder || !isFolder(folder)) break;
+      pending.push(folder);
+      currentId = folder.parentId;
+    }
+    let parentPath = currentId ? folderPaths.get(currentId) ?? '' : '';
+    while (pending.length) {
+      const folder = pending.pop()!;
+      const name = sanitizeZipPart(folder.name);
+      parentPath = uniqueZipPath(parentPath ? `${parentPath}/${name}` : name, usedPaths, nextSuffix);
+      folderPaths.set(folder.id, parentPath);
+    }
+    return parentPath;
+  };
+
+  // Allocate each folder's path once, including ancestors of selected files.
+  // Reserve directories before files so neither can overwrite the other when
+  // extracted onto a case-insensitive filesystem. Identity comes from IDs,
+  // since different folders can have identical or equivalently sanitized names.
+  for (const item of exportItems) folderPath(isFolder(item) ? item.id : item.parentId);
   const zip = new JSZip();
+  for (const path of folderPaths.values()) zip.folder(path);
   let fileCount = 0;
 
   for (const item of exportItems) {
-    if (isFolder(item)) {
-      const folderPath = [...buildFolderPath(itemById, item.parentId ?? null), sanitizeZipPart(item.name)].join('/');
-      if (folderPath) zip.folder(folderPath);
-      continue;
-    }
     if (!isFile(item)) continue;
-    const folderParts = buildFolderPath(itemById, item.parentId ?? null);
+    const parentPath = item.parentId ? folderPaths.get(item.parentId) : '';
     const rawName = sanitizeZipPart(item.name).replace(ZIP_SGF_EXT_RE, '') || 'game';
-    const path = uniqueZipPath([...folderParts, `${rawName}.sgf`].join('/'), usedPaths);
-    zip.file(path, item.sgf);
+    const name = `${rawName}.sgf`;
+    const path = uniqueZipPath(parentPath ? `${parentPath}/${name}` : name, usedPaths, nextSuffix);
+    zip.file(path, normalizeSgfUtf8(item.sgf));
     fileCount++;
   }
 
@@ -117,9 +141,34 @@ export async function createLibraryZipBlob(
   return { blob, fileCount };
 }
 
+/**
+ * What a library archive may expand to.
+ *
+ * A zip is a file someone else may have made — this app exports them for
+ * exactly that — and `entry.async` decompresses a whole entry before anything
+ * looks at it. Measured: a 199KB zip holding one 200MB entry cost 402MB of heap
+ * and 248ms, and then imported nothing, because 200MB of one letter is not an
+ * SGF.
+ *
+ * The size the archive declares for an entry is free to read and turns an
+ * ordinary bomb into a skipped entry with nothing decompressed. A hostile
+ * archive can lie about it, so a running total stops the import after one such
+ * entry rather than after every one of them. A real backup of a thousand games
+ * is a few megabytes, so neither limit is near anything anyone has.
+ */
+const MAX_ZIP_EXPANDED_BYTES = 64 * 1024 * 1024;
+
+const declaredEntrySize = (entry: unknown): number | null => {
+  const data = (entry as { _data?: { uncompressedSize?: unknown } })._data;
+  const size = data?.uncompressedSize;
+  return typeof size === 'number' && Number.isFinite(size) ? size : null;
+};
+
 export async function importLibraryItemsFromZip(
   source: Blob | ArrayBuffer | Uint8Array,
-  parentId: string | null = null
+  parentId: string | null = null,
+  legacyGameEncoding: LegacyGameEncoding = 'auto',
+  onSkippedGame?: (name: string, error: unknown) => void
 ): Promise<LibraryItem[]> {
   const zipSource = typeof Blob !== 'undefined' && source instanceof Blob ? await source.arrayBuffer() : source;
   const zip = await JSZip.loadAsync(zipSource);
@@ -174,22 +223,56 @@ export async function importLibraryItemsFromZip(
     ensureFolder(parts);
   }
 
+  let expandedBytes = 0;
+  let expansionLimitReached = false;
   for (const entry of entries) {
     if (entry.dir) continue;
-    if (!ZIP_SGF_EXT_RE.test(entry.name)) continue;
     const originalName = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
+    if (originalName.replace(/\\/g, '/').split('/').includes('__MACOSX')) continue;
+    const format = gameRecordFormat(entry.name);
+    if (!format) continue;
+    const skip = (reason: string) => onSkippedGame?.(entry.name, new Error(reason));
+    if (expansionLimitReached) {
+      skip('The archive exceeds the 64 MB expanded import limit. Import smaller ZIPs.');
+      continue;
+    }
+    const declared = declaredEntrySize(entry);
+    if (declared !== null && declared > MAX_SGF_IMPORT_BYTES) {
+      skip(`Game files are limited to ${MAX_SGF_IMPORT_LABEL}.`);
+      continue;
+    }
+    // Stop before decompressing the next entry when its declared size already
+    // exhausts the budget. Still visit remaining names so none vanish silently.
+    if (declared !== null && expandedBytes + declared > MAX_ZIP_EXPANDED_BYTES) {
+      expansionLimitReached = true;
+      skip('The archive exceeds the 64 MB expanded import limit. Import smaller ZIPs.');
+      continue;
+    }
     const parts = splitZipPath(originalName);
-    if (parts.length === 0) continue;
+    if (parts.length === 0) {
+      skip('The archive entry has an unsupported file path.');
+      continue;
+    }
     const fileName = parts.pop()!;
     let sgf = '';
     try {
-      sgf = await entry.async('string');
+      const bytes = await entry.async('uint8array');
+      // Counted whether or not it turns out to be a game: the memory was spent
+      // either way, and a lying archive is only caught after the fact.
+      expandedBytes += bytes.byteLength;
+      if (expandedBytes > MAX_ZIP_EXPANDED_BYTES) {
+        expansionLimitReached = true;
+        skip('The archive exceeds the 64 MB expanded import limit. Import smaller ZIPs.');
+        continue;
+      }
+      sgf = decodeGameRecordBytes(bytes, format, legacyGameEncoding);
       assertValidLibrarySgfImport(sgf);
-    } catch {
+    } catch (error) {
+      onSkippedGame?.(entry.name, error);
       continue;
     }
     const folderId = ensureFolder(parts);
-    const name = fileName.replace(ZIP_SGF_EXT_RE, '') || 'Game';
+    const name = fileName.replace(GAME_RECORD_EXTENSION, '') || 'Game';
     imported.push(createLibraryItem(name, sgf, folderId));
   }
 

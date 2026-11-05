@@ -38,6 +38,7 @@ function restoreIndexedDB() {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   restoreIndexedDB();
 });
 
@@ -159,6 +160,18 @@ describe('library storage helpers', () => {
     expect(getUniqueLibraryItemName('Game', items, null)).toBe('Game 2');
     expect(getUniqueLibraryItemName('Game', items, folder.id, first.id)).toBe('Game');
     expect(getUniqueLibraryItemName('Game.sgf', [createLibraryItem('Game.sgf', sgf, null)], null)).toBe('Game 2.sgf');
+  });
+
+  it('keeps names unique beyond 9,999 collisions even within the same millisecond', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_234_567_890);
+    const template = createLibraryItem('Game', sgf);
+    const items = Array.from({ length: 9_999 }, (_, index) => ({
+      ...template, id: `game-${index}`, name: index === 0 ? 'Game' : `Game ${index + 1}`,
+    }));
+    items.push({ ...template, id: 'previous-fallback', name: 'Game 1234567890' });
+    const next = getUniqueLibraryItemName('Game', items, null);
+    expect(items.some((item) => item.name === next)).toBe(false);
+    expect(next).toBe('Game 10000');
   });
 
   it('moves library items while preventing folder cycles', () => {
@@ -315,6 +328,57 @@ describe('library storage helpers', () => {
     }
   });
 
+  it('keeps a copied game’s saved classification and metadata independently editable', () => {
+    const original = {
+      ...createLibraryItem('Study', sgf, 'collection', 100),
+      favorite: true,
+      tags: ['joseki', 'review'],
+      metadata: { event: 'Personal study collection', black: 'Teacher', boardSize: 19 },
+    };
+    const result = duplicateLibraryItem([original], original.id, 200);
+    const copy = result.duplicated;
+    expect(copy?.type).toBe('file');
+    if (copy?.type !== 'file') throw new Error('Missing copied game');
+    expect(copy).toMatchObject({
+      name: 'Study (copy)', parentId: 'collection', createdAt: 200, updatedAt: 200,
+      sgf: original.sgf, moveCount: original.moveCount, size: original.size,
+      favorite: true, tags: original.tags, metadata: original.metadata,
+    });
+    expect(copy.id).not.toBe(original.id);
+    copy.tags!.push('endgame');
+    copy.metadata.event = 'Separate review';
+    expect(original.tags).toEqual(['joseki', 'review']);
+    expect(original.metadata.event).toBe('Personal study collection');
+    expect(result.items.at(-1)).toBe(original);
+  });
+
+  it('preserves classification in copied folders and selected games through a backup round trip', () => {
+    const folder = createLibraryFolder('Study collection');
+    const nested = createLibraryFolder('Opening', folder.id);
+    const first = { ...createLibraryItem('First', sgf, nested.id, 10), favorite: true, tags: ['opening'] };
+    const second = { ...createLibraryItem('Second', sgf, null, 20), tags: ['review'] };
+    const items = [first, second, nested, folder]; // Children can be stored before their folders.
+    const result = duplicateLibraryItems(items, [first.id, folder.id, second.id], 300);
+    expect(result.duplicatedIds).toHaveLength(4);
+    const copiedIds = new Set(result.duplicatedIds);
+    const restored = parseLibraryBackup(createLibraryBackup(result.items));
+    const copiedFirst = restored.find(item => copiedIds.has(item.id) && item.name === 'First');
+    const copiedSecond = restored.find(item => copiedIds.has(item.id) && item.name === 'Second (copy)');
+    expect(copiedFirst).toMatchObject({ favorite: true, tags: ['opening'], sgf });
+    expect(copiedSecond).toMatchObject({ tags: ['review'], sgf });
+    expect(copiedSecond).not.toHaveProperty('favorite');
+    const copiedNested = restored.find(item => copiedIds.has(item.id) && item.name === 'Opening');
+    expect(copiedFirst?.parentId).toBe(copiedNested?.id);
+    expect(copiedNested?.parentId).toBe(result.duplicated?.id);
+  });
+
+  it('does not add classification defaults when duplicating an untagged game', () => {
+    const original = createLibraryItem('Plain game', sgf, null, 100);
+    const copy = duplicateLibraryItem([original], original.id, 200).duplicated;
+    expect(copy).not.toHaveProperty('favorite');
+    expect(copy).not.toHaveProperty('tags');
+  });
+
   it('duplicates a folder with descendants under new ids', () => {
     const folder = createLibraryFolder('Folder', null);
     const nestedFolder = createLibraryFolder('Nested', folder.id);
@@ -445,5 +509,39 @@ describe('library storage helpers', () => {
 
     await expect(saveLibrary([item])).resolves.toBeUndefined();
     await expect(loadLibrary()).resolves.toEqual([item]);
+  });
+});
+
+describe('a saved game reports the moves it has', () => {
+  const movesIn = (sgf: string): number => createLibraryItem('probe', sgf, null).moveCount;
+
+  it('counts a move whose node names another property first', () => {
+    // SGF does not fix the order inside a node, and this app's own writer emits
+    // C before B. `/;[BW]\[/` saw one move in this and the row said "1 move".
+    expect(movesIn('(;GM[1]SZ[9];C[a note]B[cc];W[dd];C[another]B[ee])')).toBe(3);
+  });
+
+  it('counts a plain game the same as it always did', () => {
+    expect(movesIn('(;GM[1]SZ[19];B[pd];W[dp];B[pp];W[dd])')).toBe(4);
+    expect(movesIn('(;GM[1]SZ[19])')).toBe(0);
+  });
+
+  it('counts a pass, and the moves down every variation', () => {
+    expect(movesIn('(;GM[1]SZ[9];B[cc];W[];B[])')).toBe(3);
+    expect(movesIn('(;GM[1]SZ[19];B[pd](;W[dp];B[pp])(;W[dd]))')).toBe(4);
+  });
+
+  it('is not fooled by a comment that looks like a move', () => {
+    // The escaped `\]` does not end the value, so `B[` inside it is text.
+    expect(movesIn('(;GM[1]SZ[9];C[see \\]B[cc\\] in the corner]B[dd])')).toBe(1);
+    expect(movesIn('(;GM[1]SZ[9];C[;B[aa];W[bb]]B[dd])')).toBe(1);
+  });
+
+  it('does not count the clock properties that start with the same letter', () => {
+    expect(movesIn('(;GM[1]SZ[9];B[cc]BL[120.5];W[dd]WL[118.2])')).toBe(2);
+  });
+
+  it('does not count setup stones as moves', () => {
+    expect(movesIn('(;GM[1]SZ[9]AB[aa][bb]AW[cc];B[dd])')).toBe(1);
   });
 });

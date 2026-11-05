@@ -1,12 +1,14 @@
-import type { AnalysisResult, CandidateMove, GameNode, GameState, BoardState, Player, FloatArray, BoardSize } from "../types";
+import type { AnalysisResult, CandidateMove, GameNode, BoardState, Player, FloatArray, BoardSize } from "../types";
 import { DEFAULT_BOARD_SIZE } from "../types";
 import { encodeKaTrainKtFromAnalysis, KATRAIN_ANALYSIS_FORMAT_VERSION } from './katrainSgfAnalysis';
 import { encodeKayaKaFromAnalysis } from './kayaSgfAnalysis';
 import { createEmptyBoard, normalizeBoardSize } from './boardSize';
-import { getEvaluationClass } from './nodeAnalysis';
+import { DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from './nodeAnalysis';
 import { downloadBlob } from './objectUrl';
 import { stripUnsafeFilenameControls } from './filename';
 import { assertSgfImportSize } from './sgfImportLimits';
+import { MAX_KOMI } from './komiInput';
+import { formatGtpMove } from '../lib/gtp';
 
 // KaTrain convention: auto-generated SGF comments are marked so user notes remain editable.
 export const KATRAIN_SGF_INTERNAL_COMMENTS_MARKER = "\u3164\u200b";
@@ -60,7 +62,7 @@ export type KaTrainSgfExportOptions = {
 };
 
 const DEFAULT_TRAINER_CONFIG: KaTrainSgfExportTrainerConfig = {
-    evalThresholds: [12, 6, 3, 1.5, 0.5, 0],
+    evalThresholds: [...DEFAULT_EVAL_THRESHOLDS],
     saveFeedback: [true, true, true, true, false, false],
     saveCommentsPlayer: { black: true, white: true },
     saveAnalysis: true,
@@ -80,13 +82,6 @@ function normalizeTrainerConfig(opts: KaTrainSgfExportOptions | undefined): KaTr
 
 function playerToSgfShort(player: Player): 'B' | 'W' {
     return player === 'black' ? 'B' : 'W';
-}
-
-function xyToGtp(x: number, y: number, boardSize: BoardSize): string {
-    if (x < 0 || y < 0) return 'pass';
-    const col = x >= 8 ? x + 1 : x; // Skip 'I'
-    const letter = String.fromCharCode(65 + col);
-    return `${letter}${boardSize - y}`;
 }
 
 function formatScoreLead(scoreLead: number): string {
@@ -143,7 +138,7 @@ function policyStats(args: { policy: FloatArray; move: { x: number; y: number };
         if (p > prob) betterCount++;
     }
     if (!(bestProb > 0) || bestIndex < 0) return null;
-    const bestMove = bestIndex === boardSize * boardSize ? 'pass' : xyToGtp(bestIndex % boardSize, Math.floor(bestIndex / boardSize), boardSize);
+    const bestMove = bestIndex === boardSize * boardSize ? 'pass' : formatGtpMove(bestIndex % boardSize, Math.floor(bestIndex / boardSize), boardSize);
     return { rank: betterCount + 1, prob, bestMove, bestProb };
 }
 
@@ -156,7 +151,7 @@ function buildKaTrainAutoCommentSegment(args: { node: GameNode; trainer: KaTrain
     const boardSize = normalizeBoardSize(node.gameState.board.length, DEFAULT_BOARD_SIZE);
     const depth = node.gameState.moveHistory.length;
     const player = playerToSgfShort(move.player);
-    const moveGtp = xyToGtp(move.x, move.y, boardSize);
+    const moveGtp = formatGtpMove(move.x, move.y, boardSize);
 
     // KaTrain writes "No analysis available" into saved files; "Analyzing move..."
     // is what it shows live, and would read oddly in an exported record.
@@ -168,7 +163,7 @@ function buildKaTrainAutoCommentSegment(args: { node: GameNode; trainer: KaTrain
 
     const topMove = bestMoveFromCandidates(parent.analysis?.moves);
     if (topMove) {
-        const topMoveGtp = xyToGtp(topMove.x, topMove.y, boardSize);
+        const topMoveGtp = formatGtpMove(topMove.x, topMove.y, boardSize);
         if (topMoveGtp !== moveGtp) {
             const pointsLost = computePointsLost(node);
             if (typeof pointsLost === 'number' && pointsLost > 0.5) text += `Estimated point loss: ${pointsLost.toFixed(1)}\n`;
@@ -294,42 +289,7 @@ const expandPointListPropertiesInTree = (root: ParsedSgfNode, boardSize: BoardSi
   }
 };
 
-export const generateSgf = (gameState: GameState): string => {
-  const { moveHistory } = gameState;
-  const date = formatSgfDate();
-  const boardSize = normalizeBoardSize(gameState.board.length, DEFAULT_BOARD_SIZE);
-
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]AP[WebKatrain:0.1]ST[2]\n`;
-  sgf += `SZ[${boardSize}]KM[${formatSgfNumber(gameState.komi)}]\n`;
-  sgf += `DT[${date}]\n`;
-  // Add other metadata?
-
-  // Moves
-  moveHistory.forEach(move => {
-      const color = move.player === 'black' ? 'B' : 'W';
-      let coords = '';
-      if (move.x === -1) {
-          coords = ''; // Pass is B[] or W[]
-      } else {
-          coords = coordinateToSgf(move.x, move.y);
-      }
-      sgf += `;${color}[${coords}]`;
-  });
-
-  sgf += `\n)`;
-
-  return sgf;
-};
-
-export const downloadSgf = (gameState: GameState) => {
-    const sgfContent = generateSgf(gameState);
-    const blob = new Blob([sgfContent], { type: 'application/x-go-sgf' });
-    if (!downloadBlob(blob, `game_${new Date().getTime()}.sgf`)) {
-        throw new Error('Could not start SGF download in this browser.');
-    }
-};
-
-function escapeSgfValue(value: string): string {
+export function escapeSgfValue(value: string): string {
     return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\\/g, '\\\\').replace(/]/g, '\\]');
 }
 
@@ -560,17 +520,66 @@ function serializeMoveNode(node: GameNode, trainer: KaTrainSgfExportTrainerConfi
     return `;${serializeProps(props)}`;
 }
 
-function serializeSequence(node: GameNode, trainer: KaTrainSgfExportTrainerConfig): string {
-    let out = serializeMoveNode(node, trainer);
+/**
+ * Everything below `root`, which the caller writes itself. Its lines are
+ * serialized in one pass rather than one call per child, so an empty child
+ * of the root is lifted like any other: wrapped per child, its branches came
+ * out double-parenthesized.
+ */
+function serializeVariationsBelow(root: GameNode, trainer: KaTrainSgfExportTrainerConfig): string {
+    // First identify the nonempty subtrees. Empty annotation nodes are omitted,
+    // and only surviving siblings need variation parentheses. Using an explicit
+    // stack here lets every record the importer accepts be saved again without
+    // spending one JavaScript call frame per move or study comment.
+    const sequences = new Map<GameNode, { text: string; children: GameNode[] }>();
+    const pending = [{ node: root, expanded: false }];
+    while (pending.length > 0) {
+        const task = pending.pop()!;
+        if (!task.expanded) {
+            pending.push({ node: task.node, expanded: true });
+            for (let i = task.node.children.length - 1; i >= 0; i--) {
+                pending.push({ node: task.node.children[i]!, expanded: false });
+            }
+            continue;
+        }
+        // An empty node writes nothing, so its lines become its parent's, as
+        // the loader lifts them. Kept as one child, a branching empty node
+        // beside a sibling of its own wrote `((;B[aa])(;B[bb]))(;B[cc])`,
+        // which no reader opens -- removing the last marker from a comment
+        // node with variations was enough. Children are done first, so their
+        // lists are already lifted.
+        const children: GameNode[] = [];
+        for (const child of task.node.children) {
+            const sequence = sequences.get(child);
+            if (!sequence) continue;
+            if (sequence.text) children.push(child);
+            else children.push(...sequence.children);
+        }
+        const text = task.node === root ? '' : serializeMoveNode(task.node, trainer);
+        if (text || children.length > 0) sequences.set(task.node, { text, children });
+    }
 
-    const childSequences = node.children
-        .map((child) => serializeSequence(child, trainer))
-        .filter((childSgf) => childSgf.length > 0);
-    if (childSequences.length === 0) return out;
-    if (childSequences.length === 1) return out + childSequences[0]!;
-
-    for (const childSgf of childSequences) out += `(${childSgf})`;
-    return out;
+    // Emit each node once, joining only at the end instead of rebuilding every
+    // ancestor's complete SGF string as a deep sequence unwinds.
+    const parts: string[] = [];
+    const output: Array<GameNode | string> = [root];
+    while (output.length > 0) {
+        const item = output.pop()!;
+        if (typeof item === 'string') {
+            parts.push(item);
+            continue;
+        }
+        const sequence = sequences.get(item);
+        if (!sequence) continue;
+        parts.push(sequence.text);
+        const branches = sequence.children.length > 1;
+        for (let i = sequence.children.length - 1; i >= 0; i--) {
+            if (branches) output.push(')');
+            output.push(sequence.children[i]!);
+            if (branches) output.push('(');
+        }
+    }
+    return parts.join('');
 }
 
 export const generateSgfFromTree = (rootNode: GameNode, opts?: KaTrainSgfExportOptions): string => {
@@ -621,14 +630,7 @@ export const generateSgfFromTree = (rootNode: GameNode, opts?: KaTrainSgfExportO
 
     let sgf = `(;${serializeProps(props)}`;
 
-    const childSequences = rootNode.children
-        .map((child) => serializeSequence(child, trainer))
-        .filter((childSgf) => childSgf.length > 0);
-    if (childSequences.length === 1) sgf += childSequences[0]!;
-    else if (childSequences.length > 1) {
-        for (const childSgf of childSequences) sgf += `(${childSgf})`;
-    }
-
+    sgf += serializeVariationsBelow(rootNode, trainer);
     sgf += ')';
     return sgf;
 };
@@ -653,6 +655,7 @@ export interface ParsedSgf {
     komi: number;
     tree?: ParsedSgfNode;
 }
+
 
 export const parseSgf = (sgfContent: string): ParsedSgf => {
     assertSgfImportSize(sgfContent);
@@ -773,14 +776,24 @@ export const parseSgf = (sgfContent: string): ParsedSgf => {
         if (sgfContent[i] !== '(') throw new Error('Invalid SGF: expected "("');
         i++; // skip (
         const { root, last } = parseSequence();
-        skipWhitespace();
-        while (i < len && sgfContent[i] === '(') {
-            const childTree = parseGameTree();
-            last.children.push(childTree);
+        // Each frame is the endpoint to which that tree's variations attach.
+        // Nesting is independent of game length: valid study archives can have
+        // thousands of parenthesized variations around short node sequences.
+        const endpoints: SgfNode[] = [last];
+        while (endpoints.length > 0) {
             skipWhitespace();
+            if (sgfContent[i] === '(') {
+                i++;
+                const child = parseSequence();
+                endpoints[endpoints.length - 1]!.children.push(child.root);
+                endpoints.push(child.last);
+            } else if (sgfContent[i] === ')') {
+                i++;
+                endpoints.pop();
+            } else {
+                throw new Error('Invalid SGF: expected ")"');
+            }
         }
-        if (sgfContent[i] !== ')') throw new Error('Invalid SGF: expected ")"');
-        i++; // skip )
         return root;
     };
 
@@ -789,7 +802,15 @@ export const parseSgf = (sgfContent: string): ParsedSgf => {
     const rootKomi = root.props['KM']?.[0];
     if (rootKomi) {
         const k = parseFloat(rootKomi);
-        if (!Number.isNaN(k)) komi = k;
+        // `KM` comes out of a file another program wrote. `parseFloat` returns
+        // Infinity for "Infinity" and overflows "1e999" to it, and
+        // `Number.isNaN` lets both through -- komi is subtracted from every
+        // score the app shows, and goes to the net as a float32, where
+        // anything past ~3.4e38 is Infinity again and the outputs come back
+        // NaN. A whole 19x19 board is 361 points, so nothing beyond this can
+        // describe a game; as with a komi that is not a number at all, the
+        // default stands.
+        if (Number.isFinite(k) && Math.abs(k) <= MAX_KOMI) komi = k;
     }
 
     const rootSize = root.props['SZ']?.[0];

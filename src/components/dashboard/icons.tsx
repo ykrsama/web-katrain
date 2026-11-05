@@ -1,7 +1,15 @@
 import React from 'react';
 
-// lucide-style 24x24 stroke icon paths, ported from the design bundle.
-const PATHS: Record<string, string> = {
+/**
+ * lucide-style 24x24 stroke icon paths, ported from the design bundle.
+ *
+ * Deliberately not annotated `Record<string, string>`. That made `IconName`
+ * resolve to `string`, so every `<Icon name="..." />` in the app type-checked
+ * whatever was typed -- and a name with no path renders an empty <svg> through
+ * the fallback below. A misspelled icon was invisible in the editor, in `tsc`,
+ * and on screen. `satisfies` keeps the value check without erasing the keys.
+ */
+const PATHS = {
   plus: '<path d="M5 12h14M12 5v14"/>',
   folder:
     '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>',
@@ -68,9 +76,28 @@ const PATHS: Record<string, string> = {
   // weight matches the buttons it sits between (a filled glyph read heavier and
   // a couple of pixels taller than its neighbours).
   ear: '<path d="M6 8.5a6.5 6.5 0 1 1 13 0c0 6-6 6-6 10a3.5 3.5 0 1 1-7 0"/><path d="M15 8.5a2.5 2.5 0 0 0-5 0v1a2 2 0 1 1 0 4"/>',
-};
+  link:
+    '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  image:
+    '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  download:
+    '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+} satisfies Record<string, string>;
 
 export type IconName = keyof typeof PATHS;
+
+/** Every name `Icon` knows, so a test can walk them instead of scraping them. */
+export const ICON_NAMES = Object.keys(PATHS) as IconName[];
+
+const EMPTY_MARKUP = { __html: '' };
+
+// One object per icon, built once. The markup is constant, but a fresh
+// `{ __html }` literal per render is a new object every time, and React
+// compares this prop by identity -- so every re-render rewrote the <svg>'s
+// innerHTML and threw away its <path> children.
+const MARKUP: Record<string, { __html: string }> = Object.fromEntries(
+  Object.entries(PATHS).map(([name, markup]) => [name, { __html: markup }]),
+);
 
 export const Icon: React.FC<{ name: IconName; size?: number }> = ({ name, size = 16 }) => (
   <svg
@@ -82,6 +109,6 @@ export const Icon: React.FC<{ name: IconName; size?: number }> = ({ name, size =
     strokeWidth={2}
     strokeLinecap="round"
     strokeLinejoin="round"
-    dangerouslySetInnerHTML={{ __html: PATHS[name] ?? '' }}
+    dangerouslySetInnerHTML={MARKUP[name] ?? EMPTY_MARKUP}
   />
 );

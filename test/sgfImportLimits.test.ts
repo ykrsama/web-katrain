@@ -9,7 +9,7 @@ import {
 } from '../src/utils/sgfImportLimits';
 import * as sgfImportLimits from '../src/utils/sgfImportLimits';
 
-const TOO_LARGE_MESSAGE = `SGF files are limited to ${MAX_SGF_IMPORT_LABEL}.`;
+const TOO_LARGE_MESSAGE = `Game files are limited to ${MAX_SGF_IMPORT_LABEL}.`;
 
 describe('SGF import limits', () => {
   it('accepts a normal SGF and an exact-size file preflight', () => {

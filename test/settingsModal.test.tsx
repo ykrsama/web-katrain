@@ -115,6 +115,7 @@ describe('SettingsModal', () => {
       ['settings-ui-density', 'UI Density'],
       ['settings-gamepad-navigation', 'Gamepad Navigation'],
       ['settings-touch-haptics', 'Touch Haptics'],
+      ['settings-legacy-game-encoding', 'GIB / NGF encoding'],
       ['settings-load-sgf-rewind', 'Load SGF Rewind'],
       ['settings-load-sgf-fast-analysis', 'Load SGF Fast Analysis'],
       ['settings-pv-animation-time', 'PV Animation Time (sec)'],
@@ -309,5 +310,89 @@ describe('SettingsModal', () => {
     // name got 15px of the 60px it needs and read as "W...". Wrapping drops the
     // badge to its own line there and stays inline at every wider width.
     expect(row).toContain('flex-wrap');
+  });
+});
+
+describe('visit fields cannot exceed what the engine will run', () => {
+  const source = readFileSync('src/components/SettingsModal.tsx', 'utf8');
+
+  /**
+   * `max={ENGINE_MAX_VISITS}` only governs the spinner: a typed number sails
+   * past it and reaches `onChange`. The Fast-review field beside it already
+   * clamped; the Visits field, one line above, was `Math.max(16, ...)` and so
+   * had a lower bound only.
+   *
+   * That fed the live-analysis loop's ceiling, and `runAnalysis` caps what it
+   * requests at ENGINE_MAX_VISITS -- so a larger setting made the loop's
+   * "settled" branch unreachable and it re-ran a full search every 50ms.
+   */
+  it('clamps every visits field on the way in, not just in the spinner', () => {
+    // Only the writes that carry a *typed* value need the clamp; the preset
+    // buttons beside them write constants from ANALYSIS_VISIT_PRESETS.
+    const typed = [...source.matchAll(/updateSettings\(\{ (katago\w*Visits): ([^}]*parseInt[^}]*)\}\)/g)];
+    expect(typed.length, 'the typed visits fields moved').toBeGreaterThanOrEqual(2);
+    for (const [, field, expr] of typed) {
+      expect(expr, `${field} writes an unclamped typed value`).toContain('clampSettingsVisits');
+    }
+  });
+
+  it('clamps to the engine ceiling, not just away from zero', () => {
+    const clamp = /function clampSettingsVisits[\s\S]*?\n}/.exec(source)?.[0] ?? '';
+    expect(clamp).toContain('ENGINE_MAX_VISITS');
+    expect(clamp).toContain('Number.isFinite');
+  });
+});
+
+describe('engine fields agree with the engine', () => {
+  const source = readFileSync('src/components/SettingsModal.tsx', 'utf8');
+  const worker = readFileSync('src/engine/katago/worker.ts', 'utf8');
+
+  /**
+   * The worker re-clamps every request it gets, so a field that accepts a
+   * bigger number does not make the engine do more -- it just displays one
+   * thing while the search does another, and drags that number into the
+   * analysis cache key on the way.
+   *
+   * Both halves used to be written out separately: `max={50}` on the input and
+   * `Math.max(1, parseInt(...))` in `onChange`. `max` only governs the spinner.
+   */
+  it('enforces the ceiling each field declares, not just in the spinner', () => {
+    // Number fields are DraftNumberInput, which types the value as it is typed
+    // and hands the owner each complete number to clamp.
+    const inputs = [...source.matchAll(/<DraftNumberInput\b[\s\S]{0,900}?\/>/g)].map((m) => m[0]);
+    const declaring = inputs.filter((block) => /max=\{/.test(block));
+    expect(declaring.length, 'the engine number fields moved').toBeGreaterThanOrEqual(5);
+
+    for (const block of declaring) {
+      const field = /updateSettings\(\{\s*(\w+):/.exec(block)?.[1];
+      if (!field) continue;
+      const onChange = /updateSettings\(\{\s*\w+:\s*([^}]+?)\s*\}\)/.exec(block)?.[1] ?? '';
+      // Either a clamp helper or an inline `Math.min` -- what matters is that
+      // the ceiling is applied, not which spelling applies it.
+      expect(onChange, `${field} declares a max it does not apply`).toMatch(/clamp|Math\.min/i);
+    }
+  });
+
+  it('uses the same bounds the worker will apply', () => {
+    // Drift here is invisible: the engine silently wins, and the field lies.
+    const symbols: Record<string, number> = { ENGINE_MAX_TIME_MS: 300_000, BOARD_AREA: 361 };
+    const resolve = (raw: string) => symbols[raw] ?? Number(raw);
+
+    for (const [, min, field, max] of worker.matchAll(
+      /Math\.max\((\d+), Math\.min\(msg\.(\w+) \?\?[^,]*, (\w+|\d+)\)\)/g
+    )) {
+      const uiField = `katago${field[0]!.toUpperCase()}${field.slice(1)}`;
+      const range = new RegExp(`${uiField}: \\{ min: (\\d+), max: (\\w+|\\d+) \\}`).exec(source);
+      if (!range) continue; // not every worker knob is exposed in Settings
+      expect(Number(range[1]), `${uiField} min`).toBe(Number(min));
+      expect(resolve(range[2]!), `${uiField} max`).toBe(resolve(max!));
+    }
+  });
+
+  it('covers every engine field the settings screen exposes', () => {
+    const range = /const ENGINE_FIELD_RANGE = \{([\s\S]*?)\} as const;/.exec(source)?.[1] ?? '';
+    for (const field of ['katagoMaxTimeMs', 'katagoBatchSize', 'katagoMaxChildren', 'katagoTopK', 'katagoAnalysisPvLen']) {
+      expect(range, field).toContain(field);
+    }
   });
 });

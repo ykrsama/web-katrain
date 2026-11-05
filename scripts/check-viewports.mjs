@@ -1,8 +1,51 @@
 import { spawn } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
+import { createServer } from 'vite';
+import { assertScoreQuizGuesses, assertScoreQuizRequests } from './lib/score-quiz-check.mjs';
+import { assertStaticBoardScroll } from './lib/static-board-scroll-check.mjs';
+import { assertLibraryImportFailures } from './lib/library-import-check.mjs';
+import { assertLibraryTags } from './lib/library-tags-check.mjs';
+import { assertEmptyLibraryPersists } from './lib/library-empty-check.mjs';
+import { assertLibrarySaveRecovery } from './lib/library-save-check.mjs';
+import { assertManualScoring } from './lib/manual-scoring-check.mjs';
+import { assertHeaderNotificationsFit } from './lib/header-notification-check.mjs';
+import { assertKeyboardWorkflows } from './lib/keyboard-workflows-check.mjs';
+import { assertLibraryNavigation } from './lib/library-navigation-check.mjs';
+import { assertLibraryActionKeys } from './lib/library-action-keys-check.mjs';
+import { assertOgsSyncCancellation } from './lib/ogs-sync-cancellation-check.mjs';
+import { assertPracticeBoardSizes } from './lib/practice-board-sizes-check.mjs';
+import { assertCandidateControls } from './lib/candidate-controls-check.mjs';
+import { assertReportPrinting } from './lib/report-print-check.mjs';
+import { assertCandidateTooltips } from './lib/candidate-tooltip-check.mjs';
+import { assertLiveCandidatePreviews } from './lib/live-candidate-preview-check.mjs';
+import { assertPvGestures } from './lib/pv-gestures-check.mjs';
+import { assertGameInfoReplacement } from './lib/game-info-replacement-check.mjs';
+import { assertPassCandidates } from './lib/pass-candidate-check.mjs';
+import { assertNoteDraftRetention } from './lib/note-draft-retention-check.mjs';
+import { assertNotePageExit } from './lib/note-page-exit-check.mjs';
+import { assertGameInfoPageExit } from './lib/game-info-page-exit-check.mjs';
+import { assertDraftSaveSnapshots } from './lib/draft-save-check.mjs';
+import { assertDraftReplacement } from './lib/draft-replacement-check.mjs';
+import { assertDepthDismissal } from './lib/depth-dismiss-check.mjs';
+import { assertSearchPasteLimits } from './lib/search-paste-check.mjs';
+import { auditTextContrast } from './lib/text-contrast.mjs';
+// The CDP client, the Chrome lookup and evaluate() live in lib/browser.mjs so
+// check-responsiveness.mjs drives the same browser rather than carrying a
+// second copy of all of it.
+import {
+  chromeCandidates,
+  chromePath,
+  chromeTarget,
+  connectDevtools,
+  evaluate,
+  freePort,
+  loadedModuleUrl,
+  navigate,
+  setViewport,
+  sleep,
+  waitForExpression,
+} from './lib/browser.mjs';
 
 /**
  * The desktop-vs-mobile bounds, read from the source that defines them rather
@@ -13,14 +56,14 @@ import path from 'node:path';
  */
 function readDesktopLayoutBounds() {
   const source = fs.readFileSync(
-    path.resolve(import.meta.dirname, '../src/utils/responsiveLayout.ts'),
+    path.resolve(import.meta.dirname, '../src/utils/layoutBreakpoints.ts'),
     'utf8',
   );
   const width = /DESKTOP_LAYOUT_MIN_WIDTH\s*=\s*(\d+)/.exec(source);
   const height = /DESKTOP_LAYOUT_MIN_HEIGHT\s*=\s*(\d+)/.exec(source);
   if (!width || !height) {
     throw new Error(
-      'Could not read DESKTOP_LAYOUT_MIN_WIDTH/HEIGHT from src/utils/responsiveLayout.ts. '
+      'Could not read DESKTOP_LAYOUT_MIN_WIDTH/HEIGHT from src/utils/layoutBreakpoints.ts. '
       + 'If they were renamed, update this reader rather than hardcoding the numbers again.',
     );
   }
@@ -35,10 +78,16 @@ const isDesktopViewport = (viewport) =>
 const VIEWPORTS = [
   { width: 1280, height: 800, mobile: false },
   { width: 1024, height: 768, mobile: false },
+  { width: 1024, height: 500, mobile: false },
   { width: 768, height: 1024, mobile: true },
   { width: 390, height: 844, mobile: true },
   { width: 360, height: 800, mobile: true },
+  // 320px is the width WCAG 2.2 SC 1.4.10 asks content to reflow into, and
+  // index.css reasons about it in eight places -- but the sweep stopped at
+  // 360, so none of that reasoning had ever been measured.
+  { width: 320, height: 568, mobile: true },
   { width: 844, height: 390, mobile: true },
+  { width: 568, height: 320, mobile: true },
   // Wide but short: still the mobile shell, and previously uncovered.
   { width: 1280, height: 460, mobile: true },
   // Wide desktop with both panels open: the board column lands near 722px,
@@ -47,259 +96,74 @@ const VIEWPORTS = [
 ];
 
 /**
- * Where Chrome is.
+ * Text the reader cannot finish and cannot recover.
  *
- * This used to be `google-chrome` on anything but a Mac, which is true of a
- * developer's Debian box and was true of the GitHub runner the day it was
- * written -- but this suite now runs in CI, and a bare binary name that is not
- * on PATH fails as an unhelpful spawn ENOENT partway through a job. Try the
- * usual names in order and say plainly what was tried if none of them exist.
- *
- * CHROME_PATH still wins outright, and CHROME_BIN is consulted because the
- * GitHub runner images set it.
+ * Clipped by its own box, with no title to show it on hover. The library's game
+ * names read like this -- 139px of box for a name that lays out at 487, so
+ * two-thirds of a tournament title was off the end. Every row carried the full
+ * name in its aria-label, which is why this looked covered: assistive tech was
+ * fine and the mouse the panel is built for had nothing.
  */
-function chromeCandidates() {
-  const candidates = process.platform === 'darwin'
-    ? [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    ]
-    : [
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium-browser',
-      '/usr/bin/chromium',
-      '/snap/bin/chromium',
-    ];
-
-  return candidates.map((path) => ({ path, exists: fs.existsSync(path) }));
-}
-
-function resolveChromePath() {
-  const explicit = process.env.CHROME_PATH || process.env.CHROME_BIN;
-  if (explicit) return explicit;
-
-  const found = chromeCandidates().find((candidate) => candidate.exists);
-  if (found) return found.path;
-
-  // Nothing at a known absolute path. Fall back to the name and let PATH
-  // decide, which still works on most machines; the 'error' handler on the
-  // spawn reports what was tried if it does not.
-  return process.platform === 'darwin' ? chromeCandidates()[0].path : 'google-chrome';
-}
-
-const chromePath = resolveChromePath();
-const screenshotDir = process.env.VIEWPORT_SCREENSHOT_DIR || '/tmp/web-katrain-viewport-check';
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function freePort() {
-  const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  await new Promise((resolve) => server.close(resolve));
-  return address.port;
-}
-
-async function waitForHttp(url, timeoutMs = 10_000) {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Keep polling.
-    }
-    await sleep(200);
+const TRUNCATION_AUDIT = `(() => {
+  const out = [];
+  for (const el of document.querySelectorAll('*')) {
+    if (el.children.length > 0) continue;
+    const text = (el.textContent || '').trim();
+    if (!text) continue;
+    if (String(el.className || '').includes('sr-only')) continue;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    // A scroller is not clipping anything: the reader can reach it.
+    const overflow = style.overflow + style.overflowX + style.overflowY;
+    if (overflow.includes('auto') || overflow.includes('scroll')) continue;
+    const lost = el.scrollWidth - el.clientWidth;
+    if (lost <= 2) continue;
+    // A title anywhere up the tree shows on hover over this text, and an
+    // aria-label on the element itself names this text. An aria-label on an
+    // ANCESTOR does neither for a mouse -- it is the row's name, not this
+    // element's, and it is exactly what made the library's clipped game names
+    // look covered while a sighted reader had no way to finish them.
+    if (el.getAttribute('title') || el.getAttribute('aria-label')) continue;
+    if (el.closest('[title]')) continue;
+    out.push(text.slice(0, 36) + ' (needs ' + lost + 'px more than ' + el.clientWidth + 'px)');
   }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-function connectDevtools(webSocketDebuggerUrl) {
-  const url = new URL(webSocketDebuggerUrl);
-  const socket = net.createConnection(Number(url.port), url.hostname);
-  let nextId = 0;
-  let ready = false;
-  let buffer = Buffer.alloc(0);
-  let fragments = [];
-  const pending = new Map();
-  const listeners = new Set();
-
-  const readyPromise = new Promise((resolve, reject) => {
-    socket.once('error', reject);
-    socket.once('connect', () => {
-      const key = crypto.randomBytes(16).toString('base64');
-      socket.write([
-        `GET ${url.pathname}${url.search} HTTP/1.1`,
-        `Host: ${url.host}`,
-        'Upgrade: websocket',
-        'Connection: Upgrade',
-        `Sec-WebSocket-Key: ${key}`,
-        'Sec-WebSocket-Version: 13',
-        '',
-        '',
-      ].join('\r\n'));
-    });
-
-    socket.on('data', (chunk) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (!ready) {
-        const headerEnd = buffer.indexOf('\r\n\r\n');
-        if (headerEnd === -1) return;
-        const header = buffer.slice(0, headerEnd).toString('utf8');
-        if (!header.includes('101')) {
-          reject(new Error(`WebSocket upgrade failed: ${header}`));
-          return;
-        }
-        buffer = buffer.slice(headerEnd + 4);
-        ready = true;
-        resolve();
-      }
-      parseFrames();
-    });
-  });
-
-  function handleText(payload) {
-    const message = JSON.parse(payload);
-    if (message.id && pending.has(message.id)) {
-      pending.get(message.id)(message);
-      pending.delete(message.id);
-      return;
-    }
-    if (message.method) {
-      for (const listener of listeners) listener(message);
-    }
-  }
-
-  function parseFrames() {
-    while (ready && buffer.length >= 2) {
-      const first = buffer[0];
-      const second = buffer[1];
-      let length = second & 0x7f;
-      let offset = 2;
-      if (length === 126) {
-        if (buffer.length < 4) return;
-        length = buffer.readUInt16BE(2);
-        offset = 4;
-      } else if (length === 127) {
-        if (buffer.length < 10) return;
-        length = Number(buffer.readBigUInt64BE(2));
-        offset = 10;
-      }
-      const masked = !!(second & 0x80);
-      let mask;
-      if (masked) {
-        if (buffer.length < offset + 4) return;
-        mask = buffer.slice(offset, offset + 4);
-        offset += 4;
-      }
-      if (buffer.length < offset + length) return;
-      let payload = buffer.slice(offset, offset + length);
-      buffer = buffer.slice(offset + length);
-      if (masked && mask) payload = Buffer.from(payload.map((byte, idx) => byte ^ mask[idx % 4]));
-
-      const fin = !!(first & 0x80);
-      const opcode = first & 0x0f;
-      if (opcode === 1 || opcode === 0) {
-        fragments.push(payload);
-        if (fin) {
-          handleText(Buffer.concat(fragments).toString('utf8'));
-          fragments = [];
-        }
-      }
-    }
-  }
-
-  function writeFrame(text) {
-    const payload = Buffer.from(text);
-    const mask = crypto.randomBytes(4);
-    let header;
-    if (payload.length < 126) {
-      header = Buffer.from([0x81, 0x80 | payload.length]);
-    } else if (payload.length < 65_536) {
-      header = Buffer.alloc(4);
-      header[0] = 0x81;
-      header[1] = 0x80 | 126;
-      header.writeUInt16BE(payload.length, 2);
-    } else {
-      header = Buffer.alloc(10);
-      header[0] = 0x81;
-      header[1] = 0x80 | 127;
-      header.writeBigUInt64BE(BigInt(payload.length), 2);
-    }
-    const masked = Buffer.from(payload.map((byte, idx) => byte ^ mask[idx % 4]));
-    socket.write(Buffer.concat([header, mask, masked]));
-  }
-
-  return {
-    ready: readyPromise,
-    on(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    send(method, params = {}) {
-      const message = { id: ++nextId, method, params };
-      return new Promise((resolve) => {
-        pending.set(message.id, resolve);
-        writeFrame(JSON.stringify(message));
-      });
-    },
-    close() {
-      socket.end();
-    },
-  };
-}
-
-async function chromeTarget(port) {
-  for (let i = 0; i < 40; i++) {
-    try {
-      const targets = await fetch(`http://127.0.0.1:${port}/json`).then((response) => response.json());
-      const target = targets.find((item) => item.type === 'page') ?? targets[0];
-      if (target?.webSocketDebuggerUrl) return target.webSocketDebuggerUrl;
-    } catch {
-      // Keep polling.
-    }
-    await sleep(200);
-  }
-  throw new Error('Timed out waiting for Chrome devtools target');
-}
+  return out.slice(0, 6);
+})()`;
 
 /**
- * `Inspected target navigated or closed` is CDP telling us the execution
- * context was torn down underneath the call -- a navigation that had not
- * finished settling when the next evaluate went out. It is transient by
- * definition: the page is on its way to a new context, not broken.
+ * A form control nobody can name.
  *
- * This never fires on a developer machine, where navigation completes long
- * before the next poll. It failed a CI run at evaluation 56 of a viewport
- * sweep that does eight navigations. Retrying briefly is the fix; failing on
- * it is not, and neither is ignoring a reply with no result, which is what a
- * dead browser looks like and must still be fatal.
+ * `visibleLabelInName` checks that a button's accessible name contains the
+ * words printed on it; nothing checked that an input has a name at all. A
+ * `<select>` with no label is announced as "combobox" and nothing else, and the
+ * only way to know what it sets is to see the text beside it.
+ *
+ * A wrapping `<label>` counts, which is how most of this app's controls are
+ * labelled and why a source grep for aria-label reports twelve false hits.
  */
-const TRANSIENT_CDP_MESSAGE = 'Inspected target navigated or closed';
-
-async function evaluate(cdp, expression, attempt = 0) {
-  const response = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-
-  if (response?.error?.message?.includes(TRANSIENT_CDP_MESSAGE) && attempt < 10) {
-    await sleep(250);
-    return evaluate(cdp, expression, attempt + 1);
+const UNNAMED_CONTROL_AUDIT = `(() => {
+  const named = (el) => {
+    if (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) return true;
+    if (el.closest('label')) return true;
+    if (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')) return true;
+    if (el.getAttribute('title')) return true;
+    return false;
+  };
+  const out = [];
+  for (const el of document.querySelectorAll('input, select, textarea')) {
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (type === 'hidden') continue;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    if (named(el)) continue;
+    out.push(el.tagName.toLowerCase() + (type ? '[' + type + ']' : '') + ' in ' +
+      (el.closest('[data-layout-panel],[role="dialog"],[data-dashboard-popover]')?.getAttribute('data-layout-panel')
+        || el.closest('[role="dialog"]')?.getAttribute('aria-label') || 'the shell'));
   }
+  return out.slice(0, 6);
+})()`;
 
-  // A reply with no `result` means the call itself failed rather than the
-  // expression -- almost always because Chrome died. Saying so beats
-  // "Cannot read properties of undefined (reading 'exceptionDetails')",
-  // which is what a CI runner reported before this existed.
-  if (!response || !response.result) {
-    throw new Error(
-      `Runtime.evaluate returned no result (Chrome likely exited). Reply: ${JSON.stringify(response)?.slice(0, 300)}`,
-    );
-  }
-  if (response.result.exceptionDetails) {
-    throw new Error(response.result.exceptionDetails.text ?? 'Runtime evaluation failed');
-  }
-  return response.result.result.value;
-}
+const screenshotDir = process.env.VIEWPORT_SCREENSHOT_DIR || '/tmp/web-katrain-viewport-check';
 
 /**
  * The board rendering is not the same thing as the app being usable.
@@ -431,6 +295,17 @@ function assertViewport(result) {
     // relationship. Conditionally rendered panels are the usual cause.
     failures.push(`dead ARIA references: ${result.deadAriaRefs.map((r) => `${r.attr}="${r.id}" on ${r.on}`).join(', ')}`);
   }
+  // A library that rendered no names makes its audit pass on nothing.
+  if (result.navbarWithLibrary && !(result.navbarWithLibrary.libraryNames > 0)) {
+    failures.push('library docked but rendered no names to check');
+  }
+  if (result.unnamedControls?.length > 0) {
+    failures.push(`form controls with no accessible name: ${result.unnamedControls.join(' | ')}`);
+  }
+  const clipped = [...(result.truncationFailures ?? []), ...(result.navbarWithLibrary?.truncation ?? [])];
+  if (clipped.length > 0) {
+    failures.push(`text clipped with no title: ${clipped.join(' | ')}`);
+  }
   if (result.documentOverflow > 1) failures.push(`document overflows by ${result.documentOverflow}px`);
   // The check above runs after the QA interactions have opened and closed
   // things. This one is the pristine first load, which is what a reader
@@ -441,6 +316,18 @@ function assertViewport(result) {
   if (!result.board) failures.push('board missing');
   if (result.board && result.board.left < -1) failures.push('board overflows left edge');
   if (result.board && result.board.right > result.innerWidth + 1) failures.push('board overflows right edge');
+  // A Go board is square by construction: GoBoard styles width and height from
+  // the same `cellSize * gridSpaces`, and the x and y grid spans are equal under
+  // every setting. So a rect that is not square means layout overrode the style.
+  // It did: the board was a shrinkable flex item and `cellSize` rounds up, so at
+  // 1024x768 a board styled 465.75px square laid out 464 x 465.75 and the
+  // canvases lost their right edge. This run's own summary said `627x628` at
+  // 1440x900 and nothing read it.
+  if (result.board && Math.abs(result.board.width - result.board.height) > 0.5) {
+    failures.push(
+      `board is not square (${result.board.width.toFixed(2)}x${result.board.height.toFixed(2)})`
+    );
+  }
   if (result.desktop) {
     if (!result.topBar) failures.push('top bar missing');
     if (result.topControlsOutOfBar > 0) {
@@ -581,10 +468,14 @@ function assertViewport(result) {
     if (!result.postMoveMobileStatus.turnVisible) {
       failures.push('mobile turn indicator disappears after a move');
     }
-    if (result.innerWidth <= 380 && result.postMoveMobileStatus.saveVisible) {
-      failures.push('secondary mobile save badge remains visible on the narrowest phone layout');
+    // Short landscape screens share the row with the tab bar, so the save
+    // badge is also hidden there to keep the turn indicator and navigation clear.
+    const compactMobileStatus = result.innerWidth <= 380
+      || (result.innerHeight <= 499 && result.innerWidth <= 699);
+    if (compactMobileStatus && result.postMoveMobileStatus.saveVisible) {
+      failures.push('secondary mobile save badge remains visible in the compact control layout');
     }
-    if (result.innerWidth > 380 && !result.postMoveMobileStatus.saveVisible) {
+    if (!compactMobileStatus && !result.postMoveMobileStatus.saveVisible) {
       failures.push('mobile save feedback is missing where it fits beside the turn indicator');
     }
     if (result.postMoveMobileStatus.overlaps.length > 0) {
@@ -639,11 +530,43 @@ function assertViewport(result) {
       failures.push(`${result.modalSmallTouchTargets.length} modal touch target(s) below 44px: ${summary}`);
     }
   }
+  /**
+   * A budget, not a zero.
+   *
+   * Every box can be the right size and in the right place by the time the
+   * measurements above run, and the page can still have thrown its content
+   * around getting there -- which is what someone reaching for a control
+   * actually experiences. Measured in this window, with the shell up and
+   * nothing clicked, the app sits at 0.0000 on every viewport here; 0.05 is
+   * well inside the 0.1 that counts as good and leaves room for a browser that
+   * rounds differently, while still catching anything that moves a panel.
+   *
+   * `hadRecentInput` entries are dropped by the observer, so a shift the app
+   * makes in answer to a click is not counted -- only what moves on its own.
+   */
+  if (result.layoutShift && result.layoutShift.total > 0.05) {
+    failures.push(
+      `layout shifts after the shell settled: ${result.layoutShift.total.toFixed(4)}`
+      + ` (${result.layoutShift.worst.join('; ')})`
+    );
+  }
   // Text contrast is a property of the theme and the type scale, not of the
   // shell, and auditContrast() already runs at every viewport — but the report
   // sat in the mobile branch, so desktop text had never been checked.
   if (result.contrastFailures?.length > 0) {
     failures.push(`${result.contrastFailures.length} text contrast failure(s): ${result.contrastFailures.slice(0, 6).join('; ')}`);
+  }
+  if (result.modalContrastFailures?.length > 0) {
+    failures.push(
+      `${result.modalContrastFailures.length} dialog text contrast failure(s): `
+      + result.modalContrastFailures.slice(0, 6).join('; ')
+    );
+  }
+  if (result.modalSpillFailures?.length > 0) {
+    failures.push(
+      `${result.modalSpillFailures.length} dialog element(s) painting off-screen: `
+      + result.modalSpillFailures.slice(0, 6).join('; ')
+    );
   }
   if (result.modalSmokeFailures.length > 0) {
     failures.push(`modal smoke failures: ${result.modalSmokeFailures.join(', ')}`);
@@ -722,6 +645,231 @@ function assertViewport(result) {
  * text of the declaration cannot catch this — that is exactly what the test
  * guarding it used to do, while the variant sat inert.
  */
+/**
+ * The truncation audit only ever saw short text.
+ *
+ * It runs on whatever game is loaded, and that is a fresh board whose players
+ * are "Black" and "White" -- so a clipped-name bug could not fail it. Loading a
+ * record whose players and event are as long as real ones get, and auditing
+ * that, is what the audit was written to do. It found the two player names in
+ * the game info panel clipping with no title, beside a panel title that had one.
+ *
+ * Desktop only: every surface this exercises is in the dashboard sidebar, and
+ * the phone reaches the same component through RightPanel.
+ */
+/**
+ * The PWA cards, in the states no viewport run ever enters.
+ *
+ * The per-viewport sweep measures a board with no card up, because
+ * `beforeinstallprompt` never fires in headless Chrome and the two service
+ * worker notices are dispatched by code that does not run here. So the one
+ * overlay that floats over the board column was the one thing never audited
+ * over it -- and it had already put the install card on 14 intersections once
+ * (1fcf5f5).
+ *
+ * All three are reachable by hand: the install prompt is a plain event with a
+ * `prompt` method, and the other two are the app's own custom events. Firing
+ * each and re-running the coverage audit found the update card covering 171
+ * intersections at 568x320 and shoving the board up under the top bar.
+ */
+/**
+ * The recovery prompt, the other state no viewport run ever enters.
+ *
+ * Every viewport pass deletes the auto-save key before it measures anything,
+ * and deliberately: a debounced save from the previous pass landing mid-run
+ * opens this modal over the whole app and reads as a flood of unrelated
+ * failures. The cost is that the modal a returning user meets first is the one
+ * dialog the sweep never sees -- and it is not in the trigger list above
+ * either, because no button opens it.
+ *
+ * Seeding the key and navigating puts it on screen. It is checked for the same
+ * thing every other dialog is: no button off-screen with nothing able to scroll
+ * it back.
+ */
+async function assertAutoSaveRecoveryFits(cdp, appUrl) {
+  const seeded = JSON.stringify({
+    version: 1,
+    savedAt: Date.now() - 90_000,
+    sgf: '(;GM[1]FF[4]SZ[19]KM[6.5];B[pd];W[dp];B[pp];W[dd];B[fq])',
+  });
+  const failures = [];
+
+  for (const [width, height] of [[568, 320], [320, 480], [740, 360], [390, 844], [1440, 900]]) {
+    await setViewport(cdp, { width, height, mobile: width < 768 });
+    // Seed after the outgoing page's pagehide auto-save has run. Seeding the
+    // current document races with that cleanup, especially just after Discard.
+    const seedScript = await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `localStorage.setItem('web-katrain:auto_saved_game:v1', ${JSON.stringify(seeded)});`,
+    });
+    try {
+      await navigate(cdp, appUrl);
+    } finally {
+      await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: seedScript.result.identifier });
+    }
+    await waitForBoard(cdp);
+    await waitForExpression(cdp, `!!document.querySelector('[aria-labelledby="auto-save-recovery-title"]')`, {
+      label: `Auto-save recovery prompt at ${width}x${height}`,
+      timeoutMs: 15000,
+    });
+
+    const stranded = await evaluate(cdp, STRANDED_BUTTONS_PROBE);
+    if (stranded === 'NO_MODAL') {
+      // Without this the check is vacuous: it would pass on every viewport by
+      // never finding the dialog it is supposed to be measuring.
+      failures.push(`${width}x${height}: the recovery prompt did not open, so nothing was measured`);
+    } else if (stranded !== '[]') {
+      failures.push(`${width}x${height} strands ${stranded}`);
+    } else {
+      // The other way to pass on nothing: an empty list also describes a dialog
+      // with no buttons in it. This one offers Restore and Discard.
+      const choices = await evaluate(cdp, `(() => {
+        const d = document.querySelector('[role="dialog"][aria-modal="true"]');
+        return d ? [...d.querySelectorAll('button')].filter((b) => b.getClientRects().length).length : 0;
+      })()`);
+      if (choices < 2) {
+        failures.push(`${width}x${height}: the recovery prompt showed ${choices} button(s), so "nothing stranded" means nothing`);
+      }
+    }
+
+    await evaluate(cdp, `(() => {
+      const d = document.querySelector('[role="dialog"][aria-modal="true"]');
+      const button = d && [...d.querySelectorAll('button')].find((b) =>
+        /discard/i.test((b.textContent || '') + (b.getAttribute('aria-label') || '')));
+      if (button) button.click();
+      localStorage.removeItem('web-katrain:auto_saved_game:v1');
+      return 1;
+    })()`);
+    await sleep(300);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`auto-save recovery prompt:\n      - ${failures.join('\n      - ')}`);
+  }
+}
+
+async function assertPwaCardsClearTheBoard(cdp, appUrl) {
+  const COVERAGE = `(() => {
+    const boardEl = document.querySelector('[data-board-snapshot="true"]');
+    if (!boardEl) return ['board missing'];
+    const size = Number(boardEl.getAttribute('data-board-size'));
+    const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+    const originX = Number(boardEl.getAttribute('data-board-origin-x'));
+    const originY = Number(boardEl.getAttribute('data-board-origin-y'));
+    const r = boardEl.getBoundingClientRect();
+    const blockers = new Map();
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const px = r.left + originX + x * cellSize;
+        const py = r.top + originY + y * cellSize;
+        if (px < 0 || py < 0 || px > innerWidth || py > innerHeight) continue;
+        const hit = document.elementFromPoint(px, py);
+        if (!hit || hit === boardEl || boardEl.contains(hit) || hit.contains(boardEl)) continue;
+        const label = (hit.getAttribute('aria-label') || hit.getAttribute('title') ||
+          (hit.className || '').toString() || hit.tagName).toString().trim().slice(0, 36);
+        blockers.set(label, (blockers.get(label) || 0) + 1);
+      }
+    }
+    return [...blockers].map(([label, n]) => n + ' x ' + label);
+  })()`;
+
+  const BANNERS = ['install', 'offline-ready', 'update-ready'];
+  const failures = [];
+
+  // Short screens are where the board runs out of room to give; the tall ones
+  // are here so a rule that hides too much fails too.
+  for (const viewport of [
+    { width: 568, height: 320, mobile: true },
+    { width: 740, height: 360, mobile: true },
+    { width: 844, height: 390, mobile: true },
+    { width: 1280, height: 460, mobile: true },
+    { width: 390, height: 844, mobile: true },
+    { width: 1440, height: 900, mobile: false },
+  ]) {
+    await setViewport(cdp, viewport);
+    const label = `${viewport.width}x${viewport.height}`;
+    for (const banner of BANNERS) {
+      // A fresh load per card: `shouldReplacePwaBanner` refuses to let anything
+      // displace an `update-ready`, so testing three types in one page would
+      // measure the first one three times. Navigating rather than calling
+      // `location.reload()` from inside the page, which drops the execution
+      // context `evaluate` is speaking to.
+      await evaluate(cdp, `(() => { localStorage.removeItem('web-katrain:auto_saved_game:v1'); return 1; })()`)
+        .catch(() => {});
+      await navigate(cdp, appUrl);
+      await waitForBoard(cdp);
+      await evaluate(cdp, `(() => {
+        // Phone shells open over the home overlay; the board is behind it.
+        const button = [...document.querySelectorAll('button')].find((b) =>
+          /open board|continue|resume/i.test((b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')));
+        if (button) button.click();
+        return !!button;
+      })()`);
+      await sleep(400);
+      const shown = await evaluate(cdp, `(async () => {
+        if (${JSON.stringify(banner)} === 'install') {
+          const event = new Event('beforeinstallprompt');
+          event.prompt = () => Promise.resolve();
+          event.userChoice = Promise.resolve({ outcome: 'dismissed' });
+          window.dispatchEvent(event);
+        } else {
+          window.dispatchEvent(new Event('web-katrain:pwa-' + ${JSON.stringify(banner)}));
+        }
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        const card = document.querySelector('.pwa-install-banner');
+        return !!card && getComputedStyle(card).display !== 'none';
+      })()`);
+
+      const covered = await evaluate(cdp, COVERAGE);
+      if (covered.length > 0) {
+        failures.push(`${label} with the ${banner} card: ${covered.join(', ')}`);
+      }
+      // A card that shows on a tall screen is the other half of the contract:
+      // the short-screen rule must not have swallowed every one of them.
+      if (viewport.height >= 500 && !shown && banner === 'update-ready') {
+        failures.push(`${label}: the ${banner} card never appeared, so nothing was audited`);
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`pwa card over the board:\n      - ${failures.join('\n      - ')}`);
+  }
+}
+
+async function assertLongMetadataStaysRecoverable(cdp) {
+  const LONG_NAME = 'Bartholomew Wolfeschlegelsteinhausenbergerdorff-Featherstonehaugh';
+  const LONG_EVENT =
+    'The Twenty-Ninth Annual International Championship of Baduk and Weiqi Invitational, Sponsored Division';
+  const sgf =
+    `(;GM[1]FF[4]SZ[19]KM[7.5]RU[Chinese]PB[${LONG_NAME}]BR[5d]PW[${LONG_NAME} II]WR[7d]` +
+    `DT[2019-07-04]EV[${LONG_EVENT}]RO[Quarter-final, upper bracket, second leg]` +
+    `PC[Seoul, Republic of Korea]GN[${LONG_EVENT}]RE[B+2.5]TM[3600]` +
+    `OT[5x30 byo-yomi with a 30 second delay];B[dd];W[pp])`;
+
+  await setViewport(cdp, { width: 1440, height: 900, mobile: false });
+  const loaded = await evaluate(cdp, `(async () => {
+    const moduleUrl = ${loadedModuleUrl.toString()};
+    const [store, sgfUtil] = await Promise.all([
+      import(moduleUrl('/src/store/gameStore.ts')),
+      import(moduleUrl('/src/utils/sgf.ts')),
+    ]);
+    store.useGameStore.getState().loadGame(sgfUtil.parseSgf(${JSON.stringify(sgf)}));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    // Every collapsed section, so nothing escapes the audit by being closed.
+    for (const head of document.querySelectorAll('.section-head-toggle')) {
+      if (head.getAttribute('aria-expanded') !== 'true') head.click();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return document.body.innerText.includes('Wolfeschlegel');
+  })()`);
+  if (!loaded) throw new Error('long metadata: the record did not load, so nothing was audited');
+
+  const clipped = await evaluate(cdp, TRUNCATION_AUDIT);
+  if (clipped.length > 0) {
+    throw new Error(`long metadata: unrecoverable truncation:\n      - ${clipped.join('\n      - ')}`);
+  }
+}
+
 async function assertShellVariantApplies(cdp) {
   const probe = `(() => {
     const el = document.createElement('div');
@@ -733,17 +881,13 @@ async function assertShellVariantApplies(cdp) {
   })()`;
   const failures = [];
 
-  await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 1280, height: 800, deviceScaleFactor: 1, mobile: false,
-  });
+  await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   const desktop = await evaluate(cdp, probe);
   if (desktop !== 'none') {
     failures.push(`desktop-shell: emits no rule at 1280x800 (display was "${desktop}", expected "none")`);
   }
 
-  await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
-  });
+  await setViewport(cdp, { width: 390, height: 844, mobile: true });
   const mobile = await evaluate(cdp, probe);
   if (mobile === 'none') {
     failures.push('desktop-shell: applies at 390x844, so it is not gated on the desktop shell');
@@ -754,23 +898,113 @@ async function assertShellVariantApplies(cdp) {
   }
 }
 
+/**
+ * Buttons in the open modal that sit off-screen with nothing able to scroll
+ * them back. Returns 'NO_MODAL' when nothing is open, so a caller can tell
+ * "nothing to check" from "checked and clean".
+ */
+const STRANDED_BUTTONS_PROBE = `(() => {
+  const d = document.querySelector('[role="dialog"][aria-modal="true"]');
+  if (!d) return 'NO_MODAL';
+  const vh = window.innerHeight;
+  const scrollableAncestor = (el) => {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (/auto|scroll/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return true;
+    }
+    return false;
+  };
+  const stranded = [...d.querySelectorAll('button')]
+    .filter((b) => b.getClientRects().length)
+    .filter((b) => {
+      const r = b.getBoundingClientRect();
+      return (r.bottom > vh + 0.5 || r.top < -0.5) && !scrollableAncestor(b);
+    })
+    .map((b) => (b.textContent || b.getAttribute('aria-label') || '').trim().slice(0, 24));
+  return JSON.stringify(stranded);
+})()`;
+
+/**
+ * Every dialog's controls must stay reachable on a short screen.
+ *
+ * These overlays are `fixed inset-0` flex containers that centre their panel, and
+ * a centred flex item taller than its container overflows *both* edges of a fixed
+ * overlay that nothing can scroll -- so a confirm dialog that grows past the
+ * viewport strands its own Cancel and Confirm buttons with no way to reach them.
+ * Several of these dialogs neither cap their height nor scroll, which is fine
+ * only for as long as their content stays short.
+ *
+ * A control is stranded when it sits outside the viewport AND no ancestor can
+ * scroll it back into view; the second half matters, because the dialogs that do
+ * cap themselves legitimately keep most of their content below the fold.
+ *
+ * Measured clean across 568x320, 320x480 and 740x360 when this was written.
+ */
+async function assertDialogsFitShortViewports(cdp) {
+  const DIALOGS = [
+    { name: 'Settings', trigger: '/^Settings/i', wait: 1500 },
+    { name: 'Keyboard shortcuts', trigger: '/Keyboard shortcuts/i', wait: 1100 },
+    { name: 'Paste SGF', trigger: '/Paste SGF/i', wait: 1100 },
+    { name: 'Save copy to Library', trigger: '/Save copy to Library/i', wait: 1100 },
+    { name: 'New game', trigger: '/^New game/i', wait: 1300 },
+  ];
+  const SHORT = [[568, 320], [320, 480], [740, 360]];
+  const failures = [];
+  const strandedProbe = STRANDED_BUTTONS_PROBE;
+
+  for (const [width, height] of SHORT) {
+    await setViewport(cdp, { width, height, mobile: width < 768 });
+    await sleep(600);
+    for (const dialog of DIALOGS) {
+      const opened = await evaluate(cdp, `(() => {
+        const b = [...document.querySelectorAll('button')].find((x) =>
+          ${dialog.trigger}.test((x.getAttribute('aria-label') || '') + '|' + (x.textContent || '')));
+        if (!b) return 'no-trigger';
+        b.click();
+        return 'ok';
+      })()`);
+      // A dialog whose trigger this layout does not offer is not a failure.
+      if (opened !== 'ok') continue;
+      await sleep(dialog.wait);
+      const stranded = await evaluate(cdp, strandedProbe);
+      if (stranded !== 'NO_MODAL' && stranded !== '[]') {
+        failures.push(`${dialog.name} at ${width}x${height} strands ${stranded}`);
+      }
+      await evaluate(cdp, `(() => {
+        const d = document.querySelector('[role="dialog"][aria-modal="true"]');
+        if (!d) return;
+        const c = [...d.querySelectorAll('button')].find((b) =>
+          /cancel|close|keep|not now|dismiss/i.test((b.textContent || '') + (b.getAttribute('aria-label') || '')));
+        if (c) c.click();
+        else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      })()`);
+      await sleep(500);
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`dialogs on short viewports: ${failures.join('; ')}`);
+  }
+}
+
 async function main() {
   fs.rmSync(screenshotDir, { recursive: true, force: true });
   fs.mkdirSync(screenshotDir, { recursive: true });
 
   const appPort = await freePort();
   const devtoolsPort = await freePort();
-  const server = spawn(path.join('node_modules', '.bin', 'vite'), [
-    '--host',
-    '127.0.0.1',
-    '--port',
-    String(appPort),
-    '--strictPort',
-  ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
+  // A warm developer cache hid first-use worker dependency reloads in CI.
+  // Keep every run cold and independent of other dev servers and Chrome tabs.
+  // node_modules also keeps transformed dependency code out of React's plugin.
+  const runDir = fs.mkdtempSync(path.resolve('node_modules/.web-katrain-viewport-'));
+  let server;
   let chrome;
   try {
-    await waitForHttp(`http://127.0.0.1:${appPort}/`);
+    server = await createServer({
+      cacheDir: path.join(runDir, 'vite'),
+      server: { host: '127.0.0.1', port: appPort, strictPort: true },
+    });
+    await server.listen();
 
     // --no-sandbox and --disable-dev-shm-usage are the pair headless Chrome
     // needs on a CI runner: the sandbox cannot start in the container, and
@@ -788,6 +1022,7 @@ async function main() {
       '--disable-gpu',
       '--no-first-run',
       '--no-default-browser-check',
+      `--user-data-dir=${path.join(runDir, 'chrome')}`,
       ...ciChromeFlags,
       `--remote-debugging-port=${devtoolsPort}`,
       '--window-size=1280,900',
@@ -815,6 +1050,45 @@ async function main() {
     await cdp.ready;
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
+    // Headless Chrome has no focused window, so `document.hasFocus()` is false
+    // and the page is treated as background: measured here, it is false on a
+    // local run too. Focus emulation makes it report as focused, which is what
+    // a real browser tab does while someone is looking at it -- the state every
+    // assertion below is written about.
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+    // Layout shift is the one kind of breakage the measurements below cannot
+    // see: every box can be the right size and in the right place by the time
+    // they run, and the page can still have thrown its content around getting
+    // there. The observer goes in before the app boots so nothing is missed,
+    // and `__shifts` is reset once the shell has settled -- what is asserted is
+    // the quiet window after that, not the churn of a first paint.
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+        performance.setResourceTimingBufferSize(5000);
+        window.__shifts = [];
+        try {
+          new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              // A shift within 500ms of a click is the page responding to it.
+              if (entry.hadRecentInput) continue;
+              window.__shifts.push({
+                value: entry.value,
+                sources: (entry.sources || []).slice(0, 3).map((source) => {
+                  const node = source.node;
+                  if (!node || !node.tagName) return '(removed)';
+                  const cls = typeof node.className === 'string'
+                    ? node.className.trim().split(/\\s+/).slice(0, 3).join('.') : '';
+                  return node.tagName.toLowerCase() + (cls ? '.' + cls : '')
+                    + ' y' + Math.round(source.previousRect.top) + '->' + Math.round(source.currentRect.top);
+                }),
+              });
+            }
+          }).observe({ type: 'layout-shift', buffered: true });
+        } catch {
+          // No layout-shift entries in this build; the check reports nothing.
+        }
+      `,
+    });
     if (process.env.VIEWPORT_CPU_THROTTLE) {
       await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.VIEWPORT_CPU_THROTTLE) });
       process.stdout.write(`CPU throttled ${process.env.VIEWPORT_CPU_THROTTLE}x\n`);
@@ -841,16 +1115,12 @@ async function main() {
     });
 
     const results = [];
+    const viewportFailures = [];
     for (const viewport of VIEWPORTS) {
       const appUrl = `http://127.0.0.1:${appPort}/`;
       pageErrors = [];
-      await cdp.send('Emulation.setDeviceMetricsOverride', {
-        width: viewport.width,
-        height: viewport.height,
-        deviceScaleFactor: 1,
-        mobile: viewport.mobile,
-      });
-      await cdp.send('Page.navigate', { url: appUrl });
+      await setViewport(cdp, viewport);
+      await navigate(cdp, appUrl);
       await waitForBoard(cdp);
       // Each viewport has to start from a clean slate. The previous pass edits
       // the game, so its auto-save debounce can land after we navigate away —
@@ -865,7 +1135,7 @@ async function main() {
         return had;
       })()`);
       if (hadAutoSave) {
-        await cdp.send('Page.navigate', { url: appUrl });
+        await navigate(cdp, appUrl);
         await waitForBoard(cdp);
       }
       const opensPanels = !viewport.mobile
@@ -876,7 +1146,7 @@ async function main() {
           localStorage.setItem('web-katrain:library_open:v1', 'true');
           localStorage.setItem('web-katrain:sidebar_open:v1', 'true');
         })()`);
-        await cdp.send('Page.navigate', { url: appUrl });
+        await navigate(cdp, appUrl);
         await waitForBoard(cdp);
       }
       await evaluate(cdp, `(() => {
@@ -893,6 +1163,9 @@ async function main() {
         return true;
       })()`);
       await waitForShellReady(cdp);
+      // Start the layout-shift window here: the shell is up and nothing has
+      // been clicked, so anything that moves from now on moves on its own.
+      await evaluate(cdp, `(() => { window.__shifts = []; return true; })()`);
       const defaultLayout = await evaluate(cdp, `(() => {
         const board = document.querySelector('[data-board-snapshot="true"]');
         if (!board) return { board: null };
@@ -917,6 +1190,22 @@ async function main() {
         path.join(screenshotDir, `${viewport.width}x${viewport.height}.png`),
         Buffer.from(defaultScreenshot.result.data, 'base64')
       );
+      // Close the quiet window here: everything below clicks through the app,
+      // and a shift that follows a click is the page answering it. The settle
+      // is for what arrives on its own -- a library read resolving, an install
+      // card mounting, the engine reporting ready.
+      await sleep(700);
+      const layoutShift = await evaluate(cdp, `(() => {
+        const shifts = window.__shifts || [];
+        return {
+          total: shifts.reduce((sum, entry) => sum + entry.value, 0),
+          worst: shifts
+            .slice()
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 3)
+            .map((entry) => entry.value.toFixed(4) + ' ' + entry.sources.join(' | ')),
+        };
+      })()`);
       const result = await evaluate(cdp, `(async () => {
         const rect = (el) => {
           if (!el) return null;
@@ -947,9 +1236,23 @@ async function main() {
         const topToggle = Array.from(document.querySelectorAll('button')).find((button) => (button.getAttribute('title') || '').includes('top bar')) || null;
         const editToolbar = document.querySelector('[data-edit-toolbar]');
         const board = document.querySelector('[data-board-snapshot="true"]');
-        // Paste SGF / OGS and Photo Board live in the header File menu ('More file
-        // actions'); the dedicated smoke flows open that menu to reach them.
-        const requiredFileActions = ['New game', 'Save SGF', 'Load SGF, board photo, or model weights', 'More file actions'];
+        // Paste SGF / OGS and the board-from-photo item live in the header File
+        // menu ('More file actions'); the dedicated smoke flows open that menu
+        // to reach them.
+        //
+        // Each entry is one action listed under every name a shell gives it.
+        // The dashboard calls the file picker "Open game, board photo, or model
+        // weights" and the classic top bar still calls it "Load ..."; this
+        // sweep measures whether the action is reachable, so it accepts either.
+        // Holding the app to one spelling is a copy test's job, not this one's
+        // -- encoding a single spelling here just turns a rename into a wall of
+        // unrelated failures, which is exactly what it did.
+        const requiredFileActions = [
+          ['New game'],
+          ['Save SGF'],
+          ['Open game, board photo, or model weights', 'Load game, board photo, or model weights'],
+          ['More file actions'],
+        ];
         const allButtons = Array.from(document.querySelectorAll('button'));
         const targetLabel = (el) => {
           const aria = el.getAttribute('aria-label');
@@ -990,6 +1293,56 @@ async function main() {
             width: r.width,
             height: r.height,
           }));
+        /**
+         * Content inside a dialog that paints outside the viewport.
+         *
+         * documentOverflow catches a page you can scroll sideways, but an
+         * element can spill out of its own container without widening the
+         * document at all -- the keyboard help's "Middle-click a candidate"
+         * chip is shrink-0 and 189px, so in a 234px row at 320px wide it simply
+         * painted 48px outside its row and 5px past the screen. Nothing
+         * measured that: the page did not overflow, the text was not clipped by
+         * its own box, and the target was well over 44px.
+         */
+        const auditDialogSpill = (scope) => {
+          // Regions that run off the side on purpose, named one at a time.
+          // There is no general scrollable-ancestor rule below because both
+          // ways of writing one let a real bug through, so a deliberate
+          // sideways scroller is exempted here by name and has to earn it: this
+          // row is flex-nowrap with overflow-x-auto under lg and flex-wrap
+          // above it, which is a chip rail the reader swipes, not content that
+          // escaped its box.
+          const sidewaysScrollers = '.pro-games-featured';
+          const out = [];
+          for (const el of scope.querySelectorAll('*')) {
+            if (el.closest(sidewaysScrollers)) continue;
+            // sr-only clips rather than hides, and is parked off-screen on purpose.
+            if (el.classList.contains('sr-only')) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            const over = Math.round(Math.max(r.right - window.innerWidth, -r.left));
+            if (over <= 1) continue;
+            if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) continue;
+            // Report the innermost offender: every ancestor of a spilling element
+            // spills too, and only the innermost one names the thing to fix.
+            if (Array.from(el.children).some((child) => {
+              const b = child.getBoundingClientRect();
+              return b.width > 0 && (b.right > window.innerWidth + 1 || b.left < -1);
+            })) continue;
+            // There is deliberately no "but an ancestor scrolls sideways"
+            // exemption here. Both ways of writing one are wrong: overflow-x
+            // computes to auto whenever the other axis is not visible, so every
+            // dialog with a scrolling body looks horizontally scrollable, and
+            // scrollWidth > clientWidth is true of the overflow itself, not just
+            // of a scroller. Written either way this audit passed a dialog whose
+            // chip was hanging 5px off the screen. A dialog that does need a wide
+            // scrolling region can be exempted by name when one exists.
+            const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+            out.push((text.slice(0, 26) || el.tagName.toLowerCase()) + ' ' + over + 'px past the viewport');
+            if (out.length >= 4) break;
+          }
+          return out;
+        };
         // Desktop counterpart to auditSmallTouchTargets: modals were only ever
         // audited under the mobile gate, so no dialog's target sizes had been
         // checked on desktop. 24px is the WCAG 2.2 SC 2.5.8 floor, the same one
@@ -1121,123 +1474,52 @@ async function main() {
         // failing here is a hard-coded colour or a token used off its intended
         // surface. Colours are read computed, never sampled from a screenshot:
         // capture in this setup is not colour-accurate.
-        const auditContrast = (skipSelector) => {
-          const parseColor = (value) => {
-            if (!value) return null;
-            // Every backslash here is doubled on purpose: this whole probe is
-            // a template literal, so a single one is swallowed before the page
-            // ever sees the regex.
-            let m = value.match(/rgba?\\(([^)]+)\\)/);
-            if (m) {
-              const parts = m[1].split(/[,\\s\\/]+/).filter(Boolean).map(Number);
-              return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
-            }
-            m = value.match(/color\\(srgb\\s+([^)]+)\\)/);
-            if (m) {
-              const parts = m[1].split(/[\\s\\/]+/).filter(Boolean).map(Number);
-              return { r: parts[0] * 255, g: parts[1] * 255, b: parts[2] * 255, a: parts.length > 3 ? parts[3] : 1 };
-            }
-            return null;
-          };
-          const composite = (fg, bg) => ({
-            r: fg.r * fg.a + bg.r * (1 - fg.a),
-            g: fg.g * fg.a + bg.g * (1 - fg.a),
-            b: fg.b * fg.a + bg.b * (1 - fg.a),
-            a: 1,
-          });
-          const luminance = (c) => {
-            const channel = (v) => {
-              const n = v / 255;
-              return n <= 0.03928 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
-            };
-            return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
-          };
-          const contrast = (a, b) => {
-            const first = luminance(a);
-            const second = luminance(b);
-            const hi = Math.max(first, second);
-            const lo = Math.min(first, second);
-            return (hi + 0.05) / (lo + 0.05);
-          };
-          const backgroundOf = (el) => {
-            let node = el;
-            let acc = null;
-            while (node) {
-              const c = parseColor(getComputedStyle(node).backgroundColor);
-              if (c && c.a > 0) {
-                acc = acc ? composite(acc, c) : c;
-                if (acc.a >= 0.999) return acc;
-              }
-              node = node.parentElement;
-            }
-            return acc && acc.a >= 0.999 ? acc : { r: 255, g: 255, b: 255, a: 1 };
-          };
-          const failures = [];
-          const seen = new Set();
-          for (const el of document.querySelectorAll('*')) {
-            if (el.children.length > 0) continue;
-            const text = (el.textContent || '').trim();
-            if (text.length < 2) continue;
-            const style = getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden') continue;
-            if (Number(style.opacity) < 0.15) continue;
-            const bounds = el.getBoundingClientRect();
-            if (bounds.width < 4 || bounds.height < 4) continue;
-            if (el.closest('[data-board-snapshot="true"], canvas, svg')) continue;
-            if (skipSelector && el.closest(skipSelector)) continue;
-            const fg = parseColor(style.color);
-            if (!fg) continue;
-            const bg = backgroundOf(el);
-            const effective = fg.a < 1 ? composite(fg, bg) : fg;
-            const ratio = contrast(effective, bg);
-            const size = parseFloat(style.fontSize);
-            const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
-            const required = large ? 3 : 4.5;
-            if (ratio + 0.05 >= required) continue;
-            const key = String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className || '') + '|' + style.color;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            failures.push(text.slice(0, 24) + ' ' + (Math.round(ratio * 100) / 100) + ':1 (needs ' + required + ':1)');
-          }
-          return failures;
-        };
+        const auditContrast = ${auditTextContrast.toString()};
         // auditContrast reads whatever theme is mounted, which is the default
         // one. The palette it guards is defined per theme in index.css, so a
         // token that only fails under kaya or light would never be seen. Each
         // theme is applied to the root, audited, and the original restored;
         // setting data-ui-theme is the whole mechanism, since the themes are
         // plain :root[data-ui-theme=...] custom-property blocks.
-        const auditContrastAllThemes = () => {
+        const auditContrastAllThemes = (scope) => {
           const root = document.documentElement;
           const original = root.dataset.uiTheme;
           // The mounted theme first, with nothing skipped: that is the only pass
           // where every element's colours are the ones the app actually shipped.
-          const out = auditContrast().map((entry) => (original || 'default') + ': ' + entry);
+          const out = auditContrast(undefined, scope).map((entry) => (original || 'default') + ': ' + entry);
           // The graph's empty overlay picks its palette in JavaScript
           // (scoreWinrateGraphTheme.ts hardcodes bg-[rgb(248,250,252)] on the
           // light branch), so swapping data-ui-theme flips the CSS variables
           // underneath classes React never re-renders. That mismatched pair
           // never occurs in the app, and reported ~2:1 against three themes.
           const jsThemed = '[data-analysis-graph-empty-state="true"]';
-          for (const theme of ['noir', 'kaya', 'studio', 'light']) {
-            if (theme === original) continue;
-            root.dataset.uiTheme = theme;
-            // A custom-property swap on the root does not invalidate every
-            // descendant's cached computed style on its own, and reading a
-            // stale colour against a fresh background invents failures at
-            // ~1.2:1. Detach and reattach to force a full recalc.
+          // The restore has to be in a finally: this now runs once for the page
+          // and once per open dialog, and a throw anywhere in the loop would
+          // otherwise leave a theme mounted that the app never chose -- every
+          // measurement after it at that viewport, contrast or not, would be
+          // reading the wrong palette.
+          try {
+            for (const theme of ['noir', 'kaya', 'studio', 'light']) {
+              if (theme === original) continue;
+              root.dataset.uiTheme = theme;
+              // A custom-property swap on the root does not invalidate every
+              // descendant's cached computed style on its own, and reading a
+              // stale colour against a fresh background invents failures at
+              // ~1.2:1. Detach and reattach to force a full recalc.
+              root.style.display = 'none';
+              void root.offsetHeight;
+              root.style.display = '';
+              void getComputedStyle(root).getPropertyValue('--ui-text');
+              out.push(...auditContrast(jsThemed, scope).map((entry) => theme + ': ' + entry));
+            }
+          } finally {
+            if (original === undefined) delete root.dataset.uiTheme;
+            else root.dataset.uiTheme = original;
             root.style.display = 'none';
             void root.offsetHeight;
             root.style.display = '';
             void getComputedStyle(root).getPropertyValue('--ui-text');
-            out.push(...auditContrast(jsThemed).map((entry) => theme + ': ' + entry));
           }
-          if (original === undefined) delete root.dataset.uiTheme;
-          else root.dataset.uiTheme = original;
-          root.style.display = 'none';
-          void root.offsetHeight;
-          root.style.display = '';
-          void getComputedStyle(root).getPropertyValue('--ui-text');
           return out;
         };
         const waitForFrames = async (frames = 2) => {
@@ -1441,6 +1723,33 @@ async function main() {
             failures.push('pointer focus displayed the keyboard cursor');
           }
 
+          // A click focuses the board as well, and the arrows are the app's move
+          // navigation, so the board has to leave them alone: an arrow pressed
+          // here must reach the global shortcut rather than raise the cursor.
+          // See boardKeyboardCursorHandlesKey in boardKeyboardNavigation.ts.
+          boardEl.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'ArrowRight',
+            bubbles: true,
+            cancelable: true,
+          }));
+          await waitForFrames(2);
+          if (boardEl.getAttribute('data-board-input-mode') !== 'pointer') {
+            failures.push('an arrow after a board click activated keyboard-only board feedback');
+          }
+          if (boardEl.querySelector('[data-board-keyboard-cursor="true"]')) {
+            failures.push('an arrow after a board click displayed the keyboard cursor');
+          }
+
+          // Reaching the board by keyboard is what raises the cursor, which is
+          // the distinction this section is really about.
+          // React binds onFocus/onBlur to focusin/focusout, and a headless
+          // window will not deliver real ones, so drive them the same way this
+          // section already drives pointer and key events.
+          boardEl.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+          await waitForFrames(1);
+          boardEl.focus({ preventScroll: true });
+          boardEl.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+          await waitForFrames(2);
           boardEl.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'ArrowRight',
             bubbles: true,
@@ -1734,6 +2043,33 @@ async function main() {
         //
         // A deadline says what is actually meant -- give it ten seconds -- and
         // does not change meaning with load.
+        /**
+         * Polls until something is true, or a deadline passes.
+         *
+         * The same reasoning as waitForSelector below, for state that is not an
+         * element. waitForFrames(4) is a guess about how long an update takes,
+         * and frames stretch exactly when the thing being waited for is slow.
+         * The board-theme and locale smokes both asserted straight after four
+         * frames, and both failed at 568x320 in a run that passed on the very
+         * next attempt -- an intermittently red check is worse than no check,
+         * because it teaches everyone to re-run it.
+         *
+         * Returns whether the condition held, but the callers still assert on
+         * the real state afterwards: the point is to stop guessing at the
+         * wait, not to soften what is being checked.
+         */
+        const waitForCondition = async (holds, timeoutMs = 5000) => {
+          const deadline = performance.now() + timeoutMs;
+          for (;;) {
+            try {
+              if (holds()) return true;
+            } catch {
+              // A picker that has not rendered yet reads as not-yet-true.
+            }
+            if (performance.now() >= deadline) return false;
+            await new Promise((resolve) => setTimeout(resolve, 16));
+          }
+        };
         const waitForSelector = async (selector, timeoutMs = 10000) => {
           const deadline = performance.now() + timeoutMs;
           for (;;) {
@@ -1833,6 +2169,27 @@ async function main() {
         const modalSmokeFailures = [];
         const modalSmallTouchTargets = [];
         const modalSubMinimumTargets = [];
+        const modalContrastFailures = [];
+        const modalSpillFailures = [];
+        /**
+         * auditContrastAllThemes() runs on whatever is in the DOM when it is
+         * called, and it is called after the smoke list has opened and closed
+         * every dialog -- so the twenty-nine dialogs' own text had never been
+         * measured against any theme. That is where this bug lives: a fixed
+         * colour reads fine on the theme it was picked on and goes to 2.28:1 on
+         * the light one, which is exactly how two dialogs kept a hard-coded
+         * amber through all four.
+         *
+         * Contrast is a property of the theme and the type scale, so the shell
+         * does not change the answer and one viewport of each kind is enough.
+         * Both are needed, not either: the desktop shell is where the shortcut
+         * chips and category labels render, and the mobile one is where the
+         * sheet-style dialogs and the home screen exist at all. Four themes
+         * apiece, each with a forced full-page recalc, is too much to spend at
+         * all eight.
+         */
+        const auditsModalContrast = ${(viewport.width === 1280 && viewport.height === 800)
+          || (viewport.width === 768 && viewport.height === 1024)};
         const dispatchShortcut = (key, options = {}) => {
           const event = new KeyboardEvent('keydown', {
             key,
@@ -2008,10 +2365,10 @@ async function main() {
           // The banner renders at every viewport, so measure it on desktop too:
           // the last of the mobile-only audits without a counterpart.
           const subMinimumTargets = [];
-          const waitForBanner = async () => {
+          const waitForBanner = async (requireVisible = true) => {
             for (let i = 0; i < 30; i++) {
               const banner = document.querySelector('.pwa-install-banner');
-              if (banner && isVisibleBox(banner)) return banner;
+              if (banner && (!requireVisible || isVisibleBox(banner))) return banner;
               await waitForFrames(1);
             }
             return null;
@@ -2027,11 +2384,81 @@ async function main() {
             }
           };
 
+          /**
+           * Start from no banner.
+           *
+           * The offline-ready handler only fills an empty slot -- it keeps
+           * whatever is already up rather than replacing it -- and at the
+           * mobile viewports something already is. The iPadOS check reads
+           * platform === MacIntel together with more than one touch point,
+           * which is right on a real iPad and also true of the headless
+           * Chrome this sweep runs,
+           * because setViewport turns on touch emulation with 5 touch points.
+           * So every mobile pass opened on the iOS install card, offline-ready
+           * declined to replace it, and the sweep reported the offline banner
+           * as missing its own text and root state.
+           *
+           * Dismissing it is what a person on that iPad would do, and it sets
+           * the dismissed flag so it does not come back mid-run.
+           */
+          // On a fresh desktop profile Chrome can offer installation while
+          // the first-game rail hides that promo. It still owns the banner
+          // state, so clear it before injecting the offline-ready event too.
+          const preexisting = await waitForBanner(false);
+          if (preexisting) {
+            const dismissPreexisting = findButtonByLabel('Dismiss', preexisting);
+            if (dismissPreexisting) {
+              dismissPreexisting.click();
+              await waitForFrames(4);
+            }
+            if (document.querySelector('.pwa-install-banner')) {
+              failures.push('a banner was already showing and would not dismiss');
+              return { failures, smallTouchTargets, subMinimumTargets };
+            }
+          }
+
           window.dispatchEvent(new Event('web-katrain:pwa-offline-ready'));
           await waitForFrames(4);
           let banner = await waitForBanner();
+
+          /**
+           * Below 500px tall there is meant to be no card at all.
+           *
+           * The card is fixed and the board reserves its height, and once the
+           * board has shrunk as far as it goes the reserve stops holding: with
+           * the update card up at 568x320 the board was pushed to top:4 under
+           * the top bar and 171 of its intersections came back from
+           * elementFromPoint as something else. So every card now hides under
+           * a max-height: 499px media rule in index.css, and the smoke flow
+           * below -- text, root state, reserved height, fits-in-viewport -- has
+           * nothing to inspect. Assert the absence instead; the presence side
+           * still runs at every viewport tall enough to have one.
+           *
+           * (No backticks in here: this comment lives inside the template
+           * literal that carries the whole probe, and one would end it.)
+           */
+          if (innerHeight <= 499) {
+            if (banner) failures.push('a card is showing below 500px tall, where the board has no room to give');
+            // Not data-pwa-banner: the component still tracks which card it
+            // would show, and the dashboard rule keyed on that attribute reads
+            // --pwa-banner-height, which falls back to 0px when there is no
+            // card to measure. Teaching the component the breakpoint would put
+            // the same bound in two places. What must not happen is the board
+            // giving up height for a card nobody can see:
+            if (getComputedStyle(document.documentElement).getPropertyValue('--pwa-banner-height').trim()) {
+              failures.push('board height reserved for a card that is not shown');
+            }
+            return { failures, smallTouchTargets, subMinimumTargets };
+          }
+
           if (!banner) {
-            failures.push('offline-ready banner missing');
+            const card = document.querySelector('.pwa-install-banner');
+            failures.push('offline-ready banner missing: ' + JSON.stringify({
+              cardPresent: !!card,
+              display: card ? getComputedStyle(card).display : null,
+              state: document.documentElement.dataset.pwaBanner,
+              toasts: Array.from(document.querySelectorAll('.notification-toast')).map((el) => el.textContent),
+            }));
             return { failures, smallTouchTargets, subMinimumTargets };
           }
           if (document.documentElement.getAttribute('data-pwa-banner') !== 'offline-ready') {
@@ -2086,6 +2513,86 @@ async function main() {
           const candidateLabel = targetLabel(candidate);
           return candidateLabel === label || candidateLabel.includes(label) || targetSearchText(candidate).includes(label);
         }) || null;
+        /**
+         * The board-from-photo action, under whichever name the current shell
+         * prints on it: the desktop File menu item reads "Board from photo"
+         * and the mobile Tools sheet reads "Photo Board".
+         */
+        const PHOTO_BOARD_LABELS = ['Board from photo', 'Photo Board'];
+        const findPhotoBoardButton = (scope = document) => {
+          for (const label of PHOTO_BOARD_LABELS) {
+            const button = findButtonByLabel(label, scope);
+            if (button) return button;
+          }
+          return null;
+        };
+        /**
+         * Opens the photo-board dialog from whichever shell is on screen.
+         *
+         * Written once because it was written twice: the trace-import flow and
+         * the photo-board dialog smoke had their own copies of this, and when
+         * the menu item was renamed both went stale together.
+         *
+         * The desktop path opens the File menu to reach the item, so it has to
+         * close it again when the item is not there. Throwing with the menu
+         * still up leaves every later check measuring a shell with something
+         * on top of it.
+         */
+        const openPhotoBoard = async () => {
+          if (${viewport.mobile}) {
+            const toolsButton = findButtonByLabel('Tools');
+            if (!toolsButton) throw new Error('Tools button missing');
+            toolsButton.click();
+            const toolsDialog = await waitForSelector('[data-mobile-tools-dialog="true"]');
+            if (!toolsDialog) throw new Error('Tools dialog did not open');
+            const photoBoardButton = findPhotoBoardButton(toolsDialog);
+            if (!photoBoardButton) throw new Error('photo board action missing in tools');
+            photoBoardButton.click();
+            await waitForFrames(2);
+            return;
+          }
+          let photoBoardButton = findPhotoBoardButton();
+          if (!photoBoardButton) {
+            const moreFileActions = findButtonByLabel('More file actions');
+            if (!moreFileActions) throw new Error('photo board action missing (no File menu)');
+            moreFileActions.click();
+            await waitForFrames(2);
+            photoBoardButton = findPhotoBoardButton();
+            if (!photoBoardButton) {
+              await dismissTransientOverlays();
+              throw new Error(
+                'photo board action missing from the File menu (looked for '
+                + PHOTO_BOARD_LABELS.join(' / ') + ')',
+              );
+            }
+          }
+          photoBoardButton.click();
+          await waitForFrames(2);
+        };
+        /**
+         * Puts the shell back to a clean state before a dialog check.
+         *
+         * A flow that throws part-way can leave a disclosure open behind it,
+         * and every check after it then measures a shell with a menu on top.
+         * One renamed File menu item reported twelve dialogs as "did not
+         * open" -- none of which was true, and all of which hid the checks
+         * that ran after them.
+         *
+         * Only popup triggers are dismissed. An aria-expanded="true" match on
+         * its own would also catch the accordions and tree rows this sweep is
+         * meant to find open, and collapsing those would change what it
+         * measures; requiring aria-haspopup alongside it keeps this to menus.
+         */
+        const dismissTransientOverlays = async () => {
+          const open = () => Array.from(document.querySelectorAll('[aria-haspopup][aria-expanded="true"]'));
+          if (open().length === 0) return;
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+          await waitForFrames(2);
+          for (const trigger of open()) {
+            trigger.click();
+            await waitForFrames(2);
+          }
+        };
         const closeDialog = async (dialog, closeLabel) => {
           const button = findButtonByLabel(closeLabel, dialog);
           if (!button) return false;
@@ -2095,6 +2602,10 @@ async function main() {
         };
         const smokeModal = async ({ name, selector, closeLabel, open, afterOpen }) => {
           try {
+            // Whatever ran before this may have left a menu open over the
+            // shell; measuring through one produces failures about this
+            // dialog that are really about that menu.
+            await dismissTransientOverlays();
             // Most of these open by dispatching a keyboard shortcut, which is a
             // fire-and-forget: if the app's handler is not listening yet the
             // key is simply lost, and the only symptom is "did not open".
@@ -2114,6 +2625,10 @@ async function main() {
               modalSmallTouchTargets.push(...auditSmallTouchTargets(dialog).map((target) => ({ ...target, modal: name })));
             } else {
               modalSubMinimumTargets.push(...auditSubMinimumTargets(dialog).map((target) => ({ ...target, modal: name })));
+            }
+            modalSpillFailures.push(...auditDialogSpill(dialog).map((entry) => name + ': ' + entry));
+            if (auditsModalContrast) {
+              modalContrastFailures.push(...auditContrastAllThemes(dialog).map((entry) => name + ' -- ' + entry));
             }
             if (afterOpen) await afterOpen(dialog);
             if (!(await closeDialog(dialog, closeLabel))) {
@@ -2396,7 +2911,10 @@ async function main() {
             return;
           }
           nextChoice.click();
-          await waitForFrames(4);
+          await waitForCondition(() => (
+            document.querySelector('[data-board-snapshot="true"]')?.getAttribute('data-board-theme') === nextTheme
+            && nextChoice.getAttribute('aria-checked') === 'true'
+          ));
           const afterTheme = document.querySelector('[data-board-snapshot="true"]')?.getAttribute('data-board-theme') || '';
           if (afterTheme !== nextTheme) {
             boardThemeSmokeFailures.push('board theme did not update from ' + beforeTheme + ' to ' + nextTheme + ' (saw ' + afterTheme + ')');
@@ -2422,7 +2940,11 @@ async function main() {
           if (valueSetter) valueSetter.call(selector, 'ja');
           else selector.value = 'ja';
           selector.dispatchEvent(new Event('change', { bubbles: true }));
-          await waitForFrames(4);
+          await waitForCondition(() => (
+            selector.value === 'ja'
+            && document.documentElement.lang === 'ja'
+            && document.documentElement.getAttribute('data-locale') === 'ja'
+          ));
           if (selector.value !== 'ja') localeSmokeFailures.push('locale selector did not keep Japanese value');
           if (document.documentElement.lang !== 'ja') {
             localeSmokeFailures.push('html lang did not update to ja');
@@ -2449,31 +2971,6 @@ async function main() {
               await waitForFrames(1);
             }
             return false;
-          };
-          const openPhotoBoard = async () => {
-            if (${viewport.mobile}) {
-              const toolsButton = findButtonByLabel('Tools');
-              if (!toolsButton) throw new Error('Tools button missing');
-              toolsButton.click();
-              const toolsDialog = await waitForSelector('[data-mobile-tools-dialog="true"]');
-              if (!toolsDialog) throw new Error('Tools dialog did not open');
-              const photoBoardButton = findButtonByLabel('Photo Board', toolsDialog);
-              if (!photoBoardButton) throw new Error('Photo Board action missing in tools');
-              photoBoardButton.click();
-              await waitForFrames(2);
-              return;
-            }
-            let photoBoardButton = findButtonByLabel('Photo Board');
-            if (!photoBoardButton) {
-              const moreFileActions = findButtonByLabel('More file actions');
-              if (!moreFileActions) throw new Error('Photo Board action missing');
-              moreFileActions.click();
-              await waitForFrames(2);
-              photoBoardButton = findButtonByLabel('Photo Board');
-            }
-            if (!photoBoardButton) throw new Error('Photo Board action missing');
-            photoBoardButton.click();
-            await waitForFrames(2);
           };
           const createSyntheticBoardPhoto = async (boardSize, blackPoint, whitePoint) => {
             const canvas = document.createElement('canvas');
@@ -2879,7 +3376,22 @@ async function main() {
             const covered = Array.from(gameStrip.querySelectorAll('.gs-player, .gs-fact, .gs-file, .gs-save'))
               .filter((el) => intersects(panelRect, rect(el)))
               .map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 24));
-            desktopEditPanelOverlaps = covered.length > 0 ? covered : ['game strip'];
+            desktopEditPanelOverlaps = covered.length > 0 ? covered : ['game strip (panel top ' + panelRect.top + ', strip bottom ' + rect(gameStrip).bottom + ')'];
+          }
+          // Different platform fonts/density can make this strip taller than
+          // its minimum. Stress that geometry while the palette stays open;
+          // it must follow the measured stage and return when the strip shrinks.
+          if (editPanel && gameStrip) {
+            const originalMinHeight = gameStrip.style.minHeight;
+            for (const minHeight of ['120px', originalMinHeight]) {
+              gameStrip.style.minHeight = minHeight;
+              await waitForFrames(3);
+              const panelBounds = rect(editPanel);
+              const stageBounds = rect(document.querySelector('.board-stage'));
+              if (!stageBounds || Math.abs(panelBounds.top - stageBounds.top - 10) > 1) {
+                desktopEditPanelOverlaps.push('strip height ' + (minHeight || 'auto') + ': panel top ' + panelBounds.top + ', stage top ' + stageBounds?.top);
+              }
+            }
           }
           const closeEdit = Array.from(document.querySelectorAll('button')).find((button) =>
             targetSearchText(button).includes('Close edit mode'));
@@ -2897,6 +3409,112 @@ async function main() {
             dispatchShortcut('?');
             await waitForFrames(2);
           },
+        });
+        // The two most-opened dialogs in the app after the report, and neither
+        // was in this list: the suite has never checked that they open, that
+        // they carry a close control, or that their targets clear 44px. Both
+        // are read-only, so a smoke pass leaves the game exactly as it found
+        // it -- which is why New game is still not here, Ctrl+N being a
+        // question about the game on the board.
+        await smokeModal({
+          name: 'command palette',
+          selector: '[aria-labelledby="command-palette-title"]',
+          closeLabel: 'Close command palette',
+          open: async () => {
+            dispatchShortcut('k', { ctrlKey: true });
+            await waitForFrames(2);
+          },
+        });
+        await smokeModal({
+          name: 'game re-analysis',
+          selector: '[aria-labelledby="game-analysis-title"]',
+          closeLabel: 'Close game analysis',
+          open: async () => {
+            dispatchShortcut('F2');
+            await waitForFrames(2);
+          },
+        });
+        // Most of the app's dialogs have no shortcut of their own, which is why
+        // this list stayed at ten of twenty-nine. The palette is how a user
+        // reaches them, and it is smoke-tested just above, so it opens them
+        // here too. A missing command simply opens nothing, which smokeModal
+        // already reports as "did not open".
+        const openViaPalette = (commandId) => async () => {
+          dispatchShortcut('k', { ctrlKey: true });
+          await waitForFrames(2);
+          document.querySelector('[data-command-palette-item="' + commandId + '"]')?.click();
+          await waitForFrames(2);
+        };
+        await smokeModal({
+          name: 'find notes',
+          selector: '[aria-labelledby="game-notes-search-title"]',
+          closeLabel: 'Close find notes',
+          open: openViaPalette('find-notes'),
+        });
+        // Three read-only dialogs: they render, they do not touch the game, and
+        // a smoke pass leaves the board exactly as it found it.
+        await smokeModal({
+          name: 'about',
+          selector: '[aria-labelledby="about-title"]',
+          closeLabel: 'Close about dialog',
+          open: openViaPalette('about'),
+        });
+        await smokeModal({
+          name: 'lessons',
+          selector: '[aria-labelledby="lessons-title"]',
+          closeLabel: 'Close lessons',
+          open: openViaPalette('lessons'),
+          afterOpen: async (dialog) => {
+            const capture = Array.from(dialog.querySelectorAll('.lessons-list button'))
+              .find((button) => button.textContent.includes('Capturing a stone'));
+            if (!capture) throw new Error('capture lesson missing');
+            capture.click();
+            await waitForFrames(2);
+            const next = Array.from(dialog.querySelectorAll('.lessons-footer button'))
+              .find((button) => button.textContent.trim() === 'Next');
+            if (!next) throw new Error('capture lesson Next control missing');
+            next.focus();
+            next.click();
+            await waitForFrames(2);
+            if (!dialog.contains(document.activeElement)) {
+              throw new Error('advancing to the exercise lost keyboard focus outside the lesson');
+            }
+            const answer = dialog.querySelector('.lessons-board circle[fill="transparent"][cx="4.7"][cy="4.7"]');
+            if (!answer) throw new Error('capture lesson answer missing');
+            answer.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await waitForFrames(2);
+            if (dialog.querySelectorAll('.lessons-board circle[fill="url(#sb-white)"]').length !== 0 ||
+                dialog.querySelectorAll('.lessons-board circle[fill="url(#sb-black)"]').length !== 4) {
+              throw new Error('correct answer did not place Black and remove the captured White stone');
+            }
+            if (!dialog.querySelector('[role="status"]')?.textContent.includes('Captured')) {
+              throw new Error('capture result is not announced');
+            }
+            if (auditsModalContrast) {
+              modalContrastFailures.push(...auditContrastAllThemes(dialog).map((entry) => 'solved lesson -- ' + entry));
+            }
+          },
+        });
+        await smokeModal({
+          name: 'pro games',
+          selector: '[aria-labelledby="pro-games-title"]',
+          closeLabel: 'Close pro game library',
+          open: openViaPalette('pro-games'),
+        });
+        // Two more that only act on submit, so opening and closing one changes
+        // nothing: the print preview renders the kifu it would print, and the
+        // save dialog writes to the library only when its form is submitted.
+        await smokeModal({
+          name: 'kifu print',
+          selector: '[aria-labelledby="kifu-print-title"]',
+          closeLabel: 'Close kifu print',
+          open: openViaPalette('print-kifu'),
+        });
+        await smokeModal({
+          name: 'save to library',
+          selector: '[aria-labelledby="save-to-library-title"]',
+          closeLabel: 'Close save to Library',
+          open: openViaPalette('save-library'),
         });
         await smokeModal({
           name: 'paste SGF',
@@ -3055,30 +3673,7 @@ async function main() {
           name: 'photo board',
           selector: '[aria-labelledby="photo-board-title"]',
           closeLabel: 'Close photo board',
-          open: async () => {
-            if (${viewport.mobile}) {
-              const toolsButton = findButtonByLabel('Tools');
-              if (!toolsButton) throw new Error('Tools button missing');
-              toolsButton.click();
-              const toolsDialog = await waitForSelector('[data-mobile-tools-dialog="true"]');
-              if (!toolsDialog) throw new Error('Tools dialog did not open');
-              const photoBoardButton = findButtonByLabel('Photo Board', toolsDialog);
-              if (!photoBoardButton) throw new Error('Photo Board action missing in tools');
-              photoBoardButton.click();
-            } else {
-              let photoBoardButton = findButtonByLabel('Photo Board');
-              if (!photoBoardButton) {
-                const moreFileActions = findButtonByLabel('More file actions');
-                if (!moreFileActions) throw new Error('Photo Board action missing');
-                moreFileActions.click();
-                await waitForFrames(2);
-                photoBoardButton = findButtonByLabel('Photo Board');
-              }
-              if (!photoBoardButton) throw new Error('Photo Board action missing');
-              photoBoardButton.click();
-            }
-            await waitForFrames(2);
-          },
+          open: openPhotoBoard,
           afterOpen: async (dialog) => {
             if (!dialog.querySelector('[data-photo-board-empty-source="true"]')) {
               modalSmokeFailures.push('photo board empty source missing');
@@ -3291,7 +3886,9 @@ async function main() {
           notificationOverlapsSidePanel: intersects(notificationToastRect, rect(sidePanel)),
           notificationOverlapsBoard: intersects(notificationToastRect, rect(board)),
           notificationOverlapsGameStripControl: dashboardGameStripTargets.some((target) => intersects(notificationToastRect, rect(target))),
-          missingFileActions: requiredFileActions.filter((label) => !allButtons.some((button) => button.getAttribute('aria-label') === label)),
+          missingFileActions: requiredFileActions
+            .filter((names) => !names.some((label) => allButtons.some((button) => button.getAttribute('aria-label') === label)))
+            .map((names) => names[0]),
           viewMenuReachable: !!Array.from(document.querySelectorAll('button')).find((button) => (button.textContent || '').includes('View')),
           actionsMenuReachable: !!dashboard || !!Array.from(document.querySelectorAll('button')).find((button) => (button.textContent || '').includes('Actions')),
           toolsReachable: !!Array.from(document.querySelectorAll('button')).find((button) => (button.getAttribute('aria-label') || button.getAttribute('title') || '') === 'Tools'),
@@ -3319,7 +3916,11 @@ async function main() {
             if (text.scrollWidth <= text.clientWidth + 1) return null;
             return (text.textContent || '').trim().slice(0, 24) + ' needs ' + Math.round(text.scrollWidth) + 'px in ' + Math.round(text.clientWidth) + 'px';
           })(),
+          truncationFailures: ${TRUNCATION_AUDIT},
+          unnamedControls: ${UNNAMED_CONTROL_AUDIT},
           contrastFailures: auditContrastAllThemes(),
+          modalContrastFailures,
+          modalSpillFailures,
           treeSmallTouchTargets,
           reviewSmallTouchTargets,
           boardTouchAction,
@@ -3416,6 +4017,16 @@ async function main() {
               ? Math.abs(pass.getBoundingClientRect().top - play.getBoundingClientRect().top) > 2
               : false,
           };
+          // The panel is a lazy chunk, and the 400ms above is enough for the
+          // column to have a width and not enough for a row to exist. Waiting
+          // on the name elements themselves rather than on any row: a row
+          // appears one render before the name inside it, and auditing between
+          // the two passes on nothing.
+          for (let i = 0; i < 40 && !document.querySelector('.library-tree-node-name'); i++) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          out.libraryNames = document.querySelectorAll('.library-tree-node-name').length;
+          out.truncation = ${TRUNCATION_AUDIT};
           if (!alreadyOpen) {
             const hide = findButton('Hide library');
             if (hide) hide.click();
@@ -3428,8 +4039,23 @@ async function main() {
           return out;
         })()`);
       }
+      result.layoutShift = layoutShift;
       result.pageErrors = [...new Set(pageErrors)];
-      assertViewport(result);
+      /**
+       * Every viewport gets measured, even after one of them fails.
+       *
+       * This used to throw straight out of the loop, so the first bad
+       * viewport was the only one anyone ever saw -- and since each fix
+       * routinely uncovers a failure that was already there behind it, a
+       * red sweep took as many full runs to clear as it had problems.
+       * Viewports do not share state (each one re-navigates and clears the
+       * auto-save key above), so there is nothing to protect by stopping.
+       */
+      try {
+        assertViewport(result);
+      } catch (error) {
+        viewportFailures.push(error.message);
+      }
       const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       fs.writeFileSync(
         path.join(screenshotDir, `${viewport.width}x${viewport.height}-qa-state.png`),
@@ -3437,7 +4063,45 @@ async function main() {
       );
       results.push(result);
     }
+    if (viewportFailures.length > 0) {
+      cdp.close();
+      throw new Error(
+        `${viewportFailures.length} viewport(s) failed:\n  - ${viewportFailures.join('\n  - ')}`,
+      );
+    }
     await assertShellVariantApplies(cdp);
+    await assertDialogsFitShortViewports(cdp);
+    await assertLongMetadataStaysRecoverable(cdp);
+    await assertPwaCardsClearTheBoard(cdp, `http://127.0.0.1:${appPort}/`);
+    await assertAutoSaveRecoveryFits(cdp, `http://127.0.0.1:${appPort}/`);
+    await assertScoreQuizRequests(cdp);
+    await assertScoreQuizGuesses(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertStaticBoardScroll(cdp);
+    await assertLibraryImportFailures(cdp, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertLibraryTags(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertEmptyLibraryPersists(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertLibrarySaveRecovery(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertManualScoring(cdp, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertHeaderNotificationsFit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertKeyboardWorkflows(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertNoteDraftRetention(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertNotePageExit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertLibraryNavigation(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertLibraryActionKeys(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertOgsSyncCancellation(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertPracticeBoardSizes(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertCandidateControls(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertPassCandidates(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertReportPrinting(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertCandidateTooltips(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir, VIEWPORTS);
+    await assertLiveCandidatePreviews(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertPvGestures(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertGameInfoReplacement(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertGameInfoPageExit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertDraftSaveSnapshots(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertDraftReplacement(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
+    await assertDepthDismissal(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    await assertSearchPasteLimits(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
     cdp.close();
     console.log(`Viewport checks passed. Screenshots: ${screenshotDir}`);
     for (const result of results) {
@@ -3445,8 +4109,13 @@ async function main() {
       console.log(`${result.viewport}: board ${Math.round(board.width)}x${Math.round(board.height)}`);
     }
   } finally {
-    chrome?.kill('SIGTERM');
-    server.kill('SIGTERM');
+    if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
+      const closed = new Promise((resolve) => chrome.once('exit', resolve));
+      chrome.kill('SIGTERM');
+      await closed;
+    }
+    await server?.close();
+    fs.rmSync(runDir, { recursive: true, force: true });
   }
 }
 

@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FaSave, FaTimes } from 'react-icons/fa';
 import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
-import type { LibraryFolderOption } from '../utils/library';
+import { formatLibraryFolderOptionLabel, type LibraryFolderOption } from '../utils/library';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
 
 interface SaveToLibraryDialogProps {
   open: boolean;
@@ -34,15 +35,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmedName = name.trim();
   useEscapeToClose(onClose, open && !saving);
-  const dialogRef = useInitialDialogFocus<HTMLDivElement>(open, { focusContainer: false, returnFocus });
-
-  useEffect(() => {
-    if (!open) return;
-    window.setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 0);
-  }, [open]);
+  const dialogRef = useInitialDialogFocus<HTMLDivElement>(open, { initialFocusRef: inputRef, returnFocus });
 
   if (!open) return null;
 
@@ -73,7 +66,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] disabled:cursor-wait disabled:opacity-50"
+            className="ui-control grid shrink-0 place-items-center rounded-lg text-[var(--ui-text-muted)] not-disabled:hover:bg-[var(--ui-surface-2)] not-disabled:hover:text-[var(--ui-text)] disabled:cursor-wait disabled:opacity-50"
             aria-label={t('Close save to Library')}
           >
             <FaTimes aria-hidden="true" />
@@ -90,9 +83,15 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
               disabled={saving}
               value={name}
               onChange={(event) => setName(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
               onKeyDown={(event) => {
                 event.stopPropagation();
-                if (event.key === 'Enter') void submit();
+                if (isComposingKeyEvent(event.nativeEvent)) return;
+                if (event.key === 'Enter') {
+                  // Or the same Enter reaches the button focus returns to.
+                  event.preventDefault();
+                  void submit();
+                }
                 if (event.key === 'Escape') onClose();
               }}
               placeholder={t('Game name')}
@@ -117,7 +116,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
               <option value="">{t('Root')}</option>
               {folderOptions.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {`${'-- '.repeat(option.depth)}${option.name}`}
+                  {formatLibraryFolderOptionLabel(option)}
                 </option>
               ))}
             </select>
@@ -129,7 +128,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
         <div className="ui-bar flex flex-wrap justify-end gap-2 border-t border-[var(--ui-border)] px-4 py-3">
           <button
             type="button"
-            className="min-h-11 rounded border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 text-sm font-semibold text-[var(--ui-text)] hover:brightness-110 disabled:cursor-wait disabled:opacity-50"
+            className="min-h-11 rounded border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 text-sm font-semibold text-[var(--ui-text)] not-disabled:hover:brightness-110 disabled:cursor-wait disabled:opacity-50"
             onClick={onClose}
             disabled={saving}
           >
@@ -137,7 +136,7 @@ export const SaveToLibraryDialog: React.FC<SaveToLibraryDialogProps> = ({
           </button>
           <button
             type="button"
-            className="min-h-11 rounded px-4 text-sm font-semibold ui-accent-bg hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 rounded px-4 text-sm font-semibold ui-accent-bg not-disabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => void submit()}
             disabled={!trimmedName || saving}
           >

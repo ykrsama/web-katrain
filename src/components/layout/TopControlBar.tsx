@@ -47,8 +47,11 @@ import { BOARD_THEME_OPTIONS, getBoardTheme } from '../../utils/boardThemes';
 import { restoreFocusIfUnclaimed } from '../../utils/focusRestore';
 import { UI_THEME_OPTIONS } from '../../utils/uiThemes';
 import { useShortcutLabels } from '../../hooks/useShortcutLabels';
+import { useBackGestureToClose } from '../../hooks/useEscapeToClose';
 import { isFullscreenActive, subscribeFullscreenChange, toggleAppFullscreen } from '../../utils/fullscreen';
 import { useT } from '../../i18n';
+import { getQuickNewGameWarning } from '../../utils/quickNewGame';
+import type { InsertProgress } from '../../utils/insertMode';
 
 const TOP_CONTROL_SHORTCUT_IDS = [
   'settings-modal',
@@ -101,6 +104,7 @@ interface TopControlBarProps {
   regionOfInterest: RegionOfInterest | null;
   setRegionOfInterest: (r: null) => void;
   isInsertMode: boolean;
+  insertProgress: InsertProgress;
   isEditMode: boolean;
   isAnalysisMode: boolean;
   toggleAnalysisMode: () => void;
@@ -167,6 +171,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   regionOfInterest,
   setRegionOfInterest,
   isInsertMode,
+  insertProgress,
   isEditMode,
   isAnalysisMode,
   toggleAnalysisMode,
@@ -226,7 +231,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   const shortcutLabels = useShortcutLabels(TOP_CONTROL_SHORTCUT_IDS);
   const withShortcut = (label: string, id: TopControlShortcutId) => `${label} (${shortcutLabels[id]})`;
   const saveControlTitle = withShortcut(stripShortcutSuffix(t(saveTitle)), 'save-sgf');
-  const quickNewGameTitle = t('Quick new game ({size}×{size}): uses your saved defaults and replaces the current game after the unsaved-changes check.', { size: settings.defaultBoardSize });
+  const quickNewGameTitle = getQuickNewGameWarning(settings.defaultBoardSize, settings.defaultHandicap);
   const boardThemeIndex = BOARD_THEME_OPTIONS.findIndex((theme) => theme.value === settings.boardTheme);
   const activeBoardThemeIndex = boardThemeIndex >= 0 ? boardThemeIndex : 0;
   const activeBoardThemeOption = BOARD_THEME_OPTIONS[activeBoardThemeIndex] ?? BOARD_THEME_OPTIONS[0]!;
@@ -265,6 +270,8 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
     setMobileToolsInputMode(mode);
   }, []);
 
+  /** See BottomControlBar: the mobile tools sheet needs the back gesture for
+   *  the same reason, and its capture-phase key handler cannot ask for it. */
   const closeViewMenuWithFocus = React.useCallback((
     restoreFocus = false,
     inputMode?: 'pointer' | 'keyboard',
@@ -275,6 +282,11 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
       window.setTimeout(() => restoreFocusIfUnclaimed(viewMenuButtonRef.current), 0);
     }
   }, [setViewMenuOpen, updateMobileToolsInputMode]);
+
+  useBackGestureToClose(
+    React.useCallback(() => closeViewMenuWithFocus(true, 'pointer'), [closeViewMenuWithFocus]),
+    isMobile && viewMenuOpen,
+  );
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -541,6 +553,11 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           shortcut: shortcutLabels['toggle-territory'],
           onToggle: () => updateControls({ analysisShowOwnership: !settings.analysisShowOwnership }),
         })}
+        {viewToggleRow({
+          label: t('Swing'),
+          on: settings.analysisShowSwing,
+          onToggle: () => updateControls({ analysisShowSwing: !settings.analysisShowSwing }),
+        })}
 
         <div className="border-t border-[var(--ui-border)] w-full mt-auto" />
         <div className="px-3 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider bg-[var(--ui-surface-2)] w-full">{t('Themes')}</div>
@@ -572,7 +589,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
     </div>
   );
 
-  const mobileToolsGridBtn = "mobile-tools-action flex min-h-12 min-w-0 items-center gap-2 bg-[var(--ui-panel)] px-3 py-2 hover:bg-[var(--ui-surface-2)] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--ui-panel)]";
+  const mobileToolsGridBtn = "mobile-tools-action flex min-h-12 min-w-0 items-center gap-2 bg-[var(--ui-panel)] px-3 py-2 not-disabled:hover:bg-[var(--ui-surface-2)] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   const mobileToolsActionGrid = "grid grid-cols-2";
   const mobileToolsSectionLabel = "px-4 py-2 text-xs font-semibold text-[var(--ui-text-muted)] uppercase tracking-wider";
   const mobileToolsMenu = (
@@ -792,7 +809,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         <IconButton title={withShortcut(t('Save copy to Library'), 'save-library')} onClick={onSaveToLibrary} className={topIconClass}>
           <FaBook />
         </IconButton>
-        <IconButton title={withShortcut(t('Load SGF, board photo, or model weights'), 'open-sgf')} onClick={onLoadSgf} className={topIconClass}>
+        <IconButton title={withShortcut(t('Load game, board photo, or model weights'), 'open-sgf')} onClick={onLoadSgf} className={topIconClass}>
           <FaFolderOpen />
         </IconButton>
         <IconButton title={withShortcut(t('Paste SGF / OGS'), 'paste-sgf')} onClick={onPasteSgf} className={topIconClass}>
@@ -854,12 +871,24 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             title={t('Region of interest active (tap to clear)')}
             onClick={() => setRegionOfInterest(null)}
           >
-            ROI
-          </button>
+            {t('ROI')}</button>
         )}
         {isInsertMode && (
-          <div className="px-2 py-0.5 rounded-md border ui-accent-soft text-xs font-semibold">
-            {t('Insert')}
+          /* The count, and a warning tone on an odd one: the continuation can
+             only follow an even number of inserted moves, and the store only
+             said so once it was too late to add another. */
+          <div
+            className={[
+              'px-2 py-0.5 rounded-md border text-xs font-semibold',
+              insertProgress.warn
+                ? 'border-[var(--ui-warning)] bg-[var(--ui-warning-soft)] text-[var(--ui-warning)]'
+                : 'ui-accent-soft',
+            ].join(' ')}
+            title={insertProgress.title}
+            aria-label={insertProgress.title}
+            data-insert-progress={insertProgress.warn ? 'odd' : 'even'}
+          >
+            {insertProgress.label}
           </div>
         )}
         {isEditMode && (

@@ -16,12 +16,29 @@ PWA. There is no analysis server to run.
   lead.
 - A Candidates list beside the board: rank, move, quality, win rate, score,
   points lost and visits for every candidate at once. Hover a row to lay its
-  variation on the board; click it to play the move.
+  variation on the board; click it to play the move. Open its continuation as
+  text in Coach or Pro, copy it, or keep it in the move tree. Pass suggestions
+  use the same preview and confirmation controls.
+- Scroll over a candidate on the board to step through its continuation.
+  Middle-click to keep the moves currently shown as a variation, without
+  leaving the current position. Keeping a line supports Undo edit and Redo.
 - Quick, fast, and full-game analysis passes with per-position caching.
-- KaTrain-style move quality, phase summaries, and game reports.
+- KaTrain-style move quality, phase summaries, and game reports with printable
+  position diagrams and suggested continuations.
 - "Play elsewhere?" prices the point: the engine evaluates the position again
   after a pass, so you can see what the move here is worth and where the
   opponent would go if you ignored it.
+- Swing map: instead of who owns what now, paint what changed. Subtracting two
+  analysed positions' ownership maps says which intersections moved and by how
+  much, so "this move lost 5.2 points" gains a *where*. It measures against the
+  move before by default, or against the engine's own move once that move
+  exists as a variation -- which is the comparison a review is actually after,
+  because it separates the move's error from its legitimate gain. It reports no
+  points total on purpose: ownership and score come from different heads of the
+  net and need not agree, so the score readout keeps "how much".
+- Play on from here: hand the position on screen to the engine and keep going,
+  branching off the game rather than replacing it. The move you regret is one
+  click from being tried again against something that answers back.
 - Time graph from the clock recorded in the SGF (`BL`/`WL`/`OB`/`OW`), for games
   imported from OGS, KGS, Fox or Tygem.
 - Drill your mistakes: the board goes back to the position before each one with
@@ -37,8 +54,11 @@ PWA. There is no analysis server to run.
   (KataHandicap, which reads the board as if one side had more search), and
   `antimirror` (breaks mirror go). Each configuration shows KaTrain's
   calibrated strength estimate, so you know what rank you are playing.
-- Teach mode, byo-yomi clocks, resign/pass handling, manual scoring, and 9x9,
-  13x13, or 19x19 boards.
+- Or play `human`, which samples KataGo's human SL network at the rank you pick
+  rather than the engine's own move, so the mistakes look like a person's. See
+  [Human-like moves](docs/engine.md#human-like-moves).
+- Teach mode, byo-yomi clocks, resign/pass handling, manual scoring, and every
+  odd board size from 5x5 through 19x19.
 - Japanese, Korean, Chinese, AGA, New Zealand, Tromp-Taylor, and Ancient
   Chinese (stone scoring) rules, honored by the engine inputs, move legality
   (including superko and suicide), and area or territory scoring with the
@@ -47,6 +67,13 @@ PWA. There is no analysis server to run.
   number and score, so study starts from a real middlegame.
 - Branching move trees with collapsible variations, notes, setup stones,
   markup, and SGF-compatible export.
+- Unfinished notes and game-info edits are preserved when panels close or the
+  page exits. Notes also follow their positions during review. Cancel discards
+  the draft; saved changes support Undo and Redo.
+- Saving, copying SGF and sharing a game include the latest open editor text.
+- Find notes by comment text, position name, or move coordinate, across all
+  variations or just the main line. Jump to matching positions from the Comment
+  panel's search button or the command palette.
 - Frame a life-and-death problem as a tsumego (F10): walls the problem off and
   settles the rest of the board so the engine actually reads it.
 - Study tools: interactive fundamentals lessons, a score-estimation quiz, a
@@ -57,10 +84,18 @@ PWA. There is no analysis server to run.
 **Load and save**
 
 - Import SGF files by picker, paste, drag and drop, or Online-Go game URL.
-- Import board positions from a photo or live camera capture.
+  File and library ZIP imports honor SGF charset declarations, including
+  Shift-JIS, EUC-KR, GBK, and Latin-1; downloads preserve text as UTF-8.
+- Import board positions from a photo or live camera capture, or by pasting a
+  plain-text board diagram of the kind forum posts carry.
+- Hand a game or a position to someone else: SGF to a file or the clipboard, a
+  share link that carries the whole game in the URL, the board as a PNG, a
+  numbered kifu as PDF, or the position as a text diagram. Every one is in the
+  command palette, and all but the file save sit together under File.
 - Store games in an IndexedDB library with folders, bundled famous games, and
   zip backup/restore.
 - Auto-save the current session and recover after a crash or reload.
+- Replacing a game offers Save, Discard and Cancel for open editor drafts too.
 
 **Use it anywhere**
 
@@ -69,8 +104,11 @@ PWA. There is no analysis server to run.
   navigation, sound, and haptics.
 - Document language metadata for 13 languages, which tags the page and the SGF
   you export. The interface itself is English only.
-- Offline app shell, default model, TensorFlow.js WASM files, and board assets
-  are cached by the production service worker.
+- The production service worker precaches the app shell, the analysis worker,
+  the default model, the one TensorFlow.js WASM build this deployment can run, and the default board's
+  images. Everything else — the other themes, the other WASM builds — is cached
+  the first time it is used, so what you actually use stays available offline.
+  See [Deployment](docs/deployment.md#service-worker-and-offline-cache).
 
 ## Quick Start
 
@@ -88,10 +126,14 @@ the small KataGo test model exists at `public/models/katago-small.bin.gz`.
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start the Vite dev server with COOP/COEP headers. |
-| `npm run verify` | **Run before pushing.** typecheck → test:typecheck → lint → tests → build, chained so the first failure stops it. Mirrors CI, minus `npm audit` so it works offline. |
+| `npm run verify` | **Run before pushing.** typecheck → test:typecheck → lint → tests → build, chained so the first failure stops it. Runs the code checks used in CI; `npm audit` and the browser viewport suite run separately. |
 | `npm test` | Run the Vitest suite. Typechecks nothing on its own — Vitest transpiles without checking, so a test can pass while failing to compile. |
+| `npm run typecheck` | Type-check the app. Runs `tsc -b`; a bare `tsc --noEmit` checks nothing here, because the root config is a solution file with `"files": []`. |
 | `npm run test:typecheck` | Type-check the tests. Needed separately: `tsc -b` builds the app and node projects, and neither includes `test/`. |
-| `npm run test:viewport` | Chrome viewport smoke test. ~54s, drives a real browser; not in `verify` or CI. Run it after a layout, breakpoint or board-sizing change. |
+| `npm run test:viewport` | Chrome interaction and layout checks at 11 desktop/mobile sizes. Uses a fresh Vite cache and Chrome profile; runs in CI and separately from `verify`. About 8 minutes locally. |
+| `npm run test:responsiveness` | Click-to-response budgets — first board move, dialog open, INP p98, long tasks. ~15s against `dist/`, so run `npm run build` first; not in `verify` or CI. |
+| `npm run test:study` | Chrome benchmarks for marker edits and 12,000-node export, nested import, solution lookup, copy/paste, and setup replay. Measures dev-store operations separately from production INP; not in `verify` or CI. |
+| `npm run test:offline` | First-ever analysis and game recovery with the network blocked; real WASM results required. Run `build` first; not in `verify` or CI. |
 | `npm run bench` | Time the MCTS search. `BENCH_OUT=f.json` records a run, `BENCH_BASELINE=f.json` prints the delta against it. Needs a model. |
 | `npm run lint` | Run ESLint. |
 | `npm run build` | Type-check and build the production app. |
@@ -102,6 +144,8 @@ the small KataGo test model exists at `public/models/katago-small.bin.gz`.
 The bundled model is a tiny KataGo test network, about 3.6 MB compressed, so the
 app can boot quickly on ordinary laptops and phones. It is useful for smoke
 testing and casual UI work, not strong analysis.
+The review panel identifies this model and offers **Choose model**, which opens
+the model setting directly. More visits alone do not replace stronger weights.
 
 For real analysis, Settings offers the recommended browser-practical b18
 network:
@@ -131,6 +175,7 @@ custom headers, but WASM runs single-threaded there; WebGPU is unaffected.
 - [Architecture](docs/architecture.md)
 - [Engine](docs/engine.md)
 - [Development](docs/development.md)
+- [Ongoing audit and improvement priorities](docs/continuous-audit.md)
 - [Deployment](docs/deployment.md)
 - [Runtime diagrams](docs/diagram.md)
 

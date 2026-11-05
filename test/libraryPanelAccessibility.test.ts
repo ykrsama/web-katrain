@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { describeLibraryImport } from '../src/utils/libraryImportSummary';
 
 describe('LibraryPanel accessibility', () => {
   it('leaves the mobile library the way its sibling tabs are left', () => {
@@ -128,13 +129,16 @@ describe('LibraryPanel accessibility', () => {
 
     expect(source).toContain('data-library-toolbar="true"');
     expect(source).toContain('className="library-select-all h-6 w-6');
-    expect(source).toContain('className="library-breadcrumb-button');
+    expect(source).toContain('library-breadcrumb-button shrink-0');
     expect(source.match(/library-header-collapsible-action/g) ?? []).toHaveLength(2);
     expect(source).toContain('<FaPlus size={12} /> {t(\'Create new folder\')}');
     expect(source).toContain('<FaFolderOpen size={12} /> {t(\'Import files\')}');
     expect(source).toContain("maxHeight: isMobile");
     expect(source).toContain("var(--mobile-tabbar-height)");
-    expect(source.match(/window\.addEventListener\('resize', close\)/g) ?? []).toHaveLength(2);
+    // Both menus close on resize -- the header menu through a local closer,
+    // since a bare `close` there is window.close.
+    expect(source.match(/window\.addEventListener\('resize', close\)/g) ?? []).toHaveLength(1);
+    expect(source).toContain("window.addEventListener('resize', closeMenu);");
     expect(styles).toMatch(/\.library-context-menu \{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;/);
     expect(styles).toContain(".library-tree-node[data-library-row='folder'] .library-tree-node-more");
     expect(styles).toContain('grid-template-columns: 44px 44px 16px minmax(0, 1fr) auto 44px;');
@@ -224,18 +228,44 @@ describe('LibraryPanel accessibility', () => {
 
     expect(source).toContain("import { assertValidLibrarySgfImport } from '../utils/libraryImportValidation';");
     expect(source).toContain('assertValidLibrarySgfImport(text);');
-    expect(source).toContain('No valid SGF games were imported.');
-    expect(source).toContain('invalid SGF file');
+    expect(source).toContain('skippedInvalidSgfFiles += 1;');
+
+    // The wording moved into describeLibraryImport when every import outcome
+    // was gathered there. What matters is that an invalid file is still named
+    // both when it is the only thing dropped and when others came in with it.
+    const report = (over: Record<string, number>) =>
+      describeLibraryImport({
+        importedEntries: 0,
+        importedFiles: 0,
+        openedPhotoBoard: false,
+        skippedUnsupportedPhotoImages: 0,
+        skippedOversizedSgfFiles: 0,
+        skippedInvalidSgfFiles: 0,
+        unreadableFiles: 0,
+        ...over,
+      });
+    expect(report({ skippedInvalidSgfFiles: 1 }).message).toBe('No valid games were imported.');
+    expect(report({ importedEntries: 2, importedFiles: 2, skippedInvalidSgfFiles: 1 }).message).toContain(
+      'invalid game file'
+    );
   });
 
-  it('states the full scope of irreversible Library deletions', () => {
+  it('warns about irreversible Library deletion and initially focuses Cancel', () => {
     const source = readFileSync('src/components/LibraryPanel.tsx', 'utf8');
 
-    expect(source).toContain('const descendantCount = isFolderItem');
-    expect(source).toContain('const affectedCount = items.filter');
+    // Selection scope is covered by hierarchy data tests and native browser
+    // confirmation checks, independently of the traversal implementation.
     expect(source).toContain('This cannot be undone.');
     expect(source).not.toContain('Delete ${visibleSelectedIds.size} item(s) from Library?');
-    expect(source).toMatch(/LibraryConfirmDialog[\s\S]*onClick=\{onClose\} autoFocus/);
+    // Cancel takes the focus, not the destructive action. Asserted by intent
+    // rather than by its spelling: this used to read `autoFocus`, which is
+    // applied during commit -- before any effect -- so the dialog's focus hook
+    // recorded Cancel as the element to restore to and the restore silently did
+    // nothing. Routing the same placement through `initialFocusRef` fixed that,
+    // and pinning the old spelling failed on the change that made it better.
+    const confirmDialog = source.slice(source.indexOf('const LibraryConfirmDialog'));
+    expect(confirmDialog).toContain('initialFocusRef: cancelRef');
+    expect(confirmDialog).toMatch(/onClick=\{onClose\} ref=\{cancelRef\}[\s\S]{0,40}Cancel/);
   });
 
 

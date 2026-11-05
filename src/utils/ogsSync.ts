@@ -1,6 +1,7 @@
 import type { LibraryItem } from './library';
+import { isBoardSize } from './boardSize';
 import { downloadOgsSgf } from './ogs';
-import { fetchOgsResource, isOgsCancelledError } from './ogsQueue';
+import { fetchOgsResource, isOgsCancelledError, readBoundedResponseText, type OgsRequestCancellation } from './ogsQueue';
 import { t } from '../i18n';
 
 export type OgsPlayer = {
@@ -18,6 +19,11 @@ export type OgsGameSummary = {
 };
 
 export type OgsSyncProgress = {
+  /**
+   * Games dealt with so far, failed ones included. Counting only successes
+   * held the "Downloading n of m" label still through a run of failures, so a
+   * sync that was working looked hung.
+   */
   downloaded: number;
   total: number;
   current: OgsGameSummary | null;
@@ -29,11 +35,50 @@ export type OgsSyncedGame = {
 };
 
 const OGS_API_BASE = 'https://online-go.com/api/v1';
-const SUPPORTED_BOARD_SIZES = new Set([9, 13, 19]);
 export const OGS_SYNC_USERNAME_STORAGE_KEY = 'web-katrain:ogs_sync_username:v1';
 export const OGS_SYNC_GAME_ID_MARKER = /\(ogs-(\d+)\)/;
 
 export const ogsSyncFolderName = (username: string): string => `OGS - ${username}`;
+
+export type OgsSyncOutcome = {
+  added: number;
+  skipped: number;
+  failed: number;
+  username: string;
+};
+
+/**
+ * What to tell someone after a sync.
+ *
+ * It lives here rather than in the dialog because it has to agree with
+ * `ogsSyncFolderName`, and it did not: the dialog spelled the folder out a
+ * second time, so a change to the naming above would have left the summary
+ * pointing at a folder that does not exist.
+ *
+ * It also named that folder unconditionally. Running a sync twice is the normal
+ * way to use this — that is what "safe to run again" in the dialog invites —
+ * and the second run skips everything, so the usual sentence was "Added 0 games
+ * to "OGS - alice". 25 already in your library.", which claims a destination
+ * nothing was written to. Nothing is added, so no folder is created.
+ */
+export const formatOgsSyncSummary = (result: OgsSyncOutcome): string => {
+  const parts: string[] = [];
+  if (result.added > 0) {
+    const games = `${result.added} game${result.added === 1 ? '' : 's'}`;
+    parts.push(`Added ${games} to "${ogsSyncFolderName(result.username)}".`);
+    if (result.skipped > 0) parts.push(`${result.skipped} already in your library.`);
+  } else if (result.skipped > 0) {
+    parts.push(
+      result.skipped === 1
+        ? 'No new games. The one OGS listed is already in your library.'
+        : `No new games. All ${result.skipped} are already in your library.`,
+    );
+  }
+  if (result.failed > 0) {
+    parts.push(`${result.failed} failed to download.`);
+  }
+  return parts.join(' ');
+};
 
 export const ogsSyncFileName = (game: OgsGameSummary): string => {
   const date = game.ended.slice(0, 10);
@@ -94,7 +139,7 @@ export const parseOgsGameList = (payload: unknown): OgsGameSummary[] => {
     if (typeof id !== 'number') continue;
     if (typeof ended !== 'string' || !ended) continue;
     if (annulled === true) continue;
-    if (typeof width !== 'number' || width !== height || !SUPPORTED_BOARD_SIZES.has(width)) continue;
+    if (typeof width !== 'number' || width !== height || !isBoardSize(width)) continue;
     const players = asRecord(record.players);
     games.push({
       id,
@@ -108,8 +153,8 @@ export const parseOgsGameList = (payload: unknown): OgsGameSummary[] => {
   return games;
 };
 
-const fetchJson = async (url: string): Promise<unknown> => {
-  const response = await fetchOgsResource(url, { method: 'GET' });
+const fetchJson = async (url: string, options: OgsRequestCancellation): Promise<unknown> => {
+  const response = await fetchOgsResource(url, { method: 'GET', signal: options.signal }, options);
   if (!response.ok) {
     throw new Error(
       t('OGS request failed ({status} {statusText})', {
@@ -118,14 +163,17 @@ const fetchJson = async (url: string): Promise<unknown> => {
       })
     );
   }
-  return response.json();
+  // A game list for fifty games is a few hundred kilobytes; this is a ceiling
+  // on what the other end may send, not a limit on anything real.
+  return JSON.parse(await readBoundedResponseText(response, 4 * 1024 * 1024));
 };
 
-export const resolveOgsPlayer = async (username: string): Promise<OgsPlayer> => {
+export const resolveOgsPlayer = async (username: string, options: OgsRequestCancellation = {}): Promise<OgsPlayer> => {
   const trimmed = username.trim();
   if (!trimmed) throw new Error(t('Enter an OGS username.'));
   const payload = await fetchJson(
-    `${OGS_API_BASE}/players/?username=${encodeURIComponent(trimmed)}`
+    `${OGS_API_BASE}/players/?username=${encodeURIComponent(trimmed)}`,
+    options
   );
   const player = parseOgsPlayerSearch(payload, trimmed);
   if (!player) throw new Error(t('No OGS player named "{username}" was found.', { username: trimmed }));
@@ -138,7 +186,8 @@ export const resolveOgsPlayer = async (username: string): Promise<OgsPlayer> => 
  */
 export const listOgsFinishedGames = async (
   playerId: number,
-  limit: number
+  limit: number,
+  options: OgsRequestCancellation = {}
 ): Promise<OgsGameSummary[]> => {
   const games: OgsGameSummary[] = [];
   let url: string | null =
@@ -148,7 +197,7 @@ export const listOgsFinishedGames = async (
   let pagesLeft = 10;
   while (url && games.length < limit && pagesLeft > 0) {
     pagesLeft -= 1;
-    const payload = await fetchJson(url);
+    const payload = await fetchJson(url, options);
     games.push(...parseOgsGameList(payload));
     const next = asRecord(payload)?.next;
     url = typeof next === 'string' && next.startsWith('https://') ? next : null;
@@ -164,24 +213,25 @@ export const downloadNewOgsGames = async (
   games: OgsGameSummary[],
   existingIds: Set<number>,
   onProgress?: (progress: OgsSyncProgress) => void,
-  isCancelled?: () => boolean
+  options: OgsRequestCancellation = {}
 ): Promise<{ synced: OgsSyncedGame[]; skipped: number; failed: OgsGameSummary[] }> => {
+  const isCancelled = () => options.signal?.aborted || options.isCancelled?.();
   const fresh = games.filter((game) => !existingIds.has(game.id));
   const synced: OgsSyncedGame[] = [];
   const failed: OgsGameSummary[] = [];
   for (const game of fresh) {
-    if (isCancelled?.()) break;
-    onProgress?.({ downloaded: synced.length, total: fresh.length, current: game });
+    if (isCancelled()) break;
+    onProgress?.({ downloaded: synced.length + failed.length, total: fresh.length, current: game });
     try {
-      const sgf = await downloadOgsSgf(String(game.id), { isCancelled });
+      const sgf = await downloadOgsSgf(String(game.id), options);
       synced.push({ summary: game, sgf });
     } catch (error) {
       // A cancel is not a download failure; reporting it as one would tell the
       // reader their game was broken when they were the one who stopped.
-      if (isOgsCancelledError(error)) break;
+      if (isCancelled() || isOgsCancelledError(error)) break;
       failed.push(game);
     }
   }
-  onProgress?.({ downloaded: synced.length, total: fresh.length, current: null });
+  onProgress?.({ downloaded: synced.length + failed.length, total: fresh.length, current: null });
   return { synced, skipped: games.length - fresh.length, failed };
 };

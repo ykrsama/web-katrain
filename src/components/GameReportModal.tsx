@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { FaBookOpen, FaBullseye, FaChartLine, FaInfoCircle, FaTimes } from 'react-icons/fa';
 import { shallow } from 'zustand/shallow';
 import { useGameStore } from '../store/gameStore';
@@ -13,6 +14,7 @@ import {
   getPhaseMoveRange,
   getReportStudyFocus,
   formatPolicyRank,
+  formatReportTimestamp,
   getPointLossBucket,
   getReportRecoveries,
   getReportTurningPoints,
@@ -42,13 +44,13 @@ import { computeMoveTimes, formatMoveTime, hasMoveTimeData } from '../utils/move
 import { describeTimePressure, summarizePlayerTime, type PlayerTimeInsight } from '../utils/timeInsight';
 import { getCurrentLineNodes } from '../utils/branchNavigation';
 import { NO_VALUE } from '../utils/analysisSummary';
+import { DEFAULT_EVAL_THRESHOLDS } from '../utils/nodeAnalysis';
 
 interface GameReportModalProps {
   onClose: () => void;
   setReportHoverMove: (move: CandidateMove | null) => void;
 }
 
-const DEFAULT_EVAL_THRESHOLDS = [12, 6, 3, 1.5, 0.5, 0];
 const HISTOGRAM_COLORS = ['#fb7185', '#f97316', '#f59e0b', '#84cc16', '#38bdf8', '#94a3b8'];
 const CRITICAL_SWING_THRESHOLD = 5;
 const RECOVERY_THRESHOLD = 1.5;
@@ -70,9 +72,15 @@ function fmtNum(x: number | undefined, digits = 2): string {
   return x.toFixed(digits);
 }
 
+/**
+ * Signed, with the sign taken after rounding: a raw -0.004 printed "-0.00",
+ * a swing that is no swing at all.
+ */
 function fmtSigned(x: number | undefined, digits = 1): string {
   if (typeof x !== 'number' || !Number.isFinite(x)) return NO_VALUE;
-  return x > 0 ? `+${x.toFixed(digits)}` : x.toFixed(digits);
+  const rounded = Number(x.toFixed(digits));
+  if (rounded === 0) return (0).toFixed(digits);
+  return rounded > 0 ? `+${rounded.toFixed(digits)}` : rounded.toFixed(digits);
 }
 
 function fmtPolicyPct(value: number | undefined): string {
@@ -93,8 +101,7 @@ function moverWinRate(value: number | undefined, player: 'black' | 'white'): num
 
 function fmtWinSwing(value: number | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return NO_VALUE;
-  const points = value * 100;
-  return points > 0 ? `+${points.toFixed(1)}pp` : `${points.toFixed(1)}pp`;
+  return `${fmtSigned(value * 100, 1)}pp`;
 }
 
 function policyCategoryClass(category: MovePolicyCategory | undefined): string {
@@ -135,6 +142,15 @@ function rootPropertiesForNode(node: GameNode): Record<string, string[]> {
   return root.properties ?? {};
 }
 
+const isNodeInTree = (node: GameNode, rootId: string): boolean => {
+  let cursor = node;
+  while (cursor.parent) {
+    if (!cursor.parent.children.includes(cursor)) return false;
+    cursor = cursor.parent;
+  }
+  return cursor.id === rootId;
+};
+
 export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setReportHoverMove }) => {
   const {
     currentNode,
@@ -166,7 +182,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
       gameAnalysisType: state.gameAnalysisType,
       isGameAnalysisRunning: state.isGameAnalysisRunning,
       isInsertMode: state.isInsertMode,
-      startFastGameAnalysis: state.startFastGameAnalysis,
+      startFastGameAnalysis: state.requestFastGameAnalysis,
       stopGameAnalysis: state.stopGameAnalysis,
       humanSlProfile: state.settings.humanSlProfile,
       mistakeThreshold: state.settings.mistakeThreshold,
@@ -175,7 +191,6 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     shallow
   );
   const t = useT();
-  const locale = useGameStore((s) => s.settings.appLocale);
   const policyCategoryLabel = (category: MovePolicyCategory | undefined): string => {
     switch (category) {
       case 'aiMove':
@@ -211,7 +226,6 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [isPreparingPdf, setIsPreparingPdf] = useState(false);
   const [pdfSnapshots, setPdfSnapshots] = useState<Array<{ id: string; dataUrl: string | null; entry: MoveReportEntry }>>([]);
-  const [graphTick, setGraphTick] = useState(0);
   const [showReportGuide, setShowReportGuide] = useState(false);
   useEscapeToClose(onClose, !showReportGuide);
   const dialogRef = useInitialDialogFocus<HTMLDivElement>();
@@ -267,20 +281,25 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           height: auto !important;
           overflow: visible !important;
         }
-        body > * {
-          visibility: hidden !important;
+        body {
+          background: #ffffff !important;
         }
-        .report-print,
-        .report-print * {
-          visibility: visible !important;
+        body > :not(.report-overlay) {
+          display: none !important;
         }
         .report-overlay {
           position: static !important;
+          display: block !important;
           inset: auto !important;
+          width: 100% !important;
           height: auto !important;
           min-height: auto !important;
+          padding: 0 !important;
           overflow: visible !important;
           background: transparent !important;
+        }
+        .report-overlay > :not(.report-print) {
+          display: none !important;
         }
         .app-root {
           height: auto !important;
@@ -289,19 +308,31 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
         }
         .report-print {
           position: static !important;
+          display: block !important;
           left: auto !important;
           top: auto !important;
-          width: auto !important;
+          width: 100% !important;
+          max-width: none !important;
           max-height: none !important;
           height: auto !important;
           overflow: visible !important;
           background: #ffffff !important;
-          font-family: 'Source Serif 4', 'Times New Roman', serif !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          /* No 'Source Serif 4' ahead of these: this app ships no web font and
+             loads none -- there is a test holding it to that -- so naming one
+             only described a fallback as a choice. Times is what prints. */
+          font-family: 'Times New Roman', Times, serif !important;
         }
         .report-print .report-scroll {
+          padding: 0 !important;
           overflow: visible !important;
           max-height: none !important;
           height: auto !important;
+        }
+        .report-print .game-report-modal-header {
+          display: none !important;
         }
         .report-print * {
           color: #0f172a !important;
@@ -314,6 +345,11 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
         .report-print .print-muted {
           color: #475569 !important;
         }
+        /* The repeating rows on the cover page -- each critical swing, each
+           recovery -- are single bordered lines, and a page boundary through
+           one of them splits a move number from its numbers. This rule was
+           written for them and reached nothing: the class had one occurrence
+           in the file, its own definition. */
         .report-print .print-break-avoid {
           break-inside: avoid !important;
           page-break-inside: avoid !important;
@@ -335,13 +371,14 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           break-after: page !important;
           page-break-after: always !important;
           padding: 8mm !important;
+          margin: 0 !important;
           border: 1px solid #e2e8f0 !important;
           border-radius: 6px !important;
           background: #ffffff !important;
           width: 100% !important;
           max-width: none !important;
           box-sizing: border-box !important;
-          min-height: calc(100vh - 24mm) !important;
+          min-height: 0 !important;
           display: flex !important;
           flex-direction: column !important;
         }
@@ -350,13 +387,13 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           page-break-after: auto !important;
         }
         .report-print .pdf-board {
+          display: block !important;
           width: 100% !important;
-          max-height: 70vh !important;
+          max-height: 128mm !important;
           height: auto !important;
           object-fit: contain !important;
         }
         .report-print .pdf-board-wrap {
-          flex: 1 !important;
           display: flex !important;
           align-items: center !important;
           justify-content: center !important;
@@ -364,6 +401,12 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
           border-radius: 8px !important;
           padding: 8px !important;
           background: #f8fafc !important;
+        }
+        .report-print .pdf-position-grid {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 0.65fr) !important;
+          gap: 6mm !important;
+          align-items: start !important;
         }
         .report-print .pdf-cover-title {
           font-size: 26px !important;
@@ -570,10 +613,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     () => (showAllMistakes ? allMistakes : allMistakes.slice(0, 10)),
     [allMistakes, showAllMistakes]
   );
-  const studyFocus = useMemo(
-    () => getReportStudyFocus({ reportsByPhase, phaseFilter, playerFilter }),
-    [locale, phaseFilter, playerFilter, reportsByPhase]
-  );
+  const studyFocus = getReportStudyFocus({ reportsByPhase, phaseFilter, playerFilter });
   // Keep the printable PDF bounded even when the on-screen list shows all mistakes.
   const pdfMistakes = useMemo(() => allMistakes.slice(0, 10), [allMistakes]);
   const turningPoints = useMemo(
@@ -616,7 +656,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     if (bucketFilterLabel) labels.push(t('Loss {bucket}', { bucket: bucketFilterLabel }));
     if (policyFilterLabel) labels.push(t('Quality {quality}', { quality: policyFilterLabel }));
     return labels;
-  }, [bucketFilterLabel, phaseLabel, playerFilterLabel, policyFilterLabel]);
+  }, [bucketFilterLabel, phaseLabel, playerFilterLabel, policyFilterLabel, t]);
   const keyStatRows: Array<{ label: string; description: string; value: (p: Player) => string }> = [
     {
       label: t('Moves'),
@@ -697,20 +737,29 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     return getPhaseMoveRange(boardSize, phaseFilter);
   }, [boardSize, phaseFilter]);
 
+  const buildPdfSnapshots = React.useCallback(() => pdfMistakes.map((entry) => ({
+    id: entry.node.id,
+    dataUrl: captureReportBoardSnapshot({
+      board: entry.node.gameState.board,
+      playedMove: entry.node.move,
+      bestMove: entry.topMove,
+    }),
+    entry,
+  })), [pdfMistakes]);
+
+  useEffect(() => {
+    // The browser's own Print command also needs diagrams. React must commit
+    // them before the synchronous print snapshot, as it does for our button.
+    const beforePrint = () => { flushSync(() => setPdfSnapshots(buildPdfSnapshots())); };
+    window.addEventListener('beforeprint', beforePrint);
+    return () => window.removeEventListener('beforeprint', beforePrint);
+  }, [buildPdfSnapshots]);
+
   const preparePrint = async () => {
     if (isPreparingPdf) return;
     setIsPreparingPdf(true);
     try {
-      const snapshots = pdfMistakes.map((entry) => ({
-        id: entry.node.id,
-        dataUrl: captureReportBoardSnapshot({
-          board: entry.node.gameState.board,
-          playedMove: entry.node.move,
-          bestMove: entry.topMove,
-        }),
-        entry,
-      }));
-      setPdfSnapshots(snapshots);
+      setPdfSnapshots(buildPdfSnapshots());
       await afterAnimationFrames(2);
       if (!printWindow()) {
         setTimedNotification(t('Print dialog unavailable in this browser.'), 'error');
@@ -881,7 +930,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     );
   };
 
-  const refreshSnapshot = async () => {
+  const refreshSnapshot = React.useCallback(async () => {
     setSnapshotError(null);
     try {
       const dataUrl = await captureBoardSnapshot();
@@ -893,15 +942,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     } catch {
       setSnapshotError(t('Snapshot unavailable.'));
     }
-  };
-
-  useEffect(() => {
-    if (!isGameAnalysisRunning) return;
-    const id = window.setInterval(() => {
-      setGraphTick((tick) => tick + 1);
-    }, 900);
-    return () => window.clearInterval(id);
-  }, [isGameAnalysisRunning]);
+  }, [t]);
 
   useEffect(() => {
     if (snapshotTimerRef.current) {
@@ -915,12 +956,17 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
         window.clearTimeout(snapshotTimerRef.current);
       }
     };
-  }, [treeVersion, currentNode?.id]);
+  }, [treeVersion, currentNode?.id, refreshSnapshot]);
 
   useEffect(() => {
     setPdfSnapshots([]);
-    setShowAllMistakes(false);
   }, [bucketFilter, mistakeSort, playerFilter, phaseFilter, policyFilter, treeVersion]);
+
+  // The list's length follows what is asked for, not analysis landing: with
+  // live analysis on, every result folded "Show all" back to ten.
+  useEffect(() => {
+    setShowAllMistakes(false);
+  }, [bucketFilter, mistakeSort, playerFilter, phaseFilter, policyFilter]);
 
   useEffect(() => {
     setBucketFilter(null);
@@ -944,11 +990,23 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     }
   }, [phaseCounts, phaseFilter]);
 
+  // The queue belongs to a filter set and a game. It used to reset on every
+  // tree change too, and stepping through it with live analysis on analyses
+  // each position -- so the queue closed itself two seconds into each step.
   useEffect(() => {
     setReviewQueue([]);
     setReviewIndex(0);
     setReportHoverMove(null);
-  }, [bucketFilter, mistakeSort, phaseFilter, playerFilter, policyFilter, setReportHoverMove, treeVersion]);
+  }, [bucketFilter, mistakeSort, phaseFilter, playerFilter, policyFilter, rootNodeId, setReportHoverMove]);
+
+  // A deleted move leaves the queue rather than stay there to be jumped to.
+  useEffect(() => {
+    void treeVersion;
+    setReviewQueue((queue) => {
+      const attached = queue.filter((entry) => isNodeInTree(entry.node, rootNodeId));
+      return attached.length === queue.length ? queue : attached;
+    });
+  }, [rootNodeId, treeVersion]);
 
   useEffect(() => () => setReportHoverMove(null), [setReportHoverMove]);
 
@@ -971,7 +1029,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
     window.setTimeout(() => reportGuideButtonRef.current?.focus({ preventScroll: true }), 0);
   };
 
-  return (
+  const dialog = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 report-overlay p-3 sm:p-6 mobile-safe-inset mobile-safe-area-bottom">
       <div
         className="game-report-modal ui-panel rounded-2xl shadow-2xl w-[92vw] max-w-[56rem] max-h-[90dvh] overflow-hidden flex flex-col report-print border"
@@ -988,7 +1046,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               {t('Game Analysis Summary')}
             </h2>
             <div className="mt-1 text-sm ui-text-muted">
-              {playerNames.black} vs {playerNames.white}
+              {playerNames.black}  {t('vs')} {playerNames.white}
             </div>
             {showOutcome && gameTags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5" aria-label={t('Game tags')}>
@@ -1087,7 +1145,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   >
                     <span className="min-w-0 sm:hidden">{t(b.compactLabel)}</span>
                     <span className="hidden min-w-0 sm:inline">{t(b.label)}</span>
-                    <span className="shrink-0 rounded-full border border-current/20 px-1.5 py-0.5 font-mono text-[0.6875rem] leading-none opacity-80">
+                    <span className="shrink-0 rounded-full border border-current/20 px-1.5 py-0.5 font-mono text-[0.6875rem] leading-none">
                       {counts.analyzed}/{counts.total}
                     </span>
                   </button>
@@ -1576,7 +1634,11 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               {reportGraph.score || reportGraph.winrate || (hasMoveTimes && reportGraph.time) ? (
                 <div style={{ height: 160 }}>
                   <ScoreWinrateGraph
-                    key={`${graphRange?.start ?? 0}-${graphRange?.end ?? 'all'}-${treeVersion}-${gameAnalysisDone}-${graphTick}-${reportGraph.score ? 's' : ''}${reportGraph.winrate ? 'w' : ''}${reportGraph.time ? 't' : ''}`}
+                    // Keyed on what it shows, not on analysis progress: a key
+                    // that changed every 0.9s rebuilt the graph and threw its
+                    // keyboard focus and hover away. Its own memos follow the
+                    // tree and the review.
+                    key={`${graphRange?.start ?? 0}-${graphRange?.end ?? 'all'}-${reportGraph.score ? 's' : ''}${reportGraph.winrate ? 'w' : ''}${reportGraph.time ? 't' : ''}`}
                     showScore={reportGraph.score}
                     showWinrate={reportGraph.winrate}
                     showTime={hasMoveTimes && reportGraph.time}
@@ -1677,7 +1739,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                         'rounded-full border px-2 py-0.5 font-semibold',
                         policyCategoryClass(entry.policy.category),
                       ].join(' ')}>
-                        {policyCategoryLabel(entry.policy.category)} #{entry.policy.rank || '?'}
+                        {policyCategoryLabel(entry.policy.category)} {formatPolicyRank(entry.policy.rank)}
                       </span>
                     )}
                     <button
@@ -1777,13 +1839,13 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                   <span className={mutedClass}>
                     {t('Move {count}', { count: activeReview.moveNumber })} · {playerNames[activeReview.player]} · {activeReview.move}
                   </span>
-                  <span className="font-mono text-rose-300">-{fmtNum(activeReview.pointsLost, 2)}</span>
+                  <span className="font-mono text-rose-300">{describeStudyFocusEntry(activeReview).lossLabel}</span>
                   {activeReview.policy && (
                     <span className={[
                       'rounded-full border px-2 py-0.5 font-semibold',
                       policyCategoryClass(activeReview.policy.category),
                     ].join(' ')}>
-                      {policyCategoryLabel(activeReview.policy.category)} #{activeReview.policy.rank || '?'} · {fmtPolicyPct(activeReview.policy.relativePrior)}
+                      {policyCategoryLabel(activeReview.policy.category)} {formatPolicyRank(activeReview.policy.rank)} · {fmtPolicyPct(activeReview.policy.relativePrior)}
                     </span>
                   )}
                   <div className="ml-auto flex items-center gap-2">
@@ -1969,16 +2031,14 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
             <div className="pdf-page">
               <div className="flex items-start justify-between gap-6">
                 <div>
-                  <div className="pdf-cover-subtitle">{t('KaTrain Official Report')}</div>
+                  <div className="pdf-cover-subtitle">{t('Web KaTrain · Game report')}</div>
                   <div className="pdf-cover-title pdf-title">{t('Game Analysis Summary')}</div>
                   <div className="mt-2 text-sm font-semibold text-slate-700">
-                    {playerNames.black} vs {playerNames.white}
+                    {playerNames.black}  {t('vs')} {playerNames.white}
                   </div>
                 </div>
                 <div className="text-xs text-slate-600">
-                  {generatedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                  {' • '}
-                  {generatedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  {formatReportTimestamp(generatedAt)}
                 </div>
               </div>
               <div className="mt-5 grid grid-cols-3 gap-4 text-sm">
@@ -1998,8 +2058,8 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 </div>
               </div>
               <div className="mt-6 text-sm text-slate-700">
-                {t('Filters: {filters} • Sort: {sort} • Showing top {count} mistakes', {
-                  filters: activeFilterLabels.join(' - '),
+                {t('Filters: {filters} · Sort: {sort} · Showing top {count} mistakes', {
+                  filters: activeFilterLabels.join(', '),
                   sort: mistakeSortLabel,
                   count: pdfMistakes.length,
                 })}
@@ -2086,7 +2146,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     {turningPoints.map((entry) => (
                       <div
                         key={`${entry.node.id}-pdf-swing-${entry.moveNumber}`}
-                        className="flex items-center justify-between gap-4 rounded border border-slate-300 px-3 py-2"
+                        className="print-break-avoid flex items-center justify-between gap-4 rounded border border-slate-300 px-3 py-2"
                       >
                         <div>
                           <span className="font-semibold text-slate-900">{t('Move {count}', { count: entry.moveNumber })}</span>
@@ -2114,7 +2174,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                     {recoveries.map((entry) => (
                       <div
                         key={`${entry.node.id}-pdf-recovery-${entry.moveNumber}`}
-                        className="flex items-center justify-between gap-4 rounded border border-slate-300 px-3 py-2"
+                        className="print-break-avoid flex items-center justify-between gap-4 rounded border border-slate-300 px-3 py-2"
                       >
                         <div>
                           <span className="font-semibold text-slate-900">{t('Move {count}', { count: entry.moveNumber })}</span>
@@ -2146,17 +2206,17 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                 ? pdfSnapshots
                 : pdfMistakes.map((entry) => ({ id: entry.node.id, dataUrl: null, entry }))
               ).map(({ id, dataUrl, entry }, idx) => (
-                <div key={id} className="pdf-page">
+                <div key={id} className="pdf-page pdf-position-page">
                   <div className="flex items-start justify-between gap-6">
                     <div>
                       <div className="pdf-section-title">
                         {t('Mistake {i} of {n}', { i: idx + 1, n: pdfMistakes.length })}
                       </div>
                       <div className="text-lg font-semibold text-slate-900">
-                        {t('Move {count}', { count: entry.moveNumber })} - {playerNames[entry.player]}
+                        {t('Move {count}', { count: entry.moveNumber })} · {playerNames[entry.player]}
                       </div>
                       <div className="text-sm text-slate-700">
-                        {t('Played {move} • Best {best} • Loss {loss} • Win {win}', {
+                        {t('Played {move} · Best {best} · Loss {loss} · Win {win}', {
                           move: entry.move,
                           best: entry.topMove ?? NO_VALUE,
                           loss: fmtNum(entry.pointsLost, 2),
@@ -2168,16 +2228,21 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
                       {t('Phase: {phase}', { phase: phaseLabel })}
                     </div>
                   </div>
-                  <div className="mt-4 pdf-board-wrap">
-                    {dataUrl ? (
-                      <img src={dataUrl} alt={t('Move {count} snapshot', { count: entry.moveNumber })} className="pdf-board" />
-                    ) : (
-                      <div className="text-[0.625rem] text-slate-500">{t('Snapshot missing')}</div>
-                    )}
-                  </div>
-                  <div className="mt-4">
-                    <div className="pdf-section-title">{t('Correct Move Tree')}</div>
-                    <div className="mt-2">{renderPvTree(entry)}</div>
+                  <div className="mt-4 pdf-position-grid">
+                    <div>
+                      <div className="pdf-board-wrap">
+                        {dataUrl ? (
+                          <img src={dataUrl} alt={t('Position after move {value1}. Played {value2}; engine suggestion {value3}.', { value1: entry.moveNumber, value2: entry.move, value3: entry.topMove ?? 'unavailable' })} className="pdf-board" />
+                        ) : (
+                          <div className="text-[0.625rem] text-slate-500">{t('Snapshot unavailable')}</div>
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-slate-600">{t('Circle: played move · Square: engine suggestion')}</p>
+                    </div>
+                    <div>
+                      <div className="pdf-section-title">{t('Suggested continuation')}</div>
+                      <div className="mt-2">{renderPvTree(entry)}</div>
+                    </div>
                   </div>
                 </div>
               ))
@@ -2194,7 +2259,7 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
               <button
                 type="button"
                 onClick={handlePrintReport}
-                className="min-h-11 px-4 py-2 bg-[var(--ui-surface-2)] hover:brightness-110 text-[var(--ui-text)] border border-[var(--ui-border)] rounded-lg font-semibold disabled:opacity-60"
+                className="min-h-11 px-4 py-2 bg-[var(--ui-surface-2)] not-disabled:hover:brightness-110 text-[var(--ui-text)] border border-[var(--ui-border)] rounded-lg font-semibold disabled:opacity-60"
                 disabled={isPreparingPdf}
               >
                 {isPreparingPdf
@@ -2308,4 +2373,5 @@ export const GameReportModal: React.FC<GameReportModalProps> = ({ onClose, setRe
       )}
     </div>
   );
+  return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body);
 };

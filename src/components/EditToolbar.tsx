@@ -31,6 +31,7 @@ import { useGameStore } from '../store/gameStore';
 import { useShortcutLabels } from '../hooks/useShortcutLabels';
 import { EDIT_TOOL_SHORTCUT_ID_BY_TOOL, EDIT_TOOL_SHORTCUT_IDS } from '../utils/shortcuts';
 import { t, useT } from '../i18n';
+import { getResizeObserverConstructor } from '../utils/resizeObserver';
 import type { EditTool } from '../types';
 
 type EditToolItem = {
@@ -127,7 +128,7 @@ const countBranchNodes = (node: CountableBranchNode | null): number => {
   return count;
 };
 
-const formatBranchNodeCount = (count: number): string => t('{count} node(s)', { count });
+const formatBranchNodeCount = (count: number): string => t(count === 1 ? '{count} node' : '{count} nodes', { count });
 
 const toolButtonClass = (active: boolean) =>
   [
@@ -205,9 +206,18 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
   const siblingCount = currentNode.parent?.children.length ?? 0;
   const canShiftEarlier = siblingIndex > 0;
   const canShiftLater = siblingIndex >= 0 && siblingIndex < siblingCount - 1;
+  // Copying needs a move to anchor the branch (the store refuses otherwise),
+  // so a setup node -- the one Frame as tsumego adds -- offered Copy only to
+  // answer "Select a move branch to copy."
+  const canCopyBranch = canEditBranch && Boolean(currentNode.move);
+  // Edits change the tree in place (Add PV hangs three nodes under this one),
+  // so the count follows the tree's version, not just the node's identity.
   const currentBranchNodeCount = React.useMemo(
-    () => (canEditBranch ? countBranchNodes(currentNode) : 0),
-    [canEditBranch, currentNode]
+    () => {
+      void treeVersion;
+      return canEditBranch ? countBranchNodes(currentNode) : 0;
+    },
+    [canEditBranch, currentNode, treeVersion]
   );
   const copiedBranchNodeCount = React.useMemo(() => countBranchNodes(copiedBranch), [copiedBranch]);
   const currentBranchNodeLabel = formatBranchNodeCount(currentBranchNodeCount);
@@ -226,7 +236,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
   const moveVariationEarlierLabel = t('Move variation earlier');
   const moveVariationLaterLabel = t('Move variation later');
   const makeMainBranchLabel = t('Make current variation the main branch');
-  const copyBranchLabel = canEditBranch
+  const copyBranchLabel = canCopyBranch
     ? t('Copy current branch ({count})', { count: currentBranchNodeLabel })
     : t('Select a move branch to copy');
   const pasteBranchLabel = copiedBranch
@@ -260,10 +270,78 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
   // When the launcher lives elsewhere (e.g. the mobile bottom bar), render
   // nothing while idle so the board area stays clear; the active editing strip
   // still appears once edit mode is on.
+  /**
+   * How much of the board shell's bottom edge this toolbar occupies, so the
+   * notification toast can sit above it.
+   *
+   * The two are absolutely positioned siblings in the same parent at the same
+   * `z-index: 40`, both anchored to its bottom -- so DOM order decided, and the
+   * toolbar won. Measured on a 390x844 phone: the toast region sat at 530-581
+   * and the toolbar at 454-577, which put every edit-mode confirmation --
+   * "Added label B", "Undid edit", the ones this mode produces most -- entirely
+   * behind the panel. Publishing the extent rather than a height keeps the two
+   * apart whatever the panel grows to.
+   */
+  const [mobilePanelEl, setMobilePanelEl] = React.useState<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const clear = () => root.style.removeProperty('--mobile-edit-toolbar-inset');
+    if (!mobilePanelEl || !isMobile || docked || !isEditMode) {
+      clear();
+      return;
+    }
+    const update = () => {
+      const parent = mobilePanelEl.offsetParent?.getBoundingClientRect();
+      const rect = mobilePanelEl.getBoundingClientRect();
+      if (!parent) return;
+      root.style.setProperty('--mobile-edit-toolbar-inset', `${Math.max(0, Math.ceil(parent.bottom - rect.top))}px`);
+    };
+    update();
+    const ResizeObserverConstructor = getResizeObserverConstructor();
+    const observer = ResizeObserverConstructor ? new ResizeObserverConstructor(update) : null;
+    observer?.observe(mobilePanelEl);
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+      clear();
+    };
+  }, [docked, isEditMode, isMobile, mobilePanelEl]);
+
+  React.useLayoutEffect(() => {
+    if (!mobilePanelEl || !docked || isMobile || !isEditMode) return;
+    const dashboard = mobilePanelEl.closest('.wk-dashboard');
+    const stage = dashboard?.querySelector('.board-stage');
+    const panel = mobilePanelEl.querySelector<HTMLElement>('.edit-toolbar-panel--docked');
+    if (!stage || !panel) return;
+    const update = () => {
+      // Font metrics, density and wrapping can change the game strip's height.
+      // Follow the board stage, accounting for any fixed-position containing
+      // block, instead of assuming a 43px strip beneath a 50px header.
+      const cssTop = Number.parseFloat(getComputedStyle(panel).top) || 0;
+      const origin = panel.getBoundingClientRect().top - cssTop;
+      const top = Math.ceil(stage.getBoundingClientRect().top + 10 - origin);
+      mobilePanelEl.style.setProperty('--desktop-edit-toolbar-top', `${top}px`);
+    };
+    update();
+    const Observer = getResizeObserverConstructor();
+    const observer = Observer ? new Observer(update) : null;
+    for (const element of [stage, dashboard?.querySelector('.header'), dashboard?.querySelector('.gamestrip')]) {
+      if (element) observer?.observe(element);
+    }
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+      mobilePanelEl.style.removeProperty('--desktop-edit-toolbar-top');
+    };
+  }, [docked, isEditMode, isMobile, mobilePanelEl]);
+
   if (!isEditMode && hideIdleLauncher) return null;
 
   return (
     <div
+      ref={setMobilePanelEl}
       data-edit-toolbar
       className={
         docked
@@ -381,7 +459,7 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
                     >
                       <span>{item.icon}</span>
                       <span className="hidden sm:inline">{item.label}</span>
-                      {shortcutLabel !== 'Disabled' && (
+                      {shortcutLabel !== t('Disabled') && (
                         <kbd className="hidden md:inline font-mono text-[0.625rem] ui-text-faint">{shortcutLabel}</kbd>
                       )}
                     </button>
@@ -467,8 +545,8 @@ export const EditToolbar: React.FC<{ isMobile?: boolean; analysisCommandBarVisib
               <button
                 type="button"
                 onClick={copyCurrentBranch}
-                disabled={!canEditBranch}
-                className={[toolButtonClass(false), !canEditBranch ? 'opacity-40 cursor-not-allowed' : ''].join(' ')}
+                disabled={!canCopyBranch}
+                className={[toolButtonClass(false), !canCopyBranch ? 'opacity-40 cursor-not-allowed' : ''].join(' ')}
                 title={copyBranchLabel}
                 aria-label={copyBranchLabel}
               >

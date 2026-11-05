@@ -8,9 +8,11 @@ import { getKaTrainEvalColors } from '../utils/katrainTheme';
 import { computeNodePointsLost, DEFAULT_EVAL_THRESHOLDS, getEvaluationClass } from '../utils/nodeAnalysis';
 import { isGraphKeyboardNavigationKey, nextGraphKeyboardIndex } from '../utils/graphKeyboard';
 import { hasVisibleGraphData } from '../utils/graphDataAvailability';
+import { indexAtGraphX } from '../utils/graphScrub';
 import { computeMoveTimes, formatMoveTime } from '../utils/moveTimes';
 import { getScoreWinrateGraphTheme } from '../utils/scoreWinrateGraphTheme';
 import { useResolvedUiTheme } from '../hooks/useResolvedUiTheme';
+import { formatAnalysisScoreLead } from '../utils/analysisSummary';
 
 const SCORE_GRANULARITY = 5;
 const WINRATE_GRANULARITY = 10;
@@ -122,14 +124,22 @@ export const ScoreWinrateGraph: React.FC<{
     return { nodes: lineNodes, highlightedIndex: Math.max(0, currentIndex) };
   }, [activeBranchChildIds, currentNode, treeVersion, gameAnalysisDone]);
 
-  const { displayNodes, highlighted } = useMemo(() => {
-    if (nodes.length === 0) return { displayNodes: nodes, highlighted: 0 };
-    if (!range) return { displayNodes: nodes, highlighted: Math.max(0, highlightedIndex) };
-    const start = Math.max(0, Math.min(range.start, nodes.length - 1));
-    const end = Math.max(start, Math.min(range.end, nodes.length - 1));
-    const sliced = nodes.slice(start, end + 1);
-    const adjusted = Math.min(Math.max(0, highlightedIndex - start), Math.max(0, sliced.length - 1));
-    return { displayNodes: sliced, highlighted: adjusted };
+  const { displayNodes, highlighted, rangeOffset } = useMemo(() => {
+    if (nodes.length === 0) return { displayNodes: nodes, highlighted: 0, rangeOffset: 0 };
+    if (!range) return { displayNodes: nodes, highlighted: Math.max(0, highlightedIndex), rangeOffset: 0 };
+    // The range is in move numbers, so pick nodes by move number. Slicing the
+    // line by position shifted every phase by one move per setup or comment
+    // node before it: the opening ended at move 14 and the middle began at 15.
+    // A line's move numbers never go down, so the matches are one run.
+    const first = nodes.findIndex((node) => node.gameState.moveHistory.length >= range.start);
+    // A phase the game never reached has no moves to draw. Falling back to
+    // the last node plotted a move from the phase before, with its marker.
+    if (first < 0) return { displayNodes: [] as typeof nodes, highlighted: 0, rangeOffset: 0 };
+    let last = first;
+    while (last + 1 < nodes.length && nodes[last + 1]!.gameState.moveHistory.length <= range.end) last += 1;
+    const sliced = nodes.slice(first, last + 1);
+    const adjusted = Math.min(Math.max(0, highlightedIndex - first), Math.max(0, sliced.length - 1));
+    return { displayNodes: sliced, highlighted: adjusted, rangeOffset: first };
   }, [highlightedIndex, nodes, range]);
 
   const width = 300;
@@ -218,7 +228,9 @@ export const ScoreWinrateGraph: React.FC<{
     void gameAnalysisDone;
     return displayNodes
       .map((node, index) => {
-        if (index === 0) return null;
+        // No skip for index 0: in a phase-limited graph that is the phase's
+        // first move, which went unmarked. The root has no move, and
+        // computeNodePointsLost already returns null for it.
         const rawPointsLost = computeNodePointsLost(node);
         if (typeof rawPointsLost !== 'number' || !Number.isFinite(rawPointsLost)) return null;
         const pointsLost = Math.max(0, rawPointsLost);
@@ -238,15 +250,71 @@ export const ScoreWinrateGraph: React.FC<{
       .filter((marker): marker is NonNullable<typeof marker> => marker !== null);
   }, [displayNodes, evalColors, evalThresholds, gameAnalysisDone, trainerShowDots, treeVersion, xScale]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!hasGraphData || !svgRef.current) return;
+  const indexAtClientX = (clientX: number): number | null => {
+    if (!hasGraphData || !svgRef.current) return null;
     const rect = svgRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const index = Math.round((x / rect.width) * (count - 1));
-    if (index >= 0 && index < count) setHoverIndex(index);
+    return indexAtGraphX({ clientX, left: rect.left, width: rect.width, count, span: Math.max(count - 1, 15) });
   };
 
-  const handleMouseLeave = () => setHoverIndex(null);
+  /**
+   * Dragging along the graph previews as it goes, on a finger as well as a
+   * pointer.
+   *
+   * It listened for mouse events only. A tap still worked, because a mobile
+   * browser synthesises a mousemove before the click -- but the gesture this
+   * graph is shaped for, running along it to scan the game, did nothing on a
+   * touch screen, and the preview a hover gives was unreachable there.
+   *
+   * A mouse previews on movement alone, as it did. A finger has to be down:
+   * there is no hovering, and previewing whatever the page happened to scroll
+   * under would be noise. `touch-action: pan-y` on the box is what makes the
+   * drag arrive at all -- without it the browser claims the horizontal gesture
+   * -- while leaving the vertical scroll of the panel around it alone.
+   */
+  const [isScrubbing, setIsScrubbing] = useState(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse') return;
+    const index = indexAtClientX(e.clientX);
+    if (index === null) return;
+    setIsScrubbing(true);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    setHoverIndex(index);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'mouse' && !isScrubbing) return;
+    const index = indexAtClientX(e.clientX);
+    if (index !== null) setHoverIndex(index);
+  };
+
+  const endScrub = (e: React.PointerEvent) => {
+    if (!isScrubbing) return;
+    setIsScrubbing(false);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    // Land on wherever the finger left off, then hand the marker back to the
+    // current move -- there is no pointer resting on a touch screen for the
+    // preview to belong to.
+    if (hoverIndex !== null && displayNodes[hoverIndex]) jumpToNode(displayNodes[hoverIndex]);
+    setHoverIndex(null);
+  };
+
+  /**
+   * The browser took the gesture -- the finger moved along pan-y and the page
+   * scrolled. That is not a choice of move: landing on where the finger first
+   * touched sent a scroll that started on the graph to move 4 of 16.
+   */
+  const cancelScrub = (e: React.PointerEvent) => {
+    if (!isScrubbing) return;
+    setIsScrubbing(false);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    setHoverIndex(null);
+  };
+
+  const handlePointerLeave = () => {
+    if (isScrubbing) return;
+    setHoverIndex(null);
+  };
 
   const handleClick = () => {
     if (hasGraphData && hoverIndex !== null && displayNodes[hoverIndex]) jumpToNode(displayNodes[hoverIndex]);
@@ -261,7 +329,7 @@ export const ScoreWinrateGraph: React.FC<{
   // occupy line positions.
   const nodeMoveNumber = (node?: (typeof displayNodes)[number]): number =>
     node ? node.gameState.moveHistory.length : 0;
-  const activeSliderValue = activeGraphIndex + (range?.start ?? 0);
+  const activeSliderValue = activeGraphIndex + rangeOffset;
   const activeMoveLabel = t('Move {n}', { n: nodeMoveNumber(displayNodes[activeGraphIndex]) });
 
   const handleFocus = () => {
@@ -302,6 +370,14 @@ export const ScoreWinrateGraph: React.FC<{
     ? smoothedWinrateValues[clampedHighlighted]!
     : lastFinite(smoothedWinrateValues);
 
+  // A clock alone makes the graph, and with no win rate or score behind it
+  // their dots sat on "Jigo", their scale was labelled, and the tooltip read
+  // "50.0% - B+0.0". Each series is drawn and read only where it has values.
+  const hasScoreSeries = smoothedScoreValues.some((value) => Number.isFinite(value));
+  const hasWinrateSeries = smoothedWinrateValues.some((value) => Number.isFinite(value));
+  const showScoreSeries = showScore && hasScoreSeries;
+  const showWinrateSeries = showWinrate && hasWinrateSeries;
+
   const currentScoreY = yScore(currentScore);
   const currentWinY = yWin(currentWin);
 
@@ -317,7 +393,19 @@ export const ScoreWinrateGraph: React.FC<{
     typeof hoverPointsLost === 'number' && Number.isFinite(hoverPointsLost) && Math.abs(hoverPointsLost) > 0.05
       ? formatPointLoss(hoverPointsLost, t)
       : '';
-  const hoverMetricsText = `${showWinrate ? `${(50 + hoverWin).toFixed(1)}%` : ''}${showScore && showWinrate ? ' - ' : ''}${showScore ? `${hoverScore >= 0 ? 'B' : 'W'}+${Math.abs(hoverScore).toFixed(1)}` : ''}`;
+  // Only this move's own readings: carrying the last analysed move's values
+  // forward put them under a later move's number.
+  // The text reads the move's own values. The smoothed series draws the line,
+  // but it averages each point with the one before: a move from B+10 to W+10
+  // was captioned "50.0% - B+0.0" while the panel said W+10.
+  const rawHoverScore = hoverIndex !== null ? scoreValues[hoverIndex] : undefined;
+  const rawHoverWin = hoverIndex !== null ? winrateValues[hoverIndex] : undefined;
+  const hoverHasScore = typeof rawHoverScore === 'number' && Number.isFinite(rawHoverScore);
+  const hoverHasWin = typeof rawHoverWin === 'number' && Number.isFinite(rawHoverWin);
+  const hoverMetricsText = [
+    showWinrate && hoverHasWin ? `${(50 + rawHoverWin).toFixed(1)}%` : '',
+    showScore && hoverHasScore ? formatAnalysisScoreLead(rawHoverScore) : '',
+  ].filter(Boolean).join(' - ');
   const hoverSeconds = hoverIndex !== null ? timeValues[hoverIndex] : undefined;
   const hoverTimeText =
     showTime && typeof hoverSeconds === 'number' && Number.isFinite(hoverSeconds)
@@ -343,16 +431,21 @@ export const ScoreWinrateGraph: React.FC<{
           ? t('Analysis graph move preview. Use arrow keys to preview moves, Enter to jump to the selected move.')
           : t('Analysis graph. No analyzed moves yet.')
       }
-      aria-valuemin={hasGraphData ? (range?.start ?? 0) : undefined}
-      aria-valuemax={hasGraphData ? (range?.start ?? 0) + Math.max(0, count - 1) : undefined}
+      aria-valuemin={hasGraphData ? rangeOffset : undefined}
+      aria-valuemax={hasGraphData ? rangeOffset + Math.max(0, count - 1) : undefined}
       aria-valuenow={hasGraphData ? activeSliderValue : undefined}
-      aria-valuetext={hasGraphData ? (hoverTooltip || activeMoveLabel) : t('No analyzed moves yet')}
+      // Slider attributes only on the slider; an empty graph is a region, and
+      // its state is read from the empty-state text it is described by.
+      aria-valuetext={hasGraphData ? (hoverTooltip || activeMoveLabel) : undefined}
       aria-describedby={hasGraphData ? undefined : emptyStateId}
       data-analysis-score-winrate-graph="true"
       data-analysis-graph-has-data={hasGraphData ? 'true' : 'false'}
-      style={graphTheme.boxStyle}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      style={{ ...graphTheme.boxStyle, touchAction: hasGraphData ? 'pan-y' : undefined }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endScrub}
+      onPointerCancel={cancelScrub}
+      onPointerLeave={handlePointerLeave}
       onClick={handleClick}
       onFocus={handleFocus}
       onBlur={handleBlur}
@@ -421,8 +514,8 @@ export const ScoreWinrateGraph: React.FC<{
         )}
 
         {/* Current dot */}
-        {showScore && <circle cx={currentX} cy={currentScoreY} r="3" fill={graphTheme.dotColor} stroke="none" />}
-        {showWinrate && <circle cx={currentX} cy={currentWinY} r="3" fill={graphTheme.dotColor} stroke="none" />}
+        {showScoreSeries && <circle cx={currentX} cy={currentScoreY} r="3" fill={graphTheme.dotColor} stroke="none" />}
+        {showWinrateSeries && <circle cx={currentX} cy={currentWinY} r="3" fill={graphTheme.dotColor} stroke="none" />}
 
         {/* Hover indicator */}
         {hoverIndex !== null && (
@@ -436,8 +529,8 @@ export const ScoreWinrateGraph: React.FC<{
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
             />
-            {showScore && <circle cx={hoverX} cy={hoverScoreY} r="3" fill={graphTheme.dotColor} stroke="none" />}
-            {showWinrate && <circle cx={hoverX} cy={hoverWinY} r="3" fill={graphTheme.dotColor} stroke="none" />}
+            {showScore && hoverHasScore && <circle cx={hoverX} cy={hoverScoreY} r="3" fill={graphTheme.dotColor} stroke="none" />}
+            {showWinrate && hoverHasWin && <circle cx={hoverX} cy={hoverWinY} r="3" fill={graphTheme.dotColor} stroke="none" />}
           </g>
         )}
       </svg>
@@ -476,7 +569,7 @@ export const ScoreWinrateGraph: React.FC<{
       )}
 
       {/* Score ticks (KaTrain-like) — meaningless without data, so they wait for it */}
-      {showScore && hasGraphData && (
+      {showScoreSeries && hasGraphData && (
         <>
           <div
             className="absolute top-1 right-1 text-[0.5625rem] pointer-events-none"
@@ -496,7 +589,7 @@ export const ScoreWinrateGraph: React.FC<{
       )}
 
       {/* Winrate ticks (KaTrain-like) */}
-      {showWinrate && hasGraphData && (
+      {showWinrateSeries && hasGraphData && (
         <>
           <div
             className="absolute top-1 left-1 text-[0.5625rem] pointer-events-none"
@@ -516,7 +609,8 @@ export const ScoreWinrateGraph: React.FC<{
           aria-live="polite"
           data-analysis-graph-tooltip="true"
           style={{
-            left: `${Math.min(Math.max(0, hoverIndex * (100 / (count - 1 || 1))), 88)}%`,
+            // Where the point is drawn, which spans at least 15 intervals.
+            left: `${Math.min(Math.max(0, (hoverIndex * xScale * 100) / width), 88)}%`,
             top: '50%',
             transform: 'translate(-50%, -50%)',
           }}

@@ -6,9 +6,12 @@ import type { UiMode } from '../components/layout/types';
 import { EDIT_TOOL_SHORTCUT_DEFINITIONS, eventMatchesShortcut, isNativePasteShortcutEvent, loadShortcutOverrides } from '../utils/shortcuts';
 import { toggleAppFullscreen } from '../utils/fullscreen';
 import { shouldIgnoreShortcutForKey } from '../utils/keyboardTarget';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
 import { nextPolicyHeatmapMetric } from '../utils/topMoveMetric';
 import { copyTextToClipboard } from '../utils/clipboard';
 import type { MoveTreeCommand } from '../utils/moveTreeCommands';
+import { NOTHING_TO_TAKE_BACK_MESSAGE, getPlayerUndoSteps } from '../utils/playerUndo';
+import { commitPendingGameDrafts } from '../utils/gameDrafts';
 
 interface UseKeyboardShortcutsOptions {
   mode: UiMode;
@@ -138,7 +141,7 @@ export function useKeyboardShortcuts({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (shouldIgnoreShortcutForKey(e.key, e.target, document.activeElement)) return;
+      if (isComposingKeyEvent(e) || shouldIgnoreShortcutForKey(e.key, e.target, document.activeElement)) return;
 
       const shift = e.shiftKey;
       const overrides = loadShortcutOverrides();
@@ -152,7 +155,8 @@ export function useKeyboardShortcuts({
       };
 
       const copySgfToClipboard = async () => {
-        const sgf = generateSgfFromTree(rootNode, sgfExportOptions);
+        commitPendingGameDrafts();
+        const sgf = generateSgfFromTree(useGameStore.getState().rootNode, sgfExportOptions);
         if (await copyTextToClipboard(sgf)) {
           toast('Copied SGF to clipboard.', 'success');
           return;
@@ -441,6 +445,12 @@ export function useKeyboardShortcuts({
       // Find mistakes
       if (matches('next-mistake') || matches('prev-mistake')) {
         e.preventDefault();
+        // Refused like every other jump; unguarded, N left insert mode on
+        // three moves further along the original line.
+        if (isInsertMode) {
+          toast('Finish inserting before navigating.', 'error');
+          return;
+        }
         findMistake(matches('prev-mistake') ? 'undo' : 'redo');
         return;
       }
@@ -498,11 +508,9 @@ export function useKeyboardShortcuts({
         if (matches('nav-back-10')) jumpBack(10);
         else {
           if (mode === 'play') {
-            const st = useGameStore.getState();
-            const lastMover = st.currentNode.move?.player ?? null;
-            const shouldUndoTwice = !!st.isAiPlaying && !!st.aiColor && lastMover === st.aiColor && st.currentPlayer !== st.aiColor;
-            navigateBack();
-            if (shouldUndoTwice) navigateBack();
+            const steps = getPlayerUndoSteps(useGameStore.getState());
+            if (steps === 0 && useGameStore.getState().currentNode.parent) toast(NOTHING_TO_TAKE_BACK_MESSAGE, 'info');
+            for (let i = 0; i < steps; i++) navigateBack();
           } else {
             navigateBack();
           }
@@ -545,7 +553,7 @@ export function useKeyboardShortcuts({
       // Enter (AI move)
       if (matches('ai-move')) {
         e.preventDefault();
-        makeAiMove();
+        makeAiMove({ force: true });
         return;
       }
 

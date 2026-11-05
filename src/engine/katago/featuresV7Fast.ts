@@ -1,6 +1,7 @@
+import { historyFeaturesV7, type HistoryFeaturesV7 } from './historyV7';
 import type { GameRules, Player } from '../../types';
 import { getOpponent } from '../../utils/gameLogic';
-import { areaFeatureModeForRules, rulesOf } from '../../utils/goRules';
+import { areaFeatureModeForRules, isSuicideLegal, rulesOf } from '../../utils/goRules';
 import { BLACK, WHITE, EMPTY, PASS_MOVE, BOARD_SIZE, computeLibertyMap, computeAreaMapV7KataGo, computeIndependentLifeArea, type StoneColor } from './fastBoard';
 
 const INPUT_SPATIAL_CHANNELS_V7 = 22;
@@ -27,6 +28,7 @@ function playerToColor(p: Player): StoneColor {
 export function fillInputsV7Fast(args: {
   stones: Uint8Array; // 0 empty, 1 black, 2 white
   koPoint: number; // 0..360 or -1
+  superkoBanned?: Uint8Array;
   currentPlayer: Player;
   recentMoves: RecentMove[]; // chronological order, last item is most recent
   komi: number;
@@ -59,6 +61,8 @@ export function fillInputsV7Fast(args: {
   prevLadderedStones?: Uint8Array; // V7 plane 15
   prevPrevLadderedStones?: Uint8Array; // V7 plane 16
   ladderWorkingMoves?: Uint8Array; // V7 plane 17, 1 where moves are ladder-capturing
+  /** Shared with the caller’s ladder-history selection when supplied. */
+  historyFeatures?: HistoryFeaturesV7;
   outSpatial: Float32Array; // len 19*19*22
   outGlobal: Float32Array; // len 19
 }): void {
@@ -81,6 +85,10 @@ export function fillInputsV7Fast(args: {
     const x = koPoint % BOARD_SIZE;
     const y = (koPoint / BOARD_SIZE) | 0;
     spatial[idxNHWC(x, y, 6)] = 1.0;
+  }
+
+  if (args.superkoBanned) {
+    for (let p = 0; p < BOARD_SIZE * BOARD_SIZE; p++) if (args.superkoBanned[p]) spatial[p * INPUT_SPATIAL_CHANNELS_V7 + 6] = 1;
   }
 
   const libs = args.libertyMap ?? computeLibertyMap(stones);
@@ -132,65 +140,45 @@ export function fillInputsV7Fast(args: {
   // Note it uses the unclamped komi here, and the clamped one for the komi plane.
   const areaMode = areaFeatureModeForRules(rules);
   const hasAreaFeature = areaMode !== 'none';
-  let boardScoreForPla = 0;
+  let area: Uint8Array | undefined;
   if (hasAreaFeature) {
     // Callers pass the map in; the fallback keeps this usable standalone.
-    const area =
+    area =
       args.areaMap ??
       (areaMode === 'independent-life'
-        ? computeIndependentLifeArea(stones, { keepStones: true }).area
-        : computeAreaMapV7KataGo(stones));
+        ? computeIndependentLifeArea(stones, { keepStones: true, isMultiStoneSuicideLegal: isSuicideLegal(rules) }).area
+        : computeAreaMapV7KataGo(stones, isSuicideLegal(rules)));
     for (let y = 0; y < BOARD_SIZE; y++) {
       for (let x = 0; x < BOARD_SIZE; x++) {
         const pos = y * BOARD_SIZE + x;
         const v = area[pos] as StoneColor;
         if (v === plaColor) {
           spatial[idxNHWC(x, y, 18)] = 1.0;
-          boardScoreForPla += 1;
         } else if (v === oppColor) {
           spatial[idxNHWC(x, y, 19)] = 1.0;
-          boardScoreForPla -= 1;
         }
       }
     }
   }
-  const finalPhaseAndGameEndWouldNotBeWin = hasAreaFeature && boardScoreForPla + selfKomi <= 0;
-
-  // If a pass now would end the game, KataGo sometimes tells the net it would not:
-  // at the root under conservativePass, and anywhere under enablePassingHacks when
-  // the player to move is not winning, so that a losing side keeps looking rather
-  // than settling for the score it would concede by passing. Both the history
-  // features and the passWouldEndPhase global are suppressed together.
-  const lastMove = recentMoves.length > 0 ? recentMoves[recentMoves.length - 1] : null;
-  const passWouldEndGame = lastMove?.move === PASS_MOVE;
-  // KataGo BoardHistory::shouldSuppressEndGameFromFriendlyPass: under area scoring
-  // where passing is friendly -- which is every area ruleset KataGo ships, Chinese
-  // included -- a pass that would end the game is hidden from the net at every node,
-  // not just at the root. Territory rules set friendlyPassOk false and are untouched.
-  const friendlyPassOk = rules === 'chinese';
-  const suppressFromFriendlyPass = friendlyPassOk && hasAreaFeature && passWouldEndGame;
-  const suppressHistory =
-    passWouldEndGame &&
-    (args.conservativePassAndIsRoot === true ||
-      suppressFromFriendlyPass ||
-      (args.enablePassingHacks === true && finalPhaseAndGameEndWouldNotBeWin));
+  const history = args.historyFeatures ?? historyFeaturesV7({
+    recentMoves, currentPlayer, rules, selfKomi, areaMap: area,
+    conservativePassAndIsRoot: args.conservativePassAndIsRoot,
+    enablePassingHacks: args.enablePassingHacks, maxHistory: args.maxHistory,
+  });
 
   const historyPlanes = [9, 10, 11, 12, 13] as const;
   const passGlobals = [0, 1, 2, 3, 4] as const;
   const expectedPlayers: Player[] = [opp, pla, opp, pla, opp];
-  const maxTurnsOfHistoryToInclude = Math.max(0, Math.min(5, args.maxHistory ?? 5));
-  if (!suppressHistory) {
-    for (let i = 0; i < maxTurnsOfHistoryToInclude; i++) {
-      const m = recentMoves[recentMoves.length - 1 - i];
-      if (!m) break;
-      if (m.player !== expectedPlayers[i]) break;
-      if (m.move === PASS_MOVE) {
-        global[passGlobals[i]] = 1.0;
-      } else {
-        const x = m.move % BOARD_SIZE;
-        const y = (m.move / BOARD_SIZE) | 0;
-        spatial[idxNHWC(x, y, historyPlanes[i])] = 1.0;
-      }
+  for (let i = 0; i < history.turnsIncluded; i++) {
+    const m = recentMoves[recentMoves.length - 1 - i];
+    if (!m) break;
+    if (m.player !== expectedPlayers[i]) break;
+    if (m.move === PASS_MOVE) {
+      global[passGlobals[i]] = 1.0;
+    } else {
+      const x = m.move % BOARD_SIZE;
+      const y = (m.move / BOARD_SIZE) | 0;
+      spatial[idxNHWC(x, y, historyPlanes[i])] = 1.0;
     }
   }
 
@@ -219,7 +207,7 @@ export function fillInputsV7Fast(args: {
   }
   if (ruleset.hasButton) global[17] = 1.0;
 
-  global[14] = !suppressHistory && passWouldEndGame ? 1.0 : 0.0;
+  global[14] = history.passWouldEndPhase ? 1.0 : 0.0;
 
   // KataGo fillRowV7: playoutDoublingAdvantage, already signed for the side to
   // move. Tells the net to evaluate as if this side had that many doublings of

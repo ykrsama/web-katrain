@@ -1,5 +1,17 @@
 const CACHE_VERSION = 'web-katrain-v3';
 const APP_SHELL_CACHE = `${CACHE_VERSION}:shell`;
+/**
+ * Where an update installs, until it activates.
+ *
+ * The version above only changes when the cache layout does, so an update
+ * installed into the shell cache the old worker was still serving from: its
+ * offline launches got the new index.html with the old worker's cache behind
+ * it, and a new first-paint chunk that was not there failed the launch. An
+ * install cut short left the live shell naming a bundle nobody cached -- a
+ * blank page offline. Staging keeps the running version whole until the new
+ * one takes over.
+ */
+const STAGING_SHELL_CACHE = `${CACHE_VERSION}:shell-next`;
 const RUNTIME_CACHE = `${CACHE_VERSION}:runtime`;
 const MAX_RUNTIME_CACHE_ENTRIES = 64;
 
@@ -11,20 +23,55 @@ const PRECACHE_URLS = [
   './pwa/icon-192.png',
   './pwa/icon-512.png',
   './pwa/apple-touch-icon.png',
-  './pwa/screenshot-wide.png',
-  './pwa/screenshot-mobile.png',
+  // The manifest's screenshots are not here on purpose. They are 504KB of the
+  // install dialog's rich preview and of the social card in index.html -- shown
+  // by the browser, the OS or a crawler, never by the running app, and never
+  // wanted offline. They stay runtime-cacheable like any other image, so
+  // nothing is lost if something does ask for them.
   './models/katago-small.bin.gz',
-  './tfjs/tfjs-backend-wasm.wasm',
+  // One of the three TFJS builds, not all three. TFJS picks exactly one at
+  // runtime: the threaded one only when the page is cross-origin isolated, the
+  // plain one only where SIMD is missing, and the SIMD one otherwise. The
+  // deployed site is GitHub Pages, which cannot send COOP/COEP -- README and
+  // docs/deployment.md both say so -- and without them `SharedArrayBuffer` is
+  // undefined, which is the feature test TFJS uses. So on the live site the
+  // threaded build is never requested, and no browser new enough to run this
+  // app asks for the non-SIMD one either.
+  //
+  // That made 746KB of a 1.17MB wasm precache dead weight on the first visit,
+  // for the same reason the manifest screenshots are not in this list. Both of
+  // the others stay cache-first at runtime, so a self-hosted deployment that
+  // does send the headers still keeps its threaded build after using it once.
   './tfjs/tfjs-backend-wasm-simd.wasm',
-  './tfjs/tfjs-backend-wasm-threaded-simd.wasm',
-  './katrain/B_stone.png',
-  './katrain/W_stone.png',
-  './katrain/board.png',
+  // The default Sabaki board loads before this worker controls a first visit.
+  // Runtime caching cannot recover those requests after the network goes away.
+  './themes/sabaki/board.png',
+  './themes/sabaki/stone-black.svg',
+  './themes/sabaki/stone-white.svg',
+  // Shared markers and graph paper are used under every theme. Other board
+  // textures and stones stay cache-first on use, including the 484KB of images
+  // belonging only to bamboo, flat and dark.
   './katrain/dot.png',
   './katrain/graph_bg.png',
   './katrain/inner.png',
   './katrain/topmove.png',
 ];
+
+/**
+ * The two entries the app cannot start without.
+ *
+ * `cache.addAll` is atomic: one failed request rejects the whole promise, so
+ * `install` never resolves, the worker never activates, and the app is left
+ * with no offline support at all -- silently, and again on the next visit if
+ * the cause is not transient. The list above is 5MB of model and wasm over
+ * whatever connection the first visit happens to have, which is the part most
+ * likely to fail and the part least worth failing for: every one of those is
+ * cache-first at runtime, so a visit that uses them caches them anyway.
+ *
+ * So the shell is fetched atomically -- half a shell serves a broken page
+ * offline -- and everything else is allowed to fail on its own.
+ */
+const PRECACHE_REQUIRED = ['./', './index.html'];
 
 const isSameOrigin = (url) => url.origin === self.location.origin;
 
@@ -47,6 +94,23 @@ const isCacheFirstAsset = (url) =>
  * which had inherited the same shape.
  */
 const isStorableResponse = (response) => response.status === 200;
+
+/**
+ * Cache lookups ignore `Vary`.
+ *
+ * Vite emits `<script type="module" crossorigin>`, so the page asks for its
+ * own bundles in CORS mode and sends an `Origin` header. A response served
+ * with `Vary: Origin` -- which `vite preview` does, and so do several CDNs --
+ * then only matches a stored request carrying the same header, and the
+ * requests this worker makes in `cache.add()` carry none. The entry was in the
+ * cache, with the right type and a 200, and the lookup still missed: offline,
+ * `fetch()` for the same URL succeeded from the page while the `<script>` tag
+ * failed, because only one of the two sends `Origin`.
+ *
+ * Every response here is this deployment's own static asset, so the variant
+ * distinction has nothing to choose between.
+ */
+const MATCH_OPTIONS = { ignoreVary: true };
 const isCacheableRequest = (request) => request.cache !== 'no-store';
 
 /**
@@ -68,29 +132,191 @@ const putRuntimeResponse = (cache, request, response) =>
     .then(() => trimRuntimeCache(cache))
     .catch(() => undefined);
 
+/**
+ * Install does *not* call `skipWaiting()`.
+ *
+ * It used to, unconditionally, which quietly defeated the app's own update
+ * flow: a replacement worker went straight past the waiting state, so
+ * `registration.waiting` was null by the time the "Update ready" banner was
+ * clicked, `requestPwaUpdateActivation`'s whole postMessage/controllerchange
+ * path was unreachable, and the `SKIP_WAITING` handler below was dead code.
+ * What actually happened instead was the opposite of what the banner offers:
+ * the new worker claimed a page still running the previous bundle, before
+ * anyone agreed to update.
+ *
+ * Waiting costs nothing on a first install -- with no active worker to replace,
+ * the new one activates immediately either way, and `clients.claim()` below is
+ * what takes over the page that registered it.
+ */
+/**
+ * The bundles index.html actually loads, read out of it at install time.
+ *
+ * They cannot go in the list above: the build content-hashes their names and
+ * this file ships from `public/` untouched. Leaving them to runtime caching
+ * does not work either, because the page requests them *before* this worker
+ * controls it -- on a first visit they are fetched outside the worker and are
+ * never seen again. Only the lazily-loaded chunks reached the runtime cache.
+ *
+ * Measured against the production build, with every target put offline (the
+ * worker's own included, which is the part a page-level emulation misses):
+ * after one visit the caches held the model, the wasm and every image, and not
+ * one line of the app's code -- index.html was served from cache and then
+ * loaded nothing, a blank page with the title on it. After a second visit,
+ * with the bundles runtime-cached, the same offline load started normally. So
+ * the first visit precached five megabytes to run an app that could not start.
+ *
+ * They belong in the required, atomic group for the reason the shell does: a
+ * shell without the code that renders it is exactly the broken page that
+ * comment is about. They are same-origin, a few hundred kilobytes, and the
+ * page has just fetched them.
+ */
+// The build also preloads its first-paint chunks from an inline script,
+// `add("modulepreload","/assets/…")`, which the attribute form never matched.
+const ENTRY_ASSET_PATTERN =
+  /(?:src|href)=["']([^"']+\.(?:js|css))["']|add\(\s*"(?:modulepreload|preload)"\s*,\s*"([^"]+\.(?:js|css))"\s*\)/g;
+
+// The engine is lazy: a page that has never analyzed cannot report its worker
+// among used assets. The build names it here without downloading or starting it.
+const OFFLINE_ENGINE_PATTERN = /<meta\s+name="web-katrain-offline-worker"\s+content="([^"]+\.js)"\s*\/?\s*>/g;
+
+const indexAssetUrls = async (cache, pattern) => {
+  const response = (await cache.match('./index.html')) || (await cache.match('./'));
+  if (!response || !isStorableResponse(response)) return [];
+  const html = await response.text();
+  const urls = new Set();
+  for (const match of html.matchAll(pattern)) {
+    const resolved = new URL(match[1] ?? match[2], self.location.href);
+    // Only this deployment's own build output.
+    if (isSameOrigin(resolved) && resolved.pathname.includes('/assets/')) urls.add(resolved.href);
+  }
+  return [...urls];
+};
+const entryAssetUrls = (cache) => indexAssetUrls(cache, ENTRY_ASSET_PATTERN);
+const offlineEngineAssetUrls = (cache) => indexAssetUrls(cache, OFFLINE_ENGINE_PATTERN);
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
-      .open(APP_SHELL_CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
+      .delete(STAGING_SHELL_CACHE)
+      .then(() => caches.open(STAGING_SHELL_CACHE))
+      .then(async (cache) => {
+        await cache.addAll(PRECACHE_REQUIRED);
+        const entryAssets = await entryAssetUrls(cache);
+        if (entryAssets.length > 0) await cache.addAll(entryAssets);
+        await Promise.allSettled(
+          [...PRECACHE_URLS.filter((url) => !PRECACHE_REQUIRED.includes(url)), ...await offlineEngineAssetUrls(cache)]
+            .map((url) => cache.add(url))
+        );
+      })
   );
 });
 
+/**
+ * Only this app's older caches are ours to delete. CacheStorage belongs to the
+ * origin, not the app, and the site is served from a GitHub Pages origin that
+ * other apps share: deleting everything but our own emptied their offline
+ * caches the moment this worker activated. The ':' keeps a future v30 from
+ * passing for v3.
+ */
+const isStaleOwnCache = (key) => key.startsWith('web-katrain-') && !key.startsWith(`${CACHE_VERSION}:`);
+
+/** Move a completed install into the live shell, now that it is ours to serve. */
+const promoteStagedShell = async () => {
+  if (!(await caches.keys()).includes(STAGING_SHELL_CACHE)) return;
+  const staged = await caches.open(STAGING_SHELL_CACHE);
+  const live = await caches.open(APP_SHELL_CACHE);
+  for (const request of await staged.keys()) {
+    const response = await staged.match(request);
+    if (response) await live.put(request, response);
+  }
+  await caches.delete(STAGING_SHELL_CACHE);
+};
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((key) => !key.startsWith(CACHE_VERSION)).map((key) => caches.delete(key)))
-      )
+    promoteStagedShell()
+      .then(() => caches.keys())
+      .then((keys) => Promise.all(keys.filter(isStaleOwnCache).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
+/**
+ * The bundles a page loaded before this worker could see them.
+ *
+ * Install precaches what index.html names, but the app imports the rest of its
+ * first paint itself -- the dashboard, its stylesheet, the score graph -- and
+ * those requests are made while the worker is still installing. They are
+ * fetched outside it and never seen again, so a first visit ended at the error
+ * page offline while a second visit, having gone through the worker, was fine.
+ *
+ * Rather than guess the chunk names at build time, the page reports what it
+ * actually loaded once it is up. That is the same rule as the rest of this
+ * file -- cache what is used, not what might be -- just applied to the window
+ * before the worker took over. Best effort throughout: this is an optimisation
+ * of a later visit, never a reason for this one to fail.
+ */
+const MAX_REPORTED_ASSETS = 60;
+
+const cacheReportedAssets = async (urls) => {
+  if (!Array.isArray(urls) || urls.length === 0) return;
+  const cache = await caches.open(APP_SHELL_CACHE);
+  const wanted = [];
+  const reported = new Set();
+  for (const raw of urls.slice(0, MAX_REPORTED_ASSETS)) {
+    if (typeof raw !== 'string') continue;
+    let url;
+    try {
+      url = new URL(raw, self.location.href);
+    } catch {
+      continue;
+    }
+    // Only this deployment's own build output, and only what is missing.
+    if (!isSameOrigin(url) || !url.pathname.includes('/assets/')) continue;
+    reported.add(url.href);
+    if (await cache.match(url.href, MATCH_OPTIONS)) continue;
+    wanted.push(url.href);
+  }
+  await Promise.allSettled(wanted.map((href) => cache.add(href)));
+  await pruneOldBundles(cache, reported);
+};
+
+/**
+ * Bundles from earlier deployments, gone from the shell cache.
+ *
+ * Every deployment's hashed bundles are new names, and this cache is never
+ * trimmed -- the runtime cache is, but reported bundles were put here so they
+ * would last -- so each deploy added its bundles on top of the last one's,
+ * a few megabytes at a time, for as long as the worker lived. What the page
+ * reports is what this deployment uses; keep that and whatever the current
+ * index.html names, and let the rest go. Scripts and styles only: an image
+ * that happens to live under /assets/ is not a bundle.
+ */
+const pruneOldBundles = async (cache, reported) => {
+  if (reported.size === 0) return;
+  const keep = new Set(reported);
+  for (const href of await entryAssetUrls(cache)) keep.add(href);
+  for (const href of await offlineEngineAssetUrls(cache)) keep.add(href);
+  const requests = await cache.keys();
+  await Promise.allSettled(
+    requests
+      .filter((request) => {
+        const url = new URL(request.url);
+        return url.pathname.includes('/assets/') && /\.(?:js|css)$/.test(url.pathname) && !keep.has(url.href);
+      })
+      .map((request) => cache.delete(request))
+  );
+};
+
+/** The page asking for the update it just offered the reader. */
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
+  }
+  if (event.data.type === 'CACHE_USED_ASSETS') {
+    event.waitUntil(cacheReportedAssets(event.data.urls).catch(() => undefined));
   }
 });
 
@@ -115,7 +341,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async () => {
           const cache = await caches.open(APP_SHELL_CACHE);
-          return (await cache.match('./')) || cache.match('./index.html');
+          return (await cache.match('./', MATCH_OPTIONS)) || cache.match('./index.html', MATCH_OPTIONS);
         })
     );
     return;
@@ -123,7 +349,7 @@ self.addEventListener('fetch', (event) => {
 
   if (isCacheFirstAsset(url)) {
     event.respondWith(
-      caches.match(request).then(
+      caches.match(request, MATCH_OPTIONS).then(
         (cached) =>
           cached ||
           fetch(request).then((response) => {
@@ -149,9 +375,9 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       } catch {
-        const cached = await cache.match(request);
+        const cached = await cache.match(request, MATCH_OPTIONS);
         if (cached) return cached;
-        return caches.match(request);
+        return caches.match(request, MATCH_OPTIONS);
       }
     })
   );

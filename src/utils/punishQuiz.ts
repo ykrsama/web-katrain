@@ -1,7 +1,7 @@
 import type { CandidateMove, GameNode } from '../types';
 import { computeNodePointsLost } from './nodeAnalysis';
 import { BLUNDER_LOSS } from './moveTreeNodeMarkers';
-import { formatBoardMoveLabel } from './playedMoveQuality';
+import { formatBoardMoveLabel } from '../lib/gtp';
 import { t } from '../i18n';
 
 // Auto-triggered "find the punish" quiz: offered when the move just played

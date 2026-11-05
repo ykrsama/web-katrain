@@ -1,5 +1,6 @@
-import type { CandidateMove, GameNode, Move, Player } from '../types';
-import { summarizePointsLost, type PointsLostSummary } from './analysisSummary';
+import type { CandidateMove, GameNode, Player } from '../types';
+import { formatBoardMoveLabel } from '../lib/gtp';
+import { NO_VALUE, summarizePointsLost, type PointsLostSummary } from './analysisSummary';
 import { getActiveChild, type ActiveBranchMap } from './branchNavigation';
 import { computeNodePointsLost } from './nodeAnalysis';
 
@@ -16,12 +17,6 @@ export interface PlayedMoveQuality {
 
 function playerLabel(player: Player): 'B' | 'W' {
   return player === 'black' ? 'B' : 'W';
-}
-
-export function formatBoardMoveLabel(move: Pick<Move, 'x' | 'y'>, boardSize = 19): string {
-  if (move.x < 0 || move.y < 0) return 'Pass';
-  const column = String.fromCharCode(65 + (move.x >= 8 ? move.x + 1 : move.x));
-  return `${column}${boardSize - move.y}`;
 }
 
 function candidateRank(candidate: CandidateMove, candidates: CandidateMove[]): number {
@@ -56,14 +51,14 @@ export function getPlayedMoveQuality(
   const side = playerLabel(move.player);
   const rankLabel = rank ? `#${rank}` : 'Unranked';
   const summary = summarizePointsLost(pointsLost);
-  const valueLabel = summary.label === '-' && rank === 1 ? 'Best' : summary.label;
+  const valueLabel = summary.label === NO_VALUE && rank === 1 ? 'Best' : summary.label;
   const tone = valueLabel === 'Best' ? 'success' : summary.tone;
   const bestCandidate = findBestCandidate(candidates);
   const bestLabel = bestCandidate ? formatBoardMoveLabel(bestCandidate, boardSize) : null;
 
   const titleParts = [`${side} ${moveLabel}`];
   if (rank) titleParts.push(`engine candidate ${rankLabel}`);
-  if (summary.label !== '-') titleParts.push(summary.label.toLowerCase());
+  if (summary.label !== NO_VALUE) titleParts.push(summary.label.toLowerCase());
   if (bestLabel && bestLabel !== moveLabel) titleParts.push(`best was ${bestLabel}`);
 
   return {

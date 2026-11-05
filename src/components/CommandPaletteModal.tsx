@@ -8,6 +8,7 @@ import {
 } from '../utils/shortcuts';
 import {
   addRecentCommandId,
+  getCommandNavigationIndex,
   normalizeCommandQuery,
   orderCommandsByRecency,
   readRecentCommandIds,
@@ -17,6 +18,8 @@ import {
 import { useT } from '../i18n';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
+import { MAX_SEARCH_QUERY_LENGTH } from '../utils/searchTerms';
 
 export type CommandPaletteCommand = {
   id: string;
@@ -37,9 +40,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
   const t = useT();
   useEscapeToClose(onClose);
   const [query, setQuery] = React.useState('');
-  const [activeIndex, setActiveIndex] = React.useState(0);
+  const [selectedCommandId, setSelectedCommandId] = React.useState<string | null>(null);
   const [overrides, setOverrides] = React.useState(() => loadShortcutOverrides());
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const activeOptionRef = React.useRef<HTMLButtonElement>(null);
   const listboxId = React.useId();
   // The search field is the right landing spot here, so only the Tab wrap and the
   // focus restore are wanted from the dialog focus hook.
@@ -100,15 +104,15 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
     [query, recentIds]
   );
 
-  React.useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
+  const firstEnabledIndex = getCommandNavigationIndex(filteredCommands, -1, 1);
+  const selectedIndex = filteredCommands.findIndex(command => command.id === selectedCommandId && !command.disabledReason);
+  const activeIndex = selectedIndex >= 0 ? selectedIndex : firstEnabledIndex;
+  const activeCommand = filteredCommands[activeIndex] ?? null;
+  const activeOptionId = activeCommand ? `${listboxId}-option-${activeIndex}` : undefined;
 
   React.useEffect(() => {
-    if (activeIndex >= filteredCommands.length) {
-      setActiveIndex(Math.max(0, filteredCommands.length - 1));
-    }
-  }, [activeIndex, filteredCommands.length]);
+    activeOptionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeOptionId, activeCommand?.id, query]);
 
   const runCommand = React.useCallback((command: CommandPaletteCommand) => {
     if (command.disabledReason) return;
@@ -116,9 +120,6 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
     onClose();
     command.run();
   }, [onClose]);
-
-  const activeCommand = filteredCommands[activeIndex] ?? null;
-  const activeOptionId = activeCommand ? `${listboxId}-option-${activeIndex}` : undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-3 pt-[8dvh] sm:p-6 sm:pt-[12dvh] mobile-safe-inset mobile-safe-area-bottom">
@@ -130,17 +131,22 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
         aria-modal="true"
         aria-labelledby="command-palette-title"
         onKeyDown={(event) => {
-          if (event.key === 'ArrowDown') {
+          if (isComposingKeyEvent(event.nativeEvent)) return;
+          const fromSearch = event.target === inputRef.current || event.target === event.currentTarget;
+          if (fromSearch && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
             event.preventDefault();
-            setActiveIndex((index) => Math.min(Math.max(0, filteredCommands.length - 1), index + 1));
+            const direction = event.key === 'ArrowDown' ? 1 : -1;
+            setSelectedCommandId(previousId => {
+              const previousIndex = filteredCommands.findIndex(command => command.id === previousId && !command.disabledReason);
+              const nextIndex = getCommandNavigationIndex(filteredCommands, previousIndex >= 0 ? previousIndex : firstEnabledIndex, direction);
+              return filteredCommands[nextIndex]?.id ?? null;
+            });
             return;
           }
-          if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            setActiveIndex((index) => Math.max(0, index - 1));
-            return;
-          }
-          if (event.key === 'Enter' && activeCommand) {
+          // Enter runs the highlighted command only from the search field. On
+          // a focused button it is that button's press: caught here, Enter on
+          // Close ran Quick new game, and on Clear ran the command it filtered.
+          if (event.key === 'Enter' && activeCommand && fromSearch) {
             event.preventDefault();
             runCommand(activeCommand);
           }
@@ -177,7 +183,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
               type="search"
               role="combobox"
               value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
+              maxLength={MAX_SEARCH_QUERY_LENGTH}
+              // A query is not a sentence. Left to itself a phone capitalises
+              // the first letter and autocorrects the rest, so "sgf" arrives
+              // as "SGF" or worse, and the list goes empty for a word the user
+              // typed correctly.
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setSelectedCommandId(null);
+              }}
               className="ui-input h-11 w-full rounded-lg border py-2 pl-8 pr-12 text-sm text-[var(--ui-text)]"
               placeholder={t('Search commands')}
               aria-label={t('Search commands')}
@@ -191,7 +209,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
               <button
                 type="button"
                 className="absolute right-0 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-lg text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-                onClick={() => setQuery('')}
+                onClick={() => {
+                  setQuery('');
+                  setSelectedCommandId(null);
+                  inputRef.current?.focus();
+                }}
                 aria-label={t('Clear command search')}
               >
                 <FaTimes aria-hidden="true" size={11} />
@@ -201,7 +223,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
         </div>
         <div id={listboxId} className="min-h-0 max-h-[56dvh] flex-1 overflow-y-auto overscroll-contain px-3 pb-3" role="listbox" aria-label={t('Commands')}>
           {filteredCommands.length === 0 ? (
-            <div className="ui-surface rounded-lg border p-4 text-sm ui-text-muted" data-command-palette-empty="true">
+            <div className="ui-surface wrap-anywhere rounded-lg border p-4 text-sm ui-text-muted" data-command-palette-empty="true" data-search-empty="true">
               {t('No commands match "{query}".', { query: query.trim() })}
             </div>
           ) : (
@@ -212,9 +234,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
                 return (
                   <button
                     key={command.id}
+                    ref={selected ? activeOptionRef : undefined}
                     id={`${listboxId}-option-${index}`}
                     type="button"
                     role="option"
+                    tabIndex={-1}
                     aria-label={[
                       command.label,
                       command.disabledReason ? t('Unavailable: {reason}', { reason: command.disabledReason }) : '',
@@ -237,7 +261,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({ comman
                     // then silently replace the keyboard selection before the
                     // user moved at all; only deliberate pointer movement should.
                     onPointerMove={(event) => {
-                      if (event.pointerType !== 'touch') setActiveIndex(index);
+                      if (event.pointerType !== 'touch' && !command.disabledReason) setSelectedCommandId(command.id);
                     }}
                     onClick={() => runCommand(command)}
                     data-command-palette-item={command.id}

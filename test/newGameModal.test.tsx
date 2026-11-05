@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { NewGameModal, type AiConfigValues, type GameInfoValues, type SetupPositionValues, type TimerConfigValues } from '../src/components/NewGameModal';
 import { useGameStore } from '../src/store/gameStore';
-import type { GameSettings, Player } from '../src/types';
+import type { BoardSize, GameSettings, Player } from '../src/types';
+import { BOARD_SIZES } from '../src/utils/boardSize';
 
 const settings = useGameStore.getState().settings;
 
@@ -71,7 +72,9 @@ function renderModal(args: {
   ai?: AiConfigValues;
   timer?: TimerConfigValues;
   handicap?: number;
+  boardSize?: BoardSize;
   setupPosition?: SetupPositionValues;
+  teachModeOn?: boolean;
 } = {}): string {
   return renderToStaticMarkup(
     <NewGameModal
@@ -79,12 +82,13 @@ function renderModal(args: {
       onStart={() => undefined}
       defaultKomi={6.5}
       defaultRules="japanese"
-      defaultBoardSize={19}
+      defaultBoardSize={args.boardSize ?? 19}
       defaultHandicap={args.handicap ?? 0}
       defaultInfo={defaultInfo}
       defaultAiConfig={args.ai ?? aiConfig()}
       defaultTimerConfig={args.timer ?? { mode: 'none', mainTimeMinutes: 0, byoLengthSeconds: 30, byoPeriods: 5 }}
       defaultSetupPosition={args.setupPosition ?? { enabled: false, untilMove: 100, targetAdvantage: 20 }}
+      teachModeOn={args.teachModeOn ?? false}
     />
   );
 }
@@ -277,5 +281,45 @@ describe('NewGameModal', () => {
 
     const territoryHtml = renderModal({ ai: aiConfig({ opponent: 'white', strategy: 'territory' }) });
     expectLabelPair(territoryHtml, 'new-game-ai-edge-threshold', 'Threshold');
+  });
+});
+
+describe('teach mode offer', () => {
+  it('is offered only once an opponent that can teach you is chosen', () => {
+    expect(renderModal({ ai: aiConfig({ opponent: 'none' }) })).not.toContain('data-new-game-teach-mode');
+    const vsAi = renderModal({ ai: aiConfig({ opponent: 'white' }) });
+    expect(vsAi).toContain('data-new-game-teach-mode');
+    expect(vsAi).toContain('Teach me as I play');
+    // Says what it will do, since it takes moves back off the board.
+    expect(vsAi).toContain('Offers to take back a move that costs too much');
+  });
+
+  it('reflects whether the mode is already on rather than assuming off', () => {
+    expect(renderModal({ ai: aiConfig({ opponent: 'white' }), teachModeOn: false })).not.toContain('checked=""');
+    expect(renderModal({ ai: aiConfig({ opponent: 'white' }), teachModeOn: true })).toContain('checked=""');
+  });
+
+  it('toggles the mode only when the box disagrees with it', () => {
+    // `toggleTeachMode` flips, and also switches analysis on. Calling it for a
+    // box that was already ticked would turn the mode straight back off.
+    const layout = readFileSync('src/components/Layout.tsx', 'utf8');
+    expect(layout).toContain('if (teachMode !== useGameStore.getState().isTeachMode)');
+    expect(layout).toContain('teachModeOn={isTeachMode}');
+  });
+});
+
+describe('the board size the dialog opens on', () => {
+  // Layout hands this the *live* board, not the saved default, so opening a
+  // 13x13 file and then New Game still offers 13x13. It used to come from
+  // `settings.defaultBoardSize`, which `loadGame` kept in step by writing the
+  // file's size into settings -- and the file's handicap along with it.
+  it('pre-selects whatever board size it was given', () => {
+    for (const size of BOARD_SIZES) {
+      const html = renderModal({ boardSize: size });
+      expect(html, String(size)).toContain(`<option value="${size}" selected="">`);
+      for (const other of BOARD_SIZES.filter((n) => n !== size)) {
+        expect(html, `${size} vs ${other}`).toContain(`<option value="${other}">`);
+      }
+    }
   });
 });

@@ -85,6 +85,11 @@ const startSound = (context: AudioContext, buffer: AudioBuffer, onEnded?: () => 
     source.start();
 };
 
+/** Prepare the shared audio context before the first move. */
+export const warmAudioContext = (): void => {
+    getAudioContext();
+};
+
 /** Let the current clip finish, but drop every unstarted navigation sound. */
 export const stopNavigationSounds = (): void => {
     pendingNavigationSound = null;

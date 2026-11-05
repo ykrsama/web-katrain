@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { GameNode, GameState } from '../src/types';
 import {
@@ -155,5 +156,38 @@ describe('move tree layout', () => {
     expect(getMoveTreeMinimapKeyboardScroll(layout, viewport, 'End')).toEqual({ left: 800, top: 400 });
     expect(getMoveTreeMinimapKeyboardScroll(layout, { left: 760, top: 390, width: 200, height: 100 }, 'ArrowRight')).toEqual({ left: 800, top: 390 });
     expect(getMoveTreeMinimapKeyboardScroll(layout, viewport, 'Enter')).toBeNull();
+  });
+});
+
+describe('the layout is keyed on shape, not on identity', () => {
+  const source = readFileSync('src/components/MoveTree.tsx', 'utf8');
+
+  it('does not rebuild the flat tree on every navigation step', () => {
+    /**
+     * The reveal set used to be built from `currentNode`, so it was a fresh Set
+     * on every step and `flatTree` a fresh array with it. That put the layout on
+     * the critical path of walking a game: measured on a 254-node tree, 30
+     * forward steps produced 30 worker round trips, and none of them changed
+     * where a node sat. `structureKey` exists precisely to stop this.
+     *
+     * The set is derived from `revealKey` instead -- a string, so it is stable
+     * by value -- which keeps `flatTree` stable for every consumer rather than
+     * only for the one effect that was hurting.
+     */
+    expect(source).toContain("const revealAncestorIds = useMemo(");
+    const start = source.indexOf('const revealAncestorIds = useMemo(');
+    const block = source.slice(start, source.indexOf(');', source.indexOf('}, [', start)));
+    expect(block).toContain('revealKey');
+    expect(block).not.toContain('currentNode');
+  });
+
+  it('carries the revealed collapsed branches in the key', () => {
+    // A reveal changes the flattened tree but not the structure hash, so
+    // dropping flatTree from the deps would otherwise have frozen the layout
+    // when navigating into a collapsed branch.
+    expect(source).toContain('`${rootNode.id}:${structureKey}:${revealKey}:${layoutDirection}`');
+    // Empty whenever nothing is collapsed, which is what keeps ordinary
+    // navigation off the relayout path.
+    expect(source).toContain("if (!hasCollapsedBranches) return '';");
   });
 });

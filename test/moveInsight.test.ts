@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMoveInsight, getMoveInsightCoach } from '../src/utils/moveInsight';
+import { LIBRARY_PATTERN_DETAILS, getMoveInsight, getMoveInsightCoach } from '../src/utils/moveInsight';
 import { CONTACT_MOVE_PATTERNS, FUSEKI_PATTERNS, NAMED_SHAPE_PATTERNS } from '../src/data/boardPatternLibrary';
 import { translate } from '../src/i18n/translate';
 import type { BoardState, Move } from '../src/types';
@@ -421,5 +421,87 @@ describe('move insights', () => {
       .filter((name) => /[A-Za-z]/.test(translate('zh', name)));
 
     expect(untranslated).toEqual([]);
+  });
+});
+
+describe('named pattern details', () => {
+  // The library is a port of @sabaki/boardmatcher's data and the sentences are
+  // ours, so the two drift independently. A pattern with no entry still matches
+  // and still links to Sensei's — it just says "Named Go pattern." instead of
+  // explaining the shape, which is a silent downgrade, not a failure.
+  const libraryNames = [...FUSEKI_PATTERNS, ...NAMED_SHAPE_PATTERNS, ...CONTACT_MOVE_PATTERNS]
+    .map((pattern) => pattern.name);
+
+  it('explains every pattern the library can match', () => {
+    const unexplained = libraryNames.filter((name) => !(name in LIBRARY_PATTERN_DETAILS));
+
+    expect(unexplained, `no detail for: ${unexplained.join(', ')}`).toEqual([]);
+  });
+
+  it('keeps no explanation for a pattern that no longer exists', () => {
+    const orphaned = Object.keys(LIBRARY_PATTERN_DETAILS).filter((name) => !libraryNames.includes(name));
+
+    expect(orphaned, `detail for missing pattern: ${orphaned.join(', ')}`).toEqual([]);
+  });
+
+  it('says something of its own about each one', () => {
+    for (const [name, info] of Object.entries(LIBRARY_PATTERN_DETAILS)) {
+      expect(info.detail.length, `${name} has a stub detail`).toBeGreaterThan(20);
+      expect(info.detail, `${name} kept the fallback text`).not.toBe('Named Go pattern.');
+    }
+  });
+});
+
+describe('shape names', () => {
+  /**
+   * These are the words the app teaches, each with a Sensei's Library link
+   * beside it, and none of the geometry behind them was covered: an off-by-one
+   * in an offset table would have called a keima an ogeima to a beginner
+   * learning the term, and every test here would still have passed.
+   *
+   * (10, 8) on purpose -- not a star point and not near an edge, so the corner,
+   * side and named-point labels that run first do not claim the move.
+   */
+  const MX = 10;
+  const MY = 8;
+  const withFriend = (dx: number, dy: number, blocked?: { x: number; y: number }): BoardState => {
+    const board = emptyBoard(19);
+    board[MY + dy]![MX + dx] = 'black';
+    if (blocked) board[blocked.y]![blocked.x] = 'white';
+    return board;
+  };
+  const labelFor = (dx: number, dy: number, blocked?: { x: number; y: number }) =>
+    getMoveInsight(blackMove(MX, MY), 19, withFriend(dx, dy, blocked))?.label;
+
+  it('names the small knight in every orientation', () => {
+    // The keima is two-and-one, so all eight offsets are the same shape.
+    for (const [dx, dy] of [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]] as const) {
+      expect(labelFor(dx, dy), `keima (${dx}, ${dy})`).toBe('Small knight');
+    }
+  });
+
+  it('names the large knight in every orientation, and does not call it a small one', () => {
+    for (const [dx, dy] of [[3, 1], [3, -1], [-3, 1], [-3, -1], [1, 3], [1, -3], [-1, 3], [-1, -3]] as const) {
+      expect(labelFor(dx, dy), `ogeima (${dx}, ${dy})`).toBe('Large knight');
+    }
+  });
+
+  it('names the jumps, the stretch and the diagonals', () => {
+    expect(labelFor(1, 1)).toBe('Diagonal (kosumi)');
+    expect(labelFor(-1, 1)).toBe('Diagonal (kosumi)');
+    expect(labelFor(2, 0)).toBe('One-point jump');
+    expect(labelFor(0, 2)).toBe('One-point jump');
+    expect(labelFor(3, 0)).toBe('Two-point jump');
+    expect(labelFor(1, 0)).toBe('Stretch');
+    expect(labelFor(0, 1)).toBe('Stretch');
+    expect(labelFor(2, 2)).toBe('Diagonal jump');
+  });
+
+  it('will not call it a keima when the gap is already occupied', () => {
+    // A keima is a relationship through empty points. With an opponent stone in
+    // one of the two gaps at (11, 8) the stones are still two-and-one apart,
+    // but the shape is not what the name promises.
+    expect(labelFor(2, 1)).toBe('Small knight');
+    expect(labelFor(2, 1, { x: MX + 1, y: MY })).not.toBe('Small knight');
   });
 });

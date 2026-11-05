@@ -120,56 +120,6 @@ export const IconButton: React.FC<{
   );
 };
 
-export const TogglePill: React.FC<{
-  label: string;
-  shortcut?: string;
-  active: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
-}> = ({ label, shortcut, active, disabled, onToggle }) => {
-  const t = useT();
-  const [showTooltip, setShowTooltip] = useState(false);
-  const isCoarsePointer = mediaQueryMatches('(pointer: coarse)');
-  const showHideLabel = `${active ? t('Hide') : t('Show')} ${label}`;
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onToggle}
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-        onFocus={() => setShowTooltip(true)}
-        onBlur={() => setShowTooltip(false)}
-        aria-label={showHideLabel}
-        aria-pressed={active}
-        className={[
-          'px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all border touch-manipulation',
-          disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[var(--ui-surface-2)]',
-          active
-            ? 'bg-[var(--ui-surface-2)] text-[var(--ui-text)] border-[var(--ui-border-strong)] shadow-sm'
-            : 'bg-[var(--ui-surface)] text-[var(--ui-text-muted)] border-[var(--ui-border)]',
-        ].join(' ')}
-      >
-        <span
-          className={[
-            'inline-block h-2 w-2 rounded-full',
-            active ? 'bg-[var(--ui-accent)] shadow-sm shadow-black/20' : 'bg-[var(--ui-border-strong)]',
-          ].join(' ')}
-          aria-hidden="true"
-        />
-        <span className="whitespace-nowrap">{shortcut ? `${shortcut} ${label}` : label}</span>
-      </button>
-      <Tooltip
-        label={showHideLabel}
-        shortcut={shortcut}
-        visible={showTooltip && !disabled && !isCoarsePointer}
-      />
-    </div>
-  );
-};
-
 export const EngineStatusBadge: React.FC<{
   label: string | null;
   title?: string;
@@ -238,7 +188,9 @@ export const PanelHeaderButton: React.FC<{
         aria-pressed={active}
         className={[
           'min-h-11 rounded border px-2 py-1 text-xs font-semibold touch-manipulation desktop-shell:min-h-0',
-          active ? `${colorClass} border-[var(--ui-border-strong)] text-white` : 'bg-[var(--ui-panel)] border-[var(--ui-border)] text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]',
+          // Every caller's colour is a 30% tint, so white read at 1.5:1 in the light
+          // theme; the theme's text colour reads on it in both.
+          active ? `${colorClass} border-[var(--ui-border-strong)] text-[var(--ui-text)]` : 'bg-[var(--ui-panel)] border-[var(--ui-border)] text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)]',
         ].join(' ')}
       >
         {label}

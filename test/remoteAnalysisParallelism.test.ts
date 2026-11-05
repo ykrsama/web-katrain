@@ -172,4 +172,26 @@ describe('remote analysis parallelism', () => {
     }
     expect(analyzeMock.mock.calls.length).toBe(41);
   });
+  it('reuses sufficient results only when requested, and refreshes them when chosen', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    useGameStore.getState().updateSettings({ ...remoteSettings, katagoFastVisits: 16 });
+    useGameStore.setState({ isAnalysisMode: false });
+    useGameStore.getState().playMove(3, 3);
+    analyzeMock.mockClear();
+    useGameStore.getState().startFastGameAnalysis({ reanalyzeExisting: true });
+    await waitFor(() => !useGameStore.getState().isGameAnalysisRunning);
+    expect(analyzeMock).toHaveBeenCalledTimes(2);
+
+    analyzeMock.mockClear();
+    useGameStore.getState().startFastGameAnalysis({ reanalyzeExisting: false });
+    await waitFor(() => !useGameStore.getState().isGameAnalysisRunning);
+    expect(analyzeMock).not.toHaveBeenCalled();
+
+    analyzeMock.mockImplementation(async () => ({ ...rootPayload([candidate(3, 3)]), rootScoreLead: 9 }));
+    useGameStore.getState().startFastGameAnalysis({ reanalyzeExisting: true });
+    await waitFor(() => !useGameStore.getState().isGameAnalysisRunning);
+    expect(analyzeMock).toHaveBeenCalledTimes(2);
+    expect(useGameStore.getState().currentNode.analysis?.rootScoreLead).toBe(9);
+  });
+
 });

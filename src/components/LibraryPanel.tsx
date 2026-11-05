@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { MOBILE_TAB_PANEL_IDS, mobileTabId } from './layout/mobileTabs';
+import { commitPendingGameDrafts } from '../utils/gameDrafts';
 import {
   FaTimes,
   FaFolderOpen,
@@ -12,7 +13,7 @@ import {
   FaDownload,
   FaUpload,
   FaCheckSquare,
-  FaSquare,
+  FaRegSquare,
   FaPlus,
   FaArrowUp,
   FaFileAlt,
@@ -28,23 +29,29 @@ import {
 import {
   LIBRARY_CURRENT_FOLDER_STORAGE_KEY,
   createLibraryBackup,
+  createLibraryEditSaver,
   createLibraryFolder,
   createLibraryItem,
   deleteLibraryItem,
+  deleteLibraryItems,
   duplicateLibraryItem,
   duplicateLibraryItems,
   formatLibrarySize,
+  formatLibraryFolderOptionLabel,
   libraryNameRepeatsPlayers,
   getLibraryFileMoveSortCount,
   getLibraryFileMoveSummary,
   getLibraryFolderOptions,
   getLibraryStats,
+  getLibrarySelectionIds,
   getUniqueLibraryItemName,
   libraryItemMatchesQuery,
   librarySgfDownloadFilename,
-  loadLibrary,
+  updateStoredLibrary,
+  nextLibraryGameSaveRequestId,
   moveLibraryItems,
-  restoreLibrary,
+  prependLibraryImports,
+  parseLibraryBackup,
   saveLibrary,
   suggestLibraryItemNameFromSgf,
   updateLibraryFileSgf,
@@ -55,14 +62,25 @@ import {
   type LibraryItem,
   type LibraryFile,
   type LibraryFolder,
+  nextUntitledGameName,
+  compareLibraryNames,
 } from '../utils/library';
+import { applyLibraryChanges, getLibraryChanges, type LibraryEditBatch } from '../utils/libraryEdits';
 import { tagsFromResult } from '../utils/narrativeTags';
+
+/**
+ * Narrative tags that say nothing the result string has not already said:
+ * `W+R` is a resignation, `W+T` a timeout, and a draw prints as such.
+ */
+const RESULT_RESTATING_TAGS = new Set(['resign', 'time', 'draw']);
 import { createLibraryZipBlob, importLibraryItemsFromZip } from '../utils/libraryZip';
 import { assertValidLibrarySgfImport } from '../utils/libraryImportValidation';
+import { describeLibraryImport, describeLibraryImportFailure } from '../utils/libraryImportSummary';
+import { describeLibraryClear, describeLibraryReplacement } from '../utils/libraryPrompts';
+import { countSgfGames } from '../utils/sgfScan';
 import { stripUnsafeFilenameControls } from '../utils/filename';
 import {
   PHOTO_BOARD_IMAGE_ACCEPT,
-  PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE,
   isPhotoBoardImageFile,
   isUnsupportedPhotoBoardImageFile,
 } from '../utils/photoBoard';
@@ -75,6 +93,7 @@ import { downloadBlob as downloadBlobFile } from '../utils/objectUrl';
 import { getDroppedSgfOrOgsText, hasPotentialGameImportDrag } from '../utils/dragImport';
 import { createLibraryItemFromSgfOrOgsText } from '../utils/libraryTextImport';
 import { ogsSyncFileName, ogsSyncFolderName, type OgsSyncedGame } from '../utils/ogsSync';
+import { mergeOgsLibraryImports } from '../utils/libraryOgsImport';
 import { OgsSyncModal } from './OgsSyncModal';
 import {
   getLibraryMenuNavigationIndex,
@@ -82,15 +101,43 @@ import {
   isLibraryMenuCloseKey,
 } from '../utils/libraryKeyboard';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { MAX_SEARCH_QUERY_LENGTH } from '../utils/searchTerms';
-import { getSgfImportSizeError, MAX_SGF_IMPORT_LABEL } from '../utils/sgfImportLimits';
+import { isComposingKeyEvent } from '../utils/keyboardComposition';
+import { getLibraryFolderPath } from '../utils/libraryNavigation';
+import { MobilePanelRegion } from './layout/MobilePanelRegion';
+import { getSgfImportSizeError } from '../utils/sgfImportLimits';
+import { normalizeSgfUtf8 } from '../utils/sgfEncoding';
+import { GAME_RECORD_ACCEPT, GAME_RECORD_EXTENSION, isGameRecordFile, readGameRecordFile, type LegacyGameEncoding } from '../utils/gameRecordImport';
 
 /** Library rows mounted before "Show more". Matches web-chess and web-xiangqi. */
 const LIBRARY_PAGE_SIZE = 100;
 
+type LibraryItemsState = { items: LibraryItem[]; revision: number; edits: LibraryEditBatch[] };
+type LibraryItemsAction =
+  | { type: 'edit' | 'sync'; update: React.SetStateAction<LibraryItem[]> }
+  | { type: 'saved'; items: LibraryItem[]; revision: number }
+  | { type: 'restore'; items: LibraryItem[] };
+const reduceLibraryItems = (state: LibraryItemsState, action: LibraryItemsAction): LibraryItemsState => {
+  if (action.type === 'restore') return { ...state, items: action.items, edits: [] };
+  if (action.type === 'saved') {
+    const edits = state.edits.filter(batch => batch.revision > action.revision);
+    const items = edits.reduce((current, batch) => applyLibraryChanges(current, batch.changes), action.items);
+    return { ...state, items, edits };
+  }
+  const items = typeof action.update === 'function' ? action.update(state.items) : action.update;
+  if (items === state.items) return state;
+  if (action.type === 'sync') return { ...state, items };
+  const revision = state.revision + 1;
+  return { items, revision, edits: [...state.edits, { revision, changes: getLibraryChanges(state.items, items) }] };
+};
+
 const isFolder = (item: LibraryItem): item is LibraryFolder => item.type === 'folder';
 
 const LIBRARY_FOLDERS_EXPANDED_STORAGE_KEY = 'web-katrain:library_folders_expanded:v1';
+// Preserve the true depth in ARIA while keeping names and controls inside a
+// narrow panel. Unlimited indentation pushed deeply nested rows off-screen.
+const libraryTreeIndent = (depth: number): string => `min(${12 + depth * 16}px, 12%)`;
 const isFile = (item: LibraryItem): item is LibraryFile => item.type === 'file';
 const safeDownloadName = (name: string, fallback: string): string =>
   stripUnsafeFilenameControls(name)
@@ -99,7 +146,7 @@ const safeDownloadName = (name: string, fallback: string): string =>
     .trim()
     .replace(/^\.+$/, '') || fallback;
 const libraryImportAccept = [
-  '.sgf',
+  GAME_RECORD_ACCEPT,
   '.zip',
   'application/zip',
   'application/x-zip-compressed',
@@ -112,6 +159,7 @@ type LibraryTextDialogState = {
   initialValue: string;
   placeholder?: string;
   confirmLabel: string;
+  allowEmpty?: boolean;
   folderSelect?: {
     label: string;
     rootLabel: string;
@@ -144,7 +192,12 @@ const LibraryTextDialog: React.FC<{
   const [folderId, setFolderId] = useState<string | null>(dialog.folderSelect?.initialFolderId ?? null);
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmed = value.trim();
+  const canSubmit = dialog.allowEmpty === true || trimmed.length > 0;
   useEscapeToClose(onClose);
+  // Declared before the effect below: the hook reads document.activeElement when
+  // it runs, so anything that moves focus first would be recorded as the element
+  // to restore to, and the trigger behind the dialog would be lost.
+  const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, { focusContainer: false });
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -152,7 +205,7 @@ const LibraryTextDialog: React.FC<{
   }, []);
 
   const submit = () => {
-    if (!trimmed) return;
+    if (!canSubmit) return;
     dialog.onSubmit(trimmed, dialog.folderSelect ? folderId : undefined);
     onClose();
   };
@@ -160,6 +213,8 @@ const LibraryTextDialog: React.FC<{
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="library-text-dialog-title"
@@ -187,7 +242,14 @@ const LibraryTextDialog: React.FC<{
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
                 e.stopPropagation();
-                if (e.key === 'Enter') submit();
+                if (isComposingKeyEvent(e.nativeEvent)) return;
+                if (e.key === 'Enter') {
+                  // Unhandled, the same Enter went on to the button focus
+                  // returns to and opened the dialog again: a second Enter
+                  // saved a duplicate game.
+                  e.preventDefault();
+                  submit();
+                }
                 if (e.key === 'Escape') onClose();
               }}
               placeholder={dialog.placeholder}
@@ -209,7 +271,7 @@ const LibraryTextDialog: React.FC<{
                 <option value="">{dialog.folderSelect.rootLabel}</option>
                 {dialog.folderSelect.options.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {`${'-- '.repeat(option.depth)}${option.name}`}
+                    {formatLibraryFolderOptionLabel(option)}
                   </option>
                 ))}
               </select>
@@ -223,7 +285,7 @@ const LibraryTextDialog: React.FC<{
               type="button"
               className="panel-action-button active"
               onClick={submit}
-              disabled={!trimmed}
+              disabled={!canSubmit}
             >
               {dialog.confirmLabel}
             </button>
@@ -240,6 +302,11 @@ const LibraryConfirmDialog: React.FC<{
 }> = ({ dialog, onClose }) => {
   const t = useT();
   useEscapeToClose(onClose);
+  // `autoFocus` is applied during commit, before any effect, so the hook would
+  // record Cancel as the element to restore to and the restore would quietly do
+  // nothing. Placing the focus through the hook keeps both halves working.
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useInitialDialogFocus<HTMLDivElement>(true, { initialFocusRef: cancelRef });
 
   const confirm = () => {
     dialog.onConfirm();
@@ -249,6 +316,8 @@ const LibraryConfirmDialog: React.FC<{
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="library-confirm-dialog-title"
@@ -270,7 +339,7 @@ const LibraryConfirmDialog: React.FC<{
         <div className="p-4 space-y-4">
           <p className="text-sm text-[var(--ui-text-muted)]">{dialog.message}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" className="panel-action-button" onClick={onClose} autoFocus>
+            <button type="button" className="panel-action-button" onClick={onClose} ref={cancelRef}>
               {t('Cancel')}
             </button>
             <button
@@ -288,6 +357,7 @@ const LibraryConfirmDialog: React.FC<{
 };
 
 interface LibraryPanelProps {
+  legacyGameEncoding?: LegacyGameEncoding;
   open: boolean;
   docked?: boolean;
   width?: number;
@@ -295,20 +365,22 @@ interface LibraryPanelProps {
   showCloseButtonOnDesktop?: boolean;
   isMobile?: boolean;
   getCurrentSgf: () => string;
-  onLoadSgf: (sgf: string) => boolean | Promise<boolean>;
-  onToast: (msg: string, type: 'info' | 'error' | 'success') => void;
+  /** `itemId` names the Library game, so the host can reopen it where it was left. */
+  onLoadSgf: (sgf: string, itemId?: string) => boolean | Promise<boolean>;
+  onToast: (msg: string, type: 'info' | 'error' | 'success', copyText?: string, operationId?: string) => void;
   onOpenPhotoBoard?: (file: File) => void;
   onLibraryUpdated?: () => void;
-  onCurrentSaved?: () => void;
+  onCurrentSaved?: (sgf: string) => void;
   loadedFileId?: string | null;
   loadedFileDirty?: boolean;
   onLoadedFileChange?: (id: string | null, name?: string | null) => void;
-  externalFileUpdate?: { id: string; sgf: string; updatedAt: number } | null;
+  externalFileUpdate?: { id: string; sgf: string; updatedAt: number; requestId: number } | null;
   externalItemCreate?: { item: LibraryItem; updatedAt: number } | null;
 }
 
 export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   open,
+  legacyGameEncoding = 'auto',
   docked = false,
   width,
   onClose,
@@ -327,9 +399,26 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   externalItemCreate = null,
 }) => {
   const t = useT();
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const [{ items, revision: itemsRevision, edits }, dispatchItems] = useReducer(reduceLibraryItems, { items: [], revision: 0, edits: [] });
+  const setItems = useCallback((update: React.SetStateAction<LibraryItem[]>) => dispatchItems({ type: 'edit', update }), []);
+  const syncItems = useCallback((update: React.SetStateAction<LibraryItem[]>) => dispatchItems({ type: 'sync', update }), []);
+  const saveStateRef = useRef({ items, edits });
+  useLayoutEffect(() => { saveStateRef.current = { items, edits }; }, [items, edits]);
+  const saveEdits = useMemo(createLibraryEditSaver, []);
+  const saveCallbacksRef = useRef({ getCurrentSgf, onCurrentSaved, onLoadedFileChange, onLibraryUpdated, onToast, translate: t });
+  useLayoutEffect(() => {
+    saveCallbacksRef.current = { getCurrentSgf, onCurrentSaved, onLoadedFileChange, onLibraryUpdated, onToast, translate: t };
+  }, [getCurrentSgf, onCurrentSaved, onLoadedFileChange, onLibraryUpdated, onToast, t]);
   const [libraryStatus, setLibraryStatus] = useState<'loading' | 'ready' | 'saving' | 'error'>('loading');
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [saveRetry, setSaveRetry] = useState(0);
+  const localGameSaveRequestsRef = useRef(new Map<string, number>());
+  const pendingGameSaveRef = useRef<{
+    id: string;
+    sgf: string;
+    isNew: boolean;
+    operationId: string;
+  } | null>(null);
   const indexedDbAvailable = useMemo(() => getIndexedDB() !== null, []);
   const [query, setQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -363,14 +452,30 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const [textDialog, setTextDialog] = useState<LibraryTextDialogState | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<LibraryConfirmDialogState | null>(null);
   const [showOgsSync, setShowOgsSync] = useState(false);
+  const [pendingOgsFileId, setPendingOgsFileId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<LibraryContextMenuState | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const contextMenuOpenerRef = useRef<HTMLElement | null>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const headerMenuButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const breadcrumbTrailRef = useRef<HTMLDivElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const didLoadLibraryRef = useRef(false);
+  /**
+   * Settles when the library's own first read has published its snapshot.
+   *
+   * Saving is gated on `didLoadLibraryRef`, but nothing gated *mutating*: an
+   * import that landed before that first read finished was overwritten by the
+   * snapshot and never written back, so the file vanished with no error. The
+   * window is real -- the file input and the drop zone exist as soon as the
+   * panel mounts, while the read is still going through the storage queue and
+   * seeding the bundled games -- and it is what made the browser check for
+   * this panel fail intermittently on CI and never on a fast machine.
+   */
+  const initialLoadRef = useRef<Promise<unknown> | null>(null);
   const lastExternalFileUpdateRef = useRef<string | null>(null);
   const lastExternalItemCreateRef = useRef<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -382,14 +487,31 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     return readLocalStorage('web-katrain:library_sort:v1') ?? 'recent';
   });
   useEffect(() => {
+    if (!pendingOgsFileId) return;
+    const folderId = items.find((item) => item.id === pendingOgsFileId)?.parentId;
+    if (!folderId) return;
+    // Expand the destination chosen by the completed merge. Keep this UI
+    // update outside the pure items updater, which React may evaluate twice.
+    setExpandedFolderIds((prev) => new Set(prev).add(folderId));
+    setPendingOgsFileId(null);
+  }, [items, pendingOgsFileId]);
+  useEffect(() => {
     let cancelled = false;
     setLibraryStatus('loading');
     setLibraryError(null);
-    void loadLibrary()
+    const initialLoad = updateStoredLibrary((loaded) => {
+      // Keep the loaded snapshot available for Retry if initialization's
+      // persistence fails; publishing it must not enqueue another write.
+      if (!cancelled) {
+        didLoadLibraryRef.current = true;
+        syncItems(loaded);
+      }
+      return { items: loaded, result: loaded };
+    });
+    initialLoadRef.current = initialLoad;
+    void initialLoad
       .then((loaded) => {
         if (cancelled) return;
-        didLoadLibraryRef.current = true;
-        setItems(loaded);
         // Nothing is expanded until someone expands it, so a library whose
         // files all live in folders opened on an empty-looking tree. Show what
         // it holds the first time, and only when collapsing hides everything.
@@ -403,58 +525,89 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           }
         }
         setLibraryStatus('ready');
+        saveCallbacksRef.current.onLibraryUpdated?.();
       })
       .catch((error) => {
         if (cancelled) return;
         setLibraryStatus('error');
-        setLibraryError(error instanceof Error ? error.message : t('Failed to load library.'));
+        setLibraryError(error instanceof Error ? error.message : saveCallbacksRef.current.translate('Failed to load library.'));
       });
     return () => {
       cancelled = true;
     };
-  }, [hadStoredFolderExpansion]);
+  }, [hadStoredFolderExpansion, syncItems]);
 
   useEffect(() => {
-    if (!didLoadLibraryRef.current) return;
+    if (!didLoadLibraryRef.current || (itemsRevision === 0 && saveRetry === 0)) return;
     let cancelled = false;
+    const { items, edits } = saveStateRef.current;
+    const pendingGameSave = pendingGameSaveRef.current;
     setLibraryStatus('saving');
     setLibraryError(null);
-    void saveLibrary(items)
-      .then(() => {
+    // Initialization Retry has a loaded snapshot but no user edit batches.
+    const saving = edits.length ? saveEdits(edits) : saveLibrary(items).then(() => ({ items, revision: itemsRevision }));
+    void saving
+      .then(({ items: savedItems, revision }) => {
+        dispatchItems({ type: 'saved', items: savedItems, revision });
         if (cancelled) return;
+        const { getCurrentSgf, onCurrentSaved, onLoadedFileChange, onLibraryUpdated, onToast } = saveCallbacksRef.current;
         setLibraryStatus('ready');
+        onLibraryUpdated?.();
+        if (pendingGameSave && pendingGameSaveRef.current === pendingGameSave) {
+          pendingGameSaveRef.current = null;
+          const savedItem = savedItems.find(item => item.id === pendingGameSave.id);
+          if (!savedItem || !isFile(savedItem) || savedItem.sgf !== pendingGameSave.sgf) return;
+          // The board can change while storage is writing. A saved older
+          // snapshot must not clear recovery data for the current position.
+          if (getCurrentSgf() === pendingGameSave.sgf) {
+            if (pendingGameSave.isNew) onLoadedFileChange?.(savedItem.id, savedItem.name);
+            onCurrentSaved?.(pendingGameSave.sgf);
+          }
+          onToast(
+            pendingGameSave.isNew ? `Saved "${savedItem.name}" to Library.` : `Updated "${savedItem.name}" in Library.`,
+            'success', undefined, pendingGameSave.operationId
+          );
+        }
       })
       .catch((error) => {
         if (cancelled) return;
         setLibraryStatus('error');
-        setLibraryError(error instanceof Error ? error.message : t('Failed to save library.'));
+        setLibraryError(error instanceof Error ? error.message : saveCallbacksRef.current.translate('Failed to save library.'));
+        if (pendingGameSave && pendingGameSaveRef.current === pendingGameSave) {
+          saveCallbacksRef.current.onToast(saveCallbacksRef.current.translate('Could not save the game to Library. Retry saving or download SGF to keep your changes.'), 'error', undefined, pendingGameSave.operationId);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [items]);
+    // Only local edits and Retry enqueue writes. Mirrors and callback changes
+    // must not save old snapshots or cancel a pending acknowledgement.
+  }, [itemsRevision, saveRetry, saveEdits]);
 
   useEffect(() => {
     if (!didLoadLibraryRef.current || !externalFileUpdate) return;
-    const key = `${externalFileUpdate.id}:${externalFileUpdate.updatedAt}`;
+    const key = `${externalFileUpdate.id}:${externalFileUpdate.requestId}`;
     if (lastExternalFileUpdateRef.current === key) return;
     lastExternalFileUpdateRef.current = key;
-    setItems((prev) =>
+    // Keep a newer panel Save/Update visible even if an older toolbar save
+    // finishes later. Otherwise the next tag/star edit would persist old SGF.
+    if ((localGameSaveRequestsRef.current.get(externalFileUpdate.id) ?? 0) > externalFileUpdate.requestId) return;
+    syncItems((prev) =>
       updateLibraryFileSgf(prev, externalFileUpdate.id, externalFileUpdate.sgf, externalFileUpdate.updatedAt)
     );
-  }, [externalFileUpdate]);
+  }, [externalFileUpdate, syncItems]);
 
   useEffect(() => {
     if (!didLoadLibraryRef.current || !externalItemCreate) return;
     const key = `${externalItemCreate.item.id}:${externalItemCreate.updatedAt}`;
     if (lastExternalItemCreateRef.current === key) return;
     lastExternalItemCreateRef.current = key;
-    setItems((prev) =>
+    syncItems((prev) =>
       prev.some((item) => item.id === externalItemCreate.item.id)
         ? prev.map((item) => (item.id === externalItemCreate.item.id ? externalItemCreate.item : item))
         : [externalItemCreate.item, ...prev]
     );
-  }, [externalItemCreate]);
+  }, [externalItemCreate, syncItems]);
 
   const activeFolderId = useMemo(() => {
     if (!currentFolderId) return null;
@@ -494,10 +647,6 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   }, [sortKey]);
 
   useEffect(() => {
-    onLibraryUpdated?.();
-  }, [items, onLibraryUpdated]);
-
-  useEffect(() => {
     if (!contextMenu) return;
 
     const close = () => setContextMenu(null);
@@ -505,13 +654,19 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       if (event.key === 'Escape') close();
     };
 
+    // Capture, so a scroll inside any of the panel's own scrollers closes the
+    // menu too -- scroll does not bubble. Passive because it never prevents
+    // anything: a blocking listener on window in the capture phase applies to
+    // every scroller in the app, and takes scrolling off the compositor's fast
+    // path for as long as the menu is open.
+    const scrollOptions = { capture: true, passive: true } as const;
     window.addEventListener('pointerdown', close);
-    window.addEventListener('scroll', close, true);
+    window.addEventListener('scroll', close, scrollOptions);
     window.addEventListener('resize', close);
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       window.removeEventListener('pointerdown', close);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', close, { capture: true });
       window.removeEventListener('resize', close);
       window.removeEventListener('keydown', closeOnEscape);
     };
@@ -537,13 +692,17 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       headerMenuButtonRef.current?.focus({ preventScroll: true });
     };
 
+    // A local closer: the bare `close` this listened with was window.close,
+    // so resizing with the menu open tried to close the tab -- and did, in a
+    // tab opened without history such as an installed app's window.
+    const closeMenu = () => setHeaderMenuOpen(false);
     window.addEventListener('pointerdown', closeOnOutsidePointer);
-    window.addEventListener('resize', close);
+    window.addEventListener('resize', closeMenu);
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener('pointerdown', closeOnOutsidePointer);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('resize', closeMenu);
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [headerMenuOpen]);
@@ -587,7 +746,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     const arr = [...filteredItems];
     switch (sortKey) {
       case 'name':
-        arr.sort((a, b) => a.name.localeCompare(b.name));
+        arr.sort((a, b) => compareLibraryNames(a.name, b.name));
         break;
       case 'moves':
         arr.sort(
@@ -606,6 +765,9 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     }
     return arr;
   }, [filteredItems, sortKey]);
+  const hasTreeItems = isSearching
+    ? sortedItems.length > 0
+    : libraryStatus !== 'loading' && libraryStatus !== 'error' && items.length > 0;
 
   /**
    * Rows mounted before "Show more". A library has no size cap and imports SGFs
@@ -672,27 +834,17 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   }, [items]);
 
   const breadcrumbs = useMemo(() => {
-    if (!activeFolderId) return [];
-    const trail: LibraryFolder[] = [];
-    let current: LibraryItem | undefined = items.find((item) => item.id === activeFolderId);
-    while (current && isFolder(current)) {
-      trail.push(current);
-      const parentId = current.parentId ?? null;
-      current = parentId ? items.find((item) => item.id === parentId) : undefined;
-    }
-    return trail.reverse();
-  }, [activeFolderId, items]);
+    return getLibraryFolderPath(itemById, activeFolderId);
+  }, [activeFolderId, itemById]);
 
   const activeAncestorIds = useMemo(() => {
-    if (!loadedFileId) return new Set<string>();
-    const ancestors = new Set<string>();
-    let current = items.find((item) => item.id === loadedFileId);
-    while (current?.parentId) {
-      ancestors.add(current.parentId);
-      current = items.find((item) => item.id === current?.parentId);
-    }
-    return ancestors;
-  }, [loadedFileId, items]);
+    return new Set(getLibraryFolderPath(itemById, loadedFileId).map(folder => folder.id));
+  }, [loadedFileId, itemById]);
+
+  useLayoutEffect(() => {
+    const trail = breadcrumbTrailRef.current;
+    if (trail) trail.scrollLeft = trail.scrollWidth;
+  }, [activeFolderId, breadcrumbs.length, isSearching]);
 
   const childrenMap = useMemo(() => {
     const map = new Map<string | null, LibraryItem[]>();
@@ -708,10 +860,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         const bFolder = isFolder(b);
         if (aFolder && !bFolder) return -1;
         if (!aFolder && bFolder) return 1;
-        if (aFolder && bFolder) return a.name.localeCompare(b.name);
+        if (aFolder && bFolder) return compareLibraryNames(a.name, b.name);
         switch (sortKey) {
           case 'name':
-            return a.name.localeCompare(b.name);
+            return compareLibraryNames(a.name, b.name);
           case 'moves':
             return (
               (isFile(b) ? getLibraryFileMoveSortCount(b) : 0) -
@@ -756,15 +908,16 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     };
   };
 
-  const openContextMenuAt = (x: number, y: number, item: LibraryItem | null) => {
+  const openContextMenuAt = (x: number, y: number, item: LibraryItem | null, opener: HTMLElement) => {
     const position = clampContextMenuPosition(x, y);
+    contextMenuOpenerRef.current = opener;
     setContextMenu({ ...position, itemId: item?.id ?? null });
   };
 
   const openContextMenu = (event: React.MouseEvent, item: LibraryItem | null) => {
     event.preventDefault();
     event.stopPropagation();
-    openContextMenuAt(event.clientX, event.clientY, item);
+    openContextMenuAt(event.clientX, event.clientY, item, event.currentTarget as HTMLElement);
   };
 
   const openKeyboardContextMenu = (event: React.KeyboardEvent<HTMLElement>, item: LibraryItem | null) => {
@@ -772,7 +925,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     openContextMenuAt(
       rect.left + Math.min(32, rect.width / 2),
       rect.top + Math.min(32, rect.height / 2),
-      item
+      item,
+      event.currentTarget
     );
   };
 
@@ -780,10 +934,16 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     event.preventDefault();
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
-    openContextMenuAt(rect.right - 230, rect.bottom + 4, item);
+    openContextMenuAt(rect.right - 230, rect.bottom + 4, item, event.currentTarget);
   };
 
-  const closeContextMenu = () => setContextMenu(null);
+  const closeContextMenu = () => {
+    setContextMenu(null);
+    // Restore before an action mounts a dialog, so that dialog remembers a
+    // durable opener and takes focus after it. Outside-pointer dismissal keeps
+    // its separate closer and lets the newly clicked control receive focus.
+    if (contextMenuOpenerRef.current?.isConnected) contextMenuOpenerRef.current.focus({ preventScroll: true });
+  };
 
   const handleContextMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (isLibraryMenuCloseKey(event.key)) {
@@ -842,6 +1002,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   };
 
   const handleFileRowKeyDown = (item: LibraryFile) => (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || isComposingKeyEvent(event.nativeEvent)) return;
     const action = getLibraryRowKeyAction({ key: event.key, shiftKey: event.shiftKey, kind: 'file' });
     if (action === 'none') return;
     event.preventDefault();
@@ -856,6 +1017,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     hasChildren: boolean,
     allowChildren: boolean
   ) => (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || isComposingKeyEvent(event.nativeEvent)) return;
     const action = getLibraryRowKeyAction({
       key: event.key,
       shiftKey: event.shiftKey,
@@ -888,21 +1050,23 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       );
       return;
     }
+    commitPendingGameDrafts();
     const sgf = getCurrentSgf();
     if (!sgf.trim()) {
       onToast(t('Nothing to save yet.'), 'info');
       return;
     }
     if (loadedLibraryFile) {
+      const requestId = nextLibraryGameSaveRequestId();
+      localGameSaveRequestsRef.current.set(loadedLibraryFile.id, requestId);
+      pendingGameSaveRef.current = { id: loadedLibraryFile.id, sgf, isNew: false, operationId: `library-save:${requestId}` };
       setItems((prev) => updateLibraryFileSgf(prev, loadedLibraryFile.id, sgf));
-      onCurrentSaved?.();
-      onToast(t('Updated "{name}" in Library.', { name: loadedLibraryFile.name }), 'success');
       return;
     }
     setTextDialog({
       title: t('Save to Library'),
       label: t('Name'),
-      initialValue: suggestLibraryItemNameFromSgf(sgf, t('Game {n}', { n: items.length + 1 })),
+      initialValue: suggestLibraryItemNameFromSgf(sgf, nextUntitledGameName(items)),
       placeholder: t('Game name'),
       confirmLabel: t('Save'),
       folderSelect: {
@@ -915,10 +1079,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         const parentId = targetFolderId ?? null;
         const uniqueName = getUniqueLibraryItemName(name, items, parentId);
         const newItem = createLibraryItem(uniqueName, sgf, parentId);
+        const requestId = nextLibraryGameSaveRequestId();
+        localGameSaveRequestsRef.current.set(newItem.id, requestId);
+        pendingGameSaveRef.current = { id: newItem.id, sgf, isNew: true, operationId: `library-save:${requestId}` };
         setItems((prev) => [newItem, ...prev]);
-        onLoadedFileChange?.(newItem.id, newItem.name);
-        onCurrentSaved?.();
-        onToast(t('Saved "{name}" to Library.', { name: newItem.name }), 'success');
       },
     });
   };
@@ -949,6 +1113,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       initialValue: (item.tags ?? []).join(', '),
       placeholder: t('joseki, review, tsumego'),
       confirmLabel: t('Save tags'),
+      allowEmpty: true,
       onSubmit: (next) => {
         setItems((prev) => setLibraryFileTags(prev, item.id, next.split(',')));
       },
@@ -976,39 +1141,17 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const handleOgsSyncImport = (username: string, games: OgsSyncedGame[]) => {
     if (games.length === 0) return;
     const folderName = ogsSyncFolderName(username);
-    let next = items;
-    let folder = next.find(
-      (item): item is LibraryFolder =>
-        isFolder(item) && item.parentId === null && item.name === folderName
-    );
-    if (!folder) {
-      folder = createLibraryFolder(folderName, null);
-      next = [folder, ...next];
-    }
-    const folderId = folder.id;
-    const files: LibraryItem[] = [];
-    for (const game of games) {
-      const name = getUniqueLibraryItemName(
-        ogsSyncFileName(game.summary),
-        [...next, ...files],
-        folderId
-      );
-      files.push(createLibraryItem(name, game.sgf, folderId));
-    }
-    setItems([...files, ...next]);
-    setExpandedFolderIds((prev) => new Set(prev).add(folderId));
-    onToast(t('Synced {count} OGS game{s} into "{folder}".', {
-      count: games.length,
-      s: games.length === 1 ? '' : 's',
-      folder: folderName,
-    }), 'success');
+    const folder = createLibraryFolder(folderName, null);
+    const files = games.map((game) => createLibraryItem(ogsSyncFileName(game.summary), game.sgf, folder.id));
+    setItems((prev) => mergeOgsLibraryImports(prev, folder, files));
+    setPendingOgsFileId(files[0]!.id);
+    onToast(t('Synced {count} OGS game{s} into "{folder}".', { count: games.length, s: games.length === 1 ? '' : 's', folder: folderName }), 'success');
   };
 
   const handleClearLibrary = () => {
-    const itemLabel = t('{count} library item{s}', { count: items.length, s: items.length === 1 ? '' : 's' });
     setConfirmDialog({
       title: t('Clear Library'),
-      message: t('Clear all {items}? This cannot be undone.', { items: itemLabel }),
+      message: describeLibraryClear(items.length),
       confirmLabel: t('Clear'),
       danger: true,
       onConfirm: () => {
@@ -1029,9 +1172,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleDelete = (item: LibraryItem) => {
     const isFolderItem = isFolder(item);
-    const descendantCount = isFolderItem
-      ? items.filter((candidate) => isDescendantOf(candidate.id, item.id)).length
-      : 0;
+    const affectedIds = isFolderItem ? getLibrarySelectionIds(items, [item.id]) : new Set([item.id]);
+    const descendantCount = Math.max(0, affectedIds.size - 1);
     const contentsLabel = descendantCount > 0
       ? t(' and its {count} item{s}', { count: descendantCount, s: descendantCount === 1 ? '' : 's' })
       : '';
@@ -1045,7 +1187,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       danger: true,
       onConfirm: () => {
         setItems((prev) => deleteLibraryItem(prev, item.id));
-        if (loadedFileId === item.id || (isFolderItem && loadedFileId && isDescendantOf(loadedFileId, item.id))) {
+        if (loadedFileId && affectedIds.has(loadedFileId)) {
           onLoadedFileChange?.(null);
         }
       },
@@ -1068,7 +1210,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   };
 
   const handleDownload = (item: LibraryFile) => {
-    const blob = new Blob([item.sgf], { type: 'application/x-go-sgf' });
+    const blob = new Blob([normalizeSgfUtf8(item.sgf)], { type: 'application/x-go-sgf' });
     if (!downloadBlobFile(blob, librarySgfDownloadFilename(item.name))) {
       onToast(t('Failed to start SGF download.'), 'error');
       return;
@@ -1123,23 +1265,62 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     }
   };
 
+  /**
+   * Restoring a backup replaces the library; it does not merge into it.
+   *
+   * Clear Library asks first -- "Clear all 8 library items? This cannot be
+   * undone." -- and restore, which destroys exactly as much, asked nothing.
+   * Measured by choosing a one-game backup against the bundled library: eight
+   * items became one, with no dialog, no toast beforehand and nothing to undo
+   * it with. Restore is the more dangerous of the two, because its name reads
+   * as gaining games rather than losing them.
+   *
+   * The file is read and parsed before asking, so the question can name both
+   * numbers. Nothing is written until the answer is yes.
+   */
   const handleRestoreBackup = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    let restored: LibraryItem[];
     try {
-      const text = await file.text();
-      const restored = await restoreLibrary(text);
-      didLoadLibraryRef.current = true;
-      setItems(restored);
-      setSelectedIds(new Set());
-      onLoadedFileChange?.(null);
-      setCurrentFolderId(null);
-      onToast(t('Restored {count} library item{s}.', { count: restored.length, s: restored.length === 1 ? '' : 's' }), 'success');
+      restored = parseLibraryBackup(await file.text());
     } catch {
-      onToast(t('Failed to restore library backup.'), 'error');
-    } finally {
+      onToast('Failed to restore library backup.', 'error');
       if (backupInputRef.current) backupInputRef.current.value = '';
+      return;
     }
+    if (backupInputRef.current) backupInputRef.current.value = '';
+
+    const applyRestore = async () => {
+      try {
+        await saveLibrary(restored);
+        didLoadLibraryRef.current = true;
+        dispatchItems({ type: 'restore', items: restored });
+        pendingGameSaveRef.current = null;
+        setLibraryStatus('ready');
+        setLibraryError(null);
+        onLibraryUpdated?.();
+        setSelectedIds(new Set());
+        onLoadedFileChange?.(null);
+        setCurrentFolderId(null);
+        onToast(`Restored ${restored.length} library item${restored.length === 1 ? '' : 's'}.`, 'success');
+      } catch {
+        onToast('Failed to restore library backup.', 'error');
+      }
+    };
+
+    // Nothing to lose, so nothing to ask about.
+    if (items.length === 0) {
+      await applyRestore();
+      return;
+    }
+    setConfirmDialog({
+      title: t('Restore Backup'),
+      message: describeLibraryReplacement(items.length, restored.length),
+      confirmLabel: 'Replace',
+      danger: true,
+      onConfirm: () => void applyRestore(),
+    });
   };
 
   const handleToggleSelect = (id: string) => {
@@ -1162,27 +1343,16 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleBulkDelete = () => {
     if (visibleSelectedIds.size === 0) return;
-    const affectedCount = items.filter((item) => (
-      visibleSelectedIds.has(item.id)
-      || Array.from(visibleSelectedIds).some((selectedId) => isDescendantOf(item.id, selectedId))
-    )).length;
+    const affectedIds = getLibrarySelectionIds(items, visibleSelectedIds);
+    const affectedCount = affectedIds.size;
     setConfirmDialog({
       title: t('Delete Selected'),
       message: t('Delete {count} library item{s}? This cannot be undone.', { count: affectedCount, s: affectedCount === 1 ? '' : 's' }),
       confirmLabel: t('Delete'),
       danger: true,
       onConfirm: () => {
-        setItems((prev) => {
-          let next = prev;
-          for (const id of visibleSelectedIds) {
-            next = deleteLibraryItem(next, id);
-          }
-          return next;
-        });
-        if (
-          loadedFileId &&
-          Array.from(visibleSelectedIds).some((id) => loadedFileId === id || isDescendantOf(loadedFileId, id))
-        ) {
+        setItems((prev) => deleteLibraryItems(prev, visibleSelectedIds));
+        if (loadedFileId && affectedIds.has(loadedFileId)) {
           onLoadedFileChange?.(null);
         }
         setSelectedIds(new Set());
@@ -1231,10 +1401,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       return;
     }
     if (result.skippedIds.length > 0) {
-      onToast(t('Moved {moved} item(s); skipped {skipped} invalid move(s).', {
-        moved: result.movedIds.length,
-        skipped: result.skippedIds.length,
-      }), 'info');
+      onToast(t('Moved {moved} items. {skipped} could not be moved.', { moved: result.movedIds.length, skipped: result.skippedIds.length }), 'info');
       return;
     }
     onToast(t('Moved {count} selected item{s}.', { count: result.movedIds.length, s: result.movedIds.length === 1 ? '' : 's' }), 'success');
@@ -1242,16 +1409,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleMoveToRoot = (item: LibraryItem) => {
     if (!item.parentId) return;
-    setItems((prev) => prev.map((candidate) => (
-      candidate.id === item.id ? { ...candidate, parentId: null, updatedAt: Date.now() } : candidate
-    )));
+    // Through the shared move, so the name stays unique at Root.
+    setItems((prev) => moveLibraryItems(prev, [item.id], null).items);
     onToast(t('Moved "{name}" to Root.', { name: item.name }), 'success');
   };
 
   const handleLoad = async (item: LibraryItem) => {
     if (!isFile(item)) return;
     try {
-      const loaded = await onLoadSgf(item.sgf);
+      const loaded = await onLoadSgf(item.sgf, item.id);
       if (!loaded) return;
       onLoadedFileChange?.(item.id, item.name);
       setCurrentFolderId(item.parentId ?? null);
@@ -1266,14 +1432,19 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleImportFilesToFolder = async (files: FileList | null, folderId: string | null) => {
     if (!files || files.length === 0) return;
+    // Before the first read publishes, `setItems` here would be overwritten by
+    // it and never saved. Reading the files is asynchronous anyway.
+    await waitForInitialLibraryLoad();
     const imported: LibraryItem[] = [];
     let openedPhotoBoard = false;
     let skippedUnsupportedPhotoImages = 0;
     let skippedInvalidSgfFiles = 0;
     let skippedOversizedSgfFiles = 0;
-    const pushImportedItem = (item: LibraryItem) => {
-      const uniqueName = getUniqueLibraryItemName(item.name, [...items, ...imported], item.parentId ?? null);
-      imported.push(uniqueName === item.name ? item : { ...item, name: uniqueName });
+    let unreadableFiles = 0;
+    let skippedArchiveGames = 0;
+    let firstFailure: string | undefined;
+    const rememberFailure = (name: string, error: unknown) => {
+      firstFailure ??= describeLibraryImportFailure(name, error);
     };
     for (const file of Array.from(files)) {
       const name = file.name.toLowerCase();
@@ -1290,61 +1461,85 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           continue;
         }
         if (name.endsWith('.zip')) {
-          for (const item of await importLibraryItemsFromZip(file, folderId)) pushImportedItem(item);
+          const archiveItems = await importLibraryItemsFromZip(file, folderId, legacyGameEncoding, (name, error) => {
+            skippedArchiveGames++;
+            rememberFailure(`${file.name}/${name}`, error);
+          });
+          for (const item of archiveItems) imported.push(item);
           continue;
         }
-        if (!name.endsWith('.sgf')) continue;
-        if (getSgfImportSizeError(file.size)) {
+        if (!isGameRecordFile(file)) continue;
+        const sizeError = getSgfImportSizeError(file.size);
+        if (sizeError) {
+          rememberFailure(file.name, new Error(sizeError));
           skippedOversizedSgfFiles += 1;
           continue;
         }
-        const text = await file.text();
+        const text = await readGameRecordFile(file, legacyGameEncoding);
         try {
           assertValidLibrarySgfImport(text);
-        } catch {
+        } catch (error) {
+          rememberFailure(file.name, error);
           skippedInvalidSgfFiles += 1;
           continue;
         }
-        pushImportedItem(createLibraryItem(file.name.replace(/\.sgf$/i, ''), text, folderId));
-      } catch {
-        // ignore per-file failures
+        imported.push(createLibraryItem(file.name.replace(GAME_RECORD_EXTENSION, ''), text, folderId));
+      } catch (error) {
+        rememberFailure(file.name, error);
+        // A file that throws here -- unreadable, or a ZIP that will not open --
+        // used to vanish without a counter, so the summary reported only what
+        // survived.
+        unreadableFiles += 1;
       }
     }
     if (imported.length === 0) {
-      onToast(
-        openedPhotoBoard
-          ? t('Opened photo board from image.')
-          : skippedUnsupportedPhotoImages > 0
-            ? PHOTO_BOARD_UNSUPPORTED_IMAGE_MESSAGE
-            : skippedOversizedSgfFiles > 0
-              ? t('SGF files are limited to {limit}. {count} file{s} skipped.', {
-                  limit: MAX_SGF_IMPORT_LABEL,
-                  count: skippedOversizedSgfFiles,
-                  s: skippedOversizedSgfFiles === 1 ? '' : 's',
-                })
-            : skippedInvalidSgfFiles > 0
-              ? t('No valid SGF games were imported.')
-              : t('No SGF, ZIP, or board image files were imported.'),
-        (skippedUnsupportedPhotoImages > 0 || skippedOversizedSgfFiles > 0 || skippedInvalidSgfFiles > 0) && !openedPhotoBoard ? 'error' : 'info'
-      );
+      const report = describeLibraryImport({
+        importedEntries: 0,
+        importedFiles: 0,
+        openedPhotoBoard,
+        skippedUnsupportedPhotoImages,
+        skippedOversizedSgfFiles,
+        skippedInvalidSgfFiles,
+        unreadableFiles,
+        skippedArchiveGames,
+        firstFailure,
+      });
+      onToast(report.message, report.tone);
       return;
     }
-    setItems((prev) => [...imported, ...prev]);
-    const importedFiles = imported.filter(isFile).length;
-    const skippedUnsupportedSummary = skippedUnsupportedPhotoImages > 0
-      ? t(' Skipped {count} unsupported board image{s}.', { count: skippedUnsupportedPhotoImages, s: skippedUnsupportedPhotoImages === 1 ? '' : 's' })
-      : '';
-    const skippedInvalidSgfSummary = skippedInvalidSgfFiles > 0
-      ? t(' Skipped {count} invalid SGF file{s}.', { count: skippedInvalidSgfFiles, s: skippedInvalidSgfFiles === 1 ? '' : 's' })
-      : '';
-    onToast(
-      `${t('Imported {count} file{s}', { count: importedFiles, s: importedFiles === 1 ? '' : 's' })}${openedPhotoBoard ? t(' and opened photo board image') : ''}.${skippedUnsupportedSummary}${skippedInvalidSgfSummary}`,
-      'success'
-    );
+    // Reading files can outlive another import or edit. Reserve names against
+    // the state at completion, without rescanning every sibling for each file.
+    setItems((prev) => prependLibraryImports(prev, imported));
+    const report = describeLibraryImport({
+      importedEntries: imported.length,
+      importedFiles: imported.filter(isFile).length,
+      // A collection keeps every game in the stored text, but only the first
+      // one opens, so say so rather than let the others be present and unseen.
+      collectionFiles: imported.filter(isFile).filter((item) => countSgfGames(item.sgf) > 1).length,
+      openedPhotoBoard,
+      skippedUnsupportedPhotoImages,
+      skippedOversizedSgfFiles,
+      skippedInvalidSgfFiles,
+      unreadableFiles,
+      skippedArchiveGames,
+      firstFailure,
+    });
+    onToast(report.message, report.tone);
   };
 
   const handleImportFiles = async (files: FileList | null) =>
     handleImportFilesToFolder(files, activeFolderId);
+
+  /** Resolves once the panel's first read has published, or immediately after. */
+  const waitForInitialLibraryLoad = async (): Promise<void> => {
+    if (didLoadLibraryRef.current) return;
+    try {
+      await initialLoadRef.current;
+    } catch {
+      // A failed read surfaces through libraryStatus; an import should still
+      // be allowed to proceed rather than be swallowed here.
+    }
+  };
 
   const handleImportDroppedTextToFolder = async (
     dataTransfer: DataTransfer,
@@ -1352,20 +1547,28 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   ): Promise<boolean> => {
     const droppedText = getDroppedSgfOrOgsText(dataTransfer);
     if (!droppedText) return false;
+    // Same window as the file input: the drop zone is live before the first
+    // read publishes, and `items` below must already hold the snapshot.
+    await waitForInitialLibraryLoad();
     try {
       const result = await createLibraryItemFromSgfOrOgsText(
         droppedText,
         folderId,
-        t('Game {n}', { n: items.length + 1 })
+        nextUntitledGameName(items)
       );
       const uniqueName = getUniqueLibraryItemName(result.item.name, items, result.item.parentId ?? null);
       const item = uniqueName === result.item.name ? result.item : { ...result.item, name: uniqueName };
       setItems((prev) => [item, ...prev]);
+      // A pasted or dropped collection opens at its first game like an
+      // imported one does, so it says so here too -- with the count, which
+      // this path knows because it made exactly one item.
+      const games = isFile(item) ? countSgfGames(item.sgf) : 1;
+      const heldMore = games > 1 ? ` It holds ${games} games; only the first opens.` : '';
       onToast(
         result.source === 'ogs' && result.gameId
-          ? t('Imported OGS game {id} to Library.', { id: result.gameId })
-          : t('Imported "{name}" to Library.', { name: item.name }),
-        'success'
+          ? t('Imported OGS game {id} to Library.', { id: result.gameId }) + heldMore
+          : t('Imported "{name}" to Library.', { name: item.name }) + heldMore,
+        heldMore ? 'info' : 'success'
       );
     } catch {
       onToast(t('Failed to import dropped SGF or OGS URL.'), 'error');
@@ -1382,9 +1585,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     }
     if (await handleImportDroppedTextToFolder(event.dataTransfer, activeFolderId)) return;
     if (draggingId) {
-      setItems((prev) =>
-        prev.map((item) => (item.id === draggingId ? { ...item, parentId: null, updatedAt: Date.now() } : item))
-      );
+      const id = draggingId;
+      setItems((prev) => moveLibraryItems(prev, [id], null).items);
       setDraggingId(null);
       setDragOverRoot(false);
     }
@@ -1415,6 +1617,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
 
   const handleDropOnFolder = (folderId: string) => async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    // This drop is the folder's. Bubbling on, it reached the tree's root drop
+    // too -- which moved the game back out to Root -- and the panel's, which
+    // imported a dropped file a second time into the open folder.
+    event.stopPropagation();
     if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
       await handleImportFilesToFolder(event.dataTransfer.files, folderId);
       setDragOverId(null);
@@ -1427,9 +1633,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     const id = draggingId || event.dataTransfer.getData('text/plain');
     if (!id || id === folderId) return;
     if (isDescendantOf(folderId, id)) return;
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, parentId: folderId, updatedAt: Date.now() } : item))
-    );
+    setItems((prev) => moveLibraryItems(prev, [id], folderId).items);
     setDraggingId(null);
     setDragOverId(null);
   };
@@ -1445,14 +1649,14 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const handleRootDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
+    event.stopPropagation();
     if (await handleImportDroppedTextToFolder(event.dataTransfer, null)) {
       setDragOverRoot(false);
       return;
     }
     if (!draggingId) return;
-    setItems((prev) =>
-      prev.map((item) => (item.id === draggingId ? { ...item, parentId: null, updatedAt: Date.now() } : item))
-    );
+    const id = draggingId;
+    setItems((prev) => moveLibraryItems(prev, [id], null).items);
     setDraggingId(null);
     setDragOverRoot(false);
   };
@@ -1467,11 +1671,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const renderShowMore = (key: string, total: number, depth = 0) => {
     const hidden = total - limitFor(key);
     if (hidden <= 0) return null;
+    const indent = libraryTreeIndent(depth);
     return (
       <button
         type="button"
         className="library-show-more"
-        style={depth > 0 ? { marginLeft: 12 + depth * 16 } : undefined}
+        style={depth > 0 ? { marginLeft: indent, width: `calc(100% - ${indent} - 6px)` } : undefined}
+        data-library-show-more={key}
         onClick={() =>
           setVisibleLimits((limits) => ({
             ...limits,
@@ -1496,7 +1702,19 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     const downloadFileLabel = t('Download {name} as SGF', { name: item.name });
     const renameFileLabel = t('Rename {name}', { name: item.name });
     const deleteFileLabel = t('Delete {name}', { name: item.name });
+    const moreFileActionsLabel = t('More actions for {name}', { name: item.name });
     const moveSummary = getLibraryFileMoveSummary(item);
+    const metaText = [
+      (item.metadata.black || item.metadata.white) &&
+      !libraryNameRepeatsPlayers(item.name, item.metadata.black, item.metadata.white)
+        ? `${item.metadata.black ?? 'Black'} vs ${item.metadata.white ?? 'White'}`
+        : '',
+      item.metadata.date ?? '',
+      item.metadata.result ?? '',
+      `${moveSummary} · ${(item.size / 1024).toFixed(1)} KB`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
     return (
       <div
         key={item.id}
@@ -1506,13 +1724,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           isLoaded ? 'loaded' : '',
           isLoadedDirty ? 'dirty' : '',
         ].join(' ')}
-        style={{ paddingLeft: 12 + depth * 16 }}
+        style={{ paddingLeft: libraryTreeIndent(depth) }}
         role="treeitem"
+        aria-level={depth + 1}
         tabIndex={0}
         aria-selected={isSelected}
         aria-current={isLoaded ? 'true' : undefined}
         aria-label={`${item.name}, ${t('game file')}, ${moveSummary}${isLoadedDirty ? `, ${t('unsaved changes')}` : ''}`}
         data-library-row="file"
+        data-library-depth={depth}
         data-library-row-name={item.name}
         data-library-loaded-dirty={isLoadedDirty ? 'true' : undefined}
         onClick={() => void handleLoad(item)}
@@ -1535,22 +1755,34 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           title={selectFileLabel}
           aria-label={selectFileLabel}
         >
-          {isSelected ? <FaCheckSquare size={12} /> : <FaSquare size={12} />}
+          {isSelected ? <FaCheckSquare size={12} /> : <FaRegSquare size={12} />}
         </button>
         <span className="library-tree-node-icon">
-          {item.favorite ? <FaStar size={12} className="text-amber-400" /> : <FaFileAlt size={12} />}
+          {item.favorite ? <FaStar size={12} className="text-[var(--ui-warning)]" /> : <FaFileAlt size={12} />}
         </span>
-        <div className="library-tree-node-name">{item.name}</div>
-        <div className="library-tree-node-meta">
-          {(item.metadata.black || item.metadata.white) &&
-          !libraryNameRepeatsPlayers(item.name, item.metadata.black, item.metadata.white)
-            ? `${t('{black} vs {white}', { black: item.metadata.black ?? t('Black'), white: item.metadata.white ?? t('White') })} · `
-            : ''}
-          {item.metadata.date ? `${item.metadata.date} · ` : ''}
-          {moveSummary} · {(item.size / 1024).toFixed(1)} KB
-          {tagsFromResult(item.metadata.result).map((tag) => (
-            <span key={tag.id} className="ml-1 opacity-80" title={tag.title}>· {tag.label}</span>
-          ))}
+        {/* The panel is 191px of name at its default width and these run past
+            460, so more than half of a tournament game's title is off the end.
+            The row's aria-label already carries the whole thing; this is the
+            same for a mouse, the way the game strip and the match strip label
+            their own truncating names. */}
+        <div className="library-tree-node-name" title={item.name}>{item.name}</div>
+        {/* Built once and used twice. It clips by 10-23px on every row at the
+            panel's docked width -- enough to take the file size with it -- and
+            the row's aria-label names the game, not this line, so there was
+            nothing behind it for a mouse either. */}
+        <div className="library-tree-node-meta" title={metaText}>
+          {metaText}
+          {/* Tags that only restate the result are dropped now the result is
+              shown: "W+R · Resignation" and "0 · Draw" spend the row's width
+              saying one thing twice, and this line already truncates the name
+              at phone widths -- the same concern `libraryNameRepeatsPlayers`
+              exists for. Blowout, Close and the rest still say something the
+              raw result does not. */}
+          {tagsFromResult(item.metadata.result)
+            .filter((tag) => !(item.metadata.result && RESULT_RESTATING_TAGS.has(tag.id)))
+            .map((tag) => (
+              <span key={tag.id} className="ml-1 opacity-80" title={tag.title}>· {tag.label}</span>
+            ))}
           {(item.tags ?? []).length > 0 && (
             <span className="ml-1 text-[var(--ui-accent)]">
               {' · '}
@@ -1580,7 +1812,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             aria-label={item.favorite ? t('Unstar {name}', { name: item.name }) : t('Star {name}', { name: item.name })}
             aria-pressed={!!item.favorite}
           >
-            {item.favorite ? <FaStar size={12} className="text-amber-400" /> : <FaRegStar size={12} />}
+            {item.favorite ? <FaStar size={12} className="text-[var(--ui-warning)]" /> : <FaRegStar size={12} />}
           </button>
           <button
             type="button"
@@ -1643,6 +1875,20 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             <FaTrash size={12} />
           </button>
         </div>
+        {/* The same button a folder row has, for the same reason: the action
+            strip above is display:none where there is no hover, which left a
+            saved game's actions behind a long press that nothing advertises. */}
+        <button
+          type="button"
+          className="library-tree-node-more"
+          onClick={(event) => openButtonContextMenu(event, item)}
+          title={moreFileActionsLabel}
+          aria-label={moreFileActionsLabel}
+          aria-haspopup="menu"
+          aria-expanded={contextMenu?.itemId === item.id}
+        >
+          <FaEllipsisH size={14} />
+        </button>
       </div>
     );
   };
@@ -1671,13 +1917,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             hasDirtyLoaded ? 'has-loaded-dirty' : '',
             dragOverId === item.id ? 'drop-target' : '',
           ].join(' ')}
-          style={{ paddingLeft: 12 + depth * 16 }}
+          style={{ paddingLeft: libraryTreeIndent(depth) }}
           role="treeitem"
+          aria-level={depth + 1}
           tabIndex={0}
           aria-selected={isSelected || activeFolderId === item.id}
           aria-expanded={allowChildren && children.length > 0 ? isExpanded : undefined}
           aria-label={`${item.name}, ${t('folder')}, ${t('{count} item{s}', { count: children.length, s: children.length === 1 ? '' : 's' })}${hasDirtyLoaded ? `, ${t('contains loaded game with unsaved changes')}` : ''}`}
           data-library-row="folder"
+          data-library-depth={depth}
           data-library-row-name={item.name}
           data-library-folder-loaded-dirty={hasDirtyLoaded ? 'true' : undefined}
           onClick={() => activateFolderRow(item)}
@@ -1724,12 +1972,12 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             title={selectFolderLabel}
             aria-label={selectFolderLabel}
           >
-            {isSelected ? <FaCheckSquare size={12} /> : <FaSquare size={12} />}
+            {isSelected ? <FaCheckSquare size={12} /> : <FaRegSquare size={12} />}
           </button>
           <span className="library-tree-node-icon">
             <FaFolderOpen size={12} />
           </span>
-          <div className="library-tree-node-name">{item.name}</div>
+          <div className="library-tree-node-name" title={item.name}>{item.name}</div>
           <div className="library-tree-node-meta">{children.length}</div>
           <div className="library-tree-node-actions">
             <button
@@ -1887,6 +2135,32 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 <FaPlus size={12} /> {t('New folder inside')}
               </button>
             )}
+            {/* Starring and tagging a game were on the row's hover strip and
+                nowhere else. That strip is display:none under `hover: none`,
+                and this menu -- the only other way to a file's actions on a
+                touch screen -- did not carry them, so on a phone the two were
+                unreachable rather than merely hidden. */}
+            {isFile(contextMenuItem) && (
+              <button
+                type="button"
+                role="menuitem"
+                className={menuButtonClass}
+                onClick={() => runContextAction(() => handleToggleFavorite(contextMenuItem))}
+              >
+                {contextMenuItem.favorite
+                  ? <><FaStar size={12} className="text-[var(--ui-warning)]" />  {t('Unstar')}</>
+                  : <><FaRegStar size={12} />  {t('Star')}</>}
+              </button>
+            )}
+            {isFile(contextMenuItem) && (
+              <button
+                type="button"
+                role="menuitem"
+                className={menuButtonClass}
+                onClick={() => runContextAction(() => handleEditTags(contextMenuItem))}
+              >
+                <FaTag size={12} /> {t('Edit tags')}</button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -1985,6 +2259,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         <OgsSyncModal items={items} onClose={() => setShowOgsSync(false)} onImport={handleOgsSyncImport} />
       )}
       <div className="fixed inset-0 bg-black/60 z-30 lg:hidden" onClick={onClose} />
+      <MobilePanelRegion isMobile={isMobile} label={t('Game library')}>
       <div
         ref={panelRef}
         data-dropzone="library"
@@ -1997,7 +2272,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           'fixed inset-y-0 left-0 z-40 w-full max-w-none sm:max-w-sm',
           'lg:static lg:z-auto',
           docked ? 'lg:max-w-none' : 'lg:w-80',
-          isMobile ? 'mobile-safe-bottom mobile-safe-inset' : '',
+          isMobile ? 'flex-1 min-h-0 mobile-safe-bottom mobile-safe-inset' : '',
         ].join(' ')}
         style={docked && width ? { width } : undefined}
         onDragOver={handleDragOver}
@@ -2210,8 +2485,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 <div className="relative flex-1 min-w-[160px]">
                   <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 ui-text-faint text-xs" />
                   <input
+                    ref={searchInputRef}
                     type="search"
                     value={query}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(e) => setQuery(e.target.value)}
                     aria-label={t('Search library')}
                     placeholder={t('Search library…')}
@@ -2219,13 +2499,25 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     // input keeps a pasted record out of React state as well.
                     maxLength={MAX_SEARCH_QUERY_LENGTH}
                     data-library-search="true"
-                    className="w-full ui-input border rounded pl-8 pr-9 py-1 text-sm text-[var(--ui-text)] focus:border-[var(--ui-accent)]"
+                    // The right padding clears the button below, which only
+                    // exists while there is something to clear -- so an empty
+                    // field was holding 36px for nothing, and holding it from
+                    // the placeholder, which is the only text an empty field
+                    // has. It cost the last word of "Search library…" once the
+                    // touch font floor took the text to 16px.
+                    className={[
+                      'w-full ui-input border rounded pl-8 py-1 text-sm text-[var(--ui-text)] focus:border-[var(--ui-accent)]',
+                      query ? 'pr-9' : 'pr-2',
+                    ].join(' ')}
                   />
                   {query && (
                     <button
                       type="button"
                       className="library-search-clear absolute right-0 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded text-[var(--ui-text-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-                      onClick={() => setQuery('')}
+                      onClick={() => {
+                        setQuery('');
+                        searchInputRef.current?.focus();
+                      }}
                       aria-label={t('Clear library search')}
                     >
                       <FaTimes aria-hidden="true" size={11} />
@@ -2253,7 +2545,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   aria-label={favoritesOnly ? t('Show all games') : t('Show favorites only')}
                   style={favoritesOnly ? { color: 'var(--ui-accent)' } : undefined}
                 >
-                  {favoritesOnly ? <FaStar size={12} className="text-amber-400" /> : <FaRegStar size={12} />}
+                  {favoritesOnly ? <FaStar size={12} className="text-[var(--ui-warning)]" /> : <FaRegStar size={12} />}
                 </button>
                 {availableTags.length > 0 && (
                   <select
@@ -2292,10 +2584,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 {/* The trail sat in a band of its own under a toolbar row that
                     was empty between the root button and the item count. It
                     reads as the same thing, so it shares the row. */}
-                <div className="library-breadcrumbs flex min-w-0 flex-wrap items-center gap-1 text-[0.6875rem] ui-text-faint">
+                <div
+                  ref={breadcrumbTrailRef}
+                  role="navigation"
+                  aria-label={t('Current folder path')}
+                  className="library-breadcrumbs flex min-w-0 max-w-full flex-nowrap items-center gap-1 overflow-x-auto overscroll-x-contain whitespace-nowrap text-[0.6875rem] ui-text-faint"
+                >
                   {/* The trail already ends at the current folder, so naming it
                       in the label too printed it twice ("Folder: X  X"). */}
-                  <span>{t('Folder')}:</span>
+                  <span className="shrink-0">{t('Folder')}:</span>
                   {isSearching || breadcrumbs.length === 0 ? (
                     <span>{currentFolderName}</span>
                   ) : (
@@ -2303,20 +2600,24 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                       <button
                         key={crumb.id}
                         type="button"
-                        className="library-breadcrumb-button px-1.5 py-0.5 rounded hover:bg-[var(--ui-surface-2)] ui-text-faint"
+                        className={[
+                          'library-breadcrumb-button shrink-0 px-1.5 py-0.5 rounded hover:bg-[var(--ui-surface-2)]',
+                          index === breadcrumbs.length - 1 ? 'font-semibold text-[var(--ui-text)]' : 'ui-text-faint',
+                        ].join(' ')}
                         onClick={() => setCurrentFolderId(crumb.id)}
                         aria-label={t('Open folder {name}', { name: crumb.name })}
+                        aria-current={index === breadcrumbs.length - 1 ? 'location' : undefined}
+                        title={crumb.name}
                       >
                         {index === 0 ? crumb.name : `/${crumb.name}`}
                       </button>
                     ))
                   )}
-                  {isDragging && (
-                    <span className="ui-accent-soft border rounded px-2 py-0.5">
-                      {t('Drop SGF, OGS URL, ZIP, or board images to import')}
-                    </span>
-                  )}
                 </div>
+                {isDragging && (
+                  <span className="ui-accent-soft border rounded px-2 py-0.5">
+                    {t('Drop SGF, GIB, NGF, OGS URL, ZIP, or board images to import')}</span>
+                )}
                 <div className="ml-auto flex items-center gap-2 text-[0.6875rem] ui-text-faint">
                   <div>
                     {t('{count} item{s}', { count: sortedItems.length, s: sortedItems.length === 1 ? '' : 's' })}{visibleSelectedIds.size > 0 ? ` · ${t('{count} selected', { count: visibleSelectedIds.size })}` : ''}
@@ -2405,8 +2706,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   isMobile ? 'max-h-[calc(100dvh-220px)]' : 'panel-compact-list',
                   dragOverRoot ? 'bg-[var(--ui-accent-soft)]' : '',
                 ].join(' ')}
-                role="tree"
-                aria-label={t('Library games')}
+                role={hasTreeItems ? 'tree' : undefined}
+                aria-label={hasTreeItems ? t('Library games') : undefined}
+                aria-busy={libraryStatus === 'loading' || libraryStatus === 'saving'}
+                aria-live={hasTreeItems ? undefined : 'polite'}
                 onDragOver={handleRootDragOver}
                 onDragLeave={handleRootDragLeave}
                 onDrop={handleRootDrop}
@@ -2438,11 +2741,33 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   <div className="p-6 text-sm ui-text-faint">
                     <div className="font-semibold text-[var(--ui-danger)] mb-2">{t('Library storage error')}</div>
                     <div>{libraryError ?? t('The library could not be read or saved.')}</div>
+                    <button
+                      type="button"
+                      className="panel-action-button mt-3"
+                      onClick={() => setSaveRetry(retry => retry + 1)}
+                    >
+                      {t('Retry saving library')}
+                    </button>
                   </div>
                 ) : items.length === 0 ? (
                   <div className="p-6 text-sm ui-text-faint">
                     <div className="font-semibold text-[var(--ui-text-muted)] mb-2">{t('Library is empty')}</div>
-                    <div>{t('Save the current game, or use the import button for SGF, ZIP, and board image files. On a desktop you can drop them here too.')}</div>
+                    <div>{t('Save the current game, or import SGF, ZIP, and board image files. On a desktop you can drop them here too.')}</div>
+                    {/* The header's import button collapses out of sight below
+                        430px of panel, so telling an empty library to "use the
+                        import button" named a control a phone does not show.
+                        The one state with nothing to act on is the one that
+                        most needs something to press -- the storage-error
+                        state above already works this way. */}
+                    <button
+                      type="button"
+                      className="panel-action-button mt-3"
+                      onClick={() => fileInputRef.current?.click()}
+                      title={t('Import SGF, ZIP, or board image files')}
+                      data-library-empty-import="true"
+                    >
+                      {t('Import files')}
+                    </button>
                   </div>
                 ) : (
                   <div>
@@ -2466,6 +2791,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         </div>
       </div>
       {renderContextMenu()}
+      </MobilePanelRegion>
     </>
   );
 };

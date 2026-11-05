@@ -17,6 +17,7 @@ import type { AnalysisExperience } from '../types';
 import { EngineStatusBadge } from './layout/ui';
 import { useGameStore } from '../store/gameStore';
 import { TenukiRow } from './TenukiRow';
+import { AnalysisModelNotice } from './AnalysisModelNotice';
 import { evalColorToCss, getKaTrainEvalColors } from '../utils/katrainTheme';
 import { DEFAULT_EVAL_THRESHOLDS } from '../utils/nodeAnalysis';
 import {
@@ -27,7 +28,7 @@ import {
 } from '../utils/visitPresets';
 import { NO_VALUE, formatAnalysisScoreLead, summarizePointsLost, POINTS_LOST_EXPLANATION } from '../utils/analysisSummary';
 import { getCurrentNodeBestMoveSummary } from '../utils/bestMoveSummary';
-import { isDrillHidingAnswer } from '../utils/mistakeDrill';
+import { isAnswerHidden } from '../utils/mistakeDrill';
 import { getNextMoveQuality, getPlayedMoveQuality } from '../utils/playedMoveQuality';
 import { setTimedNotification } from '../utils/timedNotification';
 import { copyTextToClipboard } from '../utils/clipboard';
@@ -68,6 +69,7 @@ interface AnalysisPanelProps {
   analysisCacheSize: number;
   onOpenGameAnalysis: () => void;
   onOpenGameReport: () => void;
+  onChooseModel?: () => void;
   currentMoveNumber: number;
   winRate: number | null;
   scoreLead: number | null;
@@ -95,6 +97,7 @@ const ANALYSIS_OVERLAY_NAMES: Record<AnalysisOverlayControl, string> = {
   analysisShowHints: 'top move hints',
   analysisShowPolicy: 'move heatmap',
   analysisShowOwnership: 'territory ownership',
+  analysisShowSwing: 'territory swing',
 };
 
 function pointsSummaryClass(tone: ReturnType<typeof summarizePointsLost>['tone']): string {
@@ -193,7 +196,7 @@ export const AnalysisStatsActions: React.FC<AnalysisStatsActionsProps> = ({
         className="panel-action-button"
         onClick={onOpenGameAnalysis}
         title={t('Open analysis options')}
-        aria-label={t('Open analysis options')}
+        aria-label={t('Analyze, open analysis options')}
       >
         <FaRedoAlt size={11} aria-hidden="true" />
         <span>{t('Analyze')}</span>
@@ -259,6 +262,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   analysisCacheSize,
   onOpenGameAnalysis,
   onOpenGameReport,
+  onChooseModel,
   currentMoveNumber,
   winRate,
   scoreLead,
@@ -333,7 +337,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   React.useEffect(() => {
     setEngineErrorCopied(false);
   }, [engineError]);
-  const drillHidesAnswer = useGameStore((state) => isDrillHidingAnswer(state.mistakeDrill, state.currentNode.id));
+  const drillHidesAnswer = useGameStore((state) => isAnswerHidden(state, state.currentNode.id));
   const bestMoveSummary = React.useMemo(() => {
     // Node analysis mutates in place; treeVersion bumps whenever it changes.
     void treeVersion;
@@ -613,7 +617,16 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         ) : (
           // Activity, not engine state — only rendered when something is
           // happening, so the row never reads "Ready" twice.
-          statusText && <span className="ml-auto">{statusText}</span>
+          // One muted line: at body size a long toast message ("Loaded
+          // "<title>"") wrapped to three lines of large type beside the badge.
+          statusText && (
+            <span
+              className="ml-auto min-w-0 truncate text-xs ui-text-faint"
+              title={statusText}
+            >
+              {statusText}
+            </span>
+          )
         )}
       </div>
       {isGameAnalysisRunning && gameAnalysisTotal > 0 && (
@@ -630,6 +643,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         </div>
       )}
       <div className="panel-section-content border-b border-[var(--ui-border)]">
+        <AnalysisModelNotice modelUrl={modelUrl} modelName={engineModelLabel} onChooseModel={onChooseModel} />
         {isPro && (!compact || engineDetailsOpen) && (
           <div id="analysis-engine-details" data-analysis-engine-details="true">
             {/* State and backend are the badge above (its label is exactly
@@ -739,7 +753,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               className="panel-icon-button"
               onClick={onOpenGameAnalysis}
               title={t('Re-analyze…')}
-              aria-label={t('Open analysis options')}
+              aria-label={t('Re-analyze, open analysis options')}
             >
               <FaRedoAlt size={12} />
             </button>
