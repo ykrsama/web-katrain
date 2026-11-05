@@ -1,4 +1,5 @@
 export default {
+  "Remote engine ready": "远程引擎就绪",
   "Hide what this move changed": "隐藏这一手带来的变化",
   "Show what this move changed, in place of the territory wash": "显示这一手带来的变化，替代领地底色",
   "Swing": "局面变化",

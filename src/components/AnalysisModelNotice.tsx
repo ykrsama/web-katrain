@@ -1,12 +1,13 @@
 import { t } from '../i18n';
 import { isSmallKataGoModel } from '../engine/katago/modelDefaults';
 
-export function AnalysisModelNotice({ modelUrl, modelName, onChooseModel }: {
+export function AnalysisModelNotice({ modelUrl, modelName, engineMode, onChooseModel }: {
   modelUrl: string;
   modelName?: string | null;
+  engineMode?: 'local' | 'remote';
   onChooseModel?: () => void;
 }) {
-  if (!isSmallKataGoModel(modelUrl, modelName)) return null;
+  if (engineMode === 'remote' || !isSmallKataGoModel(modelUrl, modelName)) return null;
   return (
     <div className="rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs leading-relaxed text-[var(--ui-text-muted)]" data-analysis-model-notice="true">
       <p className="font-semibold text-[var(--ui-text)]">{t('Lightweight test model selected')}</p>

@@ -1198,9 +1198,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                                 >
                                                     {RULES_OPTIONS.map((option) => (
                                                         <option key={option.id} value={option.id}>
-                                                            {option.id === 'chinese'
-                                                                ? t('{label} (Default)', { label: t(option.label) })
-                                                                : t(option.label)}
+                                                            {t(option.label)}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -2405,7 +2403,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                     <h3 className={sectionTitleClass}>{t('KataGo')}</h3>
 
                                     <div className="mt-3">
-                                        <AnalysisModelNotice modelUrl={settings.katagoModelUrl} modelName={engineModelName} />
+                                        <AnalysisModelNotice modelUrl={settings.katagoModelUrl} modelName={engineModelName} engineMode={settings.engineMode} />
                                     </div>
 
                                     <div className="mt-4 space-y-2">

@@ -1161,7 +1161,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               <div className="section-body flush">
                 {showAnalysis && (
                   <div className="mx-3 my-2">
-                    <AnalysisModelNotice modelUrl={settings.katagoModelUrl} modelName={engineModelLabel} onChooseModel={chooseModel} />
+                    <AnalysisModelNotice modelUrl={settings.katagoModelUrl} modelName={engineModelLabel} engineMode={settings.engineMode} onChooseModel={chooseModel} />
                   </div>
                 )}
                 {/* Mounted whether or not a review runs, so the live region is
@@ -1517,7 +1517,7 @@ const EnginePopover: React.FC<{
     >
       <div className="pop-head"><div className="pop-eyebrow">{t('Engine')}</div><div className="pop-title">{t(isRemote ? 'KataGo · remote' : 'KataGo · in-browser')}</div></div>
       <div className="engine-detail">
-        <AnalysisModelNotice modelUrl={modelUrl} modelName={model} onChooseModel={onChooseModel} />
+        <AnalysisModelNotice modelUrl={modelUrl} modelName={model} engineMode={isRemote ? 'remote' : 'local'} onChooseModel={onChooseModel} />
         <dl className="ed-grid">
           <div><dt>{t('State')}</dt><dd style={{ color }}>{label}</dd></div>
           <div><dt>{t('Backend')}</dt><dd>{isRemote ? t('Remote') : formatEngineBackendLabel(backend)}</dd></div>

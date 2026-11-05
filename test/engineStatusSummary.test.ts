@@ -37,6 +37,14 @@ describe('getEngineActivityPresentation', () => {
       label: 'Loading model',
     });
   });
+
+  it('names the remote engine without consulting the saved browser model', () => {
+    const remote = { ...ready, engineMode: 'remote' as const, modelUrl: '/models/katago-small.bin.gz' };
+    expect(getEngineActivityPresentation(remote).label).toBe('Remote engine ready');
+    expect(getEngineActivityPresentation({ ...remote, isAnalysisMode: true }).label).toBe('Remote engine ready');
+    expect(getEngineActivityPresentation({ ...remote, isAiThinking: true }).label).toBe('AI thinking…');
+    expect(getEngineActivityPresentation({ ...remote, error: 'Disconnected' }).state).toBe('error');
+  });
 });
 
 describe('engine status summary', () => {
@@ -188,6 +196,7 @@ describe('engine status summary', () => {
     expect(summary.reasonLabel).toBe('Remote engine at ws://engine.example/katago.');
     expect(summary.title).toContain('Backend: Remote');
     expect(summary.title).toContain('Source: Remote');
+    expect(summary.title).not.toContain('Lightweight test model');
     expect(summary.dotClass).toBe('bg-green-400');
   });
 

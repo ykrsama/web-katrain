@@ -643,7 +643,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         </div>
       )}
       <div className="panel-section-content border-b border-[var(--ui-border)]">
-        <AnalysisModelNotice modelUrl={modelUrl} modelName={engineModelLabel} onChooseModel={onChooseModel} />
+        <AnalysisModelNotice modelUrl={modelUrl} modelName={engineModelLabel} engineMode={engineMode} onChooseModel={onChooseModel} />
         {isPro && (!compact || engineDetailsOpen) && (
           <div id="analysis-engine-details" data-analysis-engine-details="true">
             {/* State and backend are the badge above (its label is exactly

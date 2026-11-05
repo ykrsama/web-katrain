@@ -13,6 +13,7 @@ export interface EngineActivityPresentationArgs {
   isAnalysisMode: boolean;
   modelUrl?: string | null;
   modelName?: string | null;
+  engineMode?: 'local' | 'remote';
 }
 
 export interface EngineActivityPresentation {
@@ -29,6 +30,7 @@ export function getEngineActivityPresentation(
   if (args.isGameAnalysisRunning || args.isContinuousAnalysis) {
     return { state: 'running', label: t('Analyzing…') };
   }
+  if (args.engineMode === 'remote') return { state: 'ready', label: t('Remote engine ready') };
   if (args.isAnalysisMode) return { state: 'ready', label: t('Analysis mode') };
   return { state: 'ready', label: t(isSmallKataGoModel(args.modelUrl, args.modelName) ? 'Test model ready' : 'KataGo ready') };
 }
@@ -221,7 +223,7 @@ export function getEngineStatusSummary(args: EngineStatusSummaryArgs): EngineSta
     t('Backend: {backend}', { backend: activeBackendLabel }),
     isFallback ? t('Requested: {backend}', { backend: requestedBackendLabel }) : '',
     args.modelLabel ? t('Model: {model}', { model: args.modelLabel }) : '',
-    isSmallKataGoModel(args.modelUrl, args.modelLabel) ? t('Lightweight test model. Choose stronger weights in Settings → AI for serious review.') : '',
+    !isRemote && isSmallKataGoModel(args.modelUrl, args.modelLabel) ? t('Lightweight test model. Choose stronger weights in Settings → AI for serious review.') : '',
     t('Source: {source}', { source: modelSource }),
     reasonLabel ? t('Reason: {reason}', { reason: reasonLabel }) : '',
     args.error ? t('Error: {error}', { error: args.error }) : '',

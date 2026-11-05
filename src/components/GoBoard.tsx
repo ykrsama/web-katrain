@@ -2638,8 +2638,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const dotRadius = stoneRadius * (EVAL_DOT_MIN_SIZE + evalRadius * (EVAL_DOT_MAX_SIZE - EVAL_DOT_MIN_SIZE));
         const size = Math.max(2, 2 * dotRadius);
         const d = toDisplay(move.x, move.y);
-        const cx = originX + d.x * cellSize;
-        const cy = originY + d.y * cellSize;
+        const fuzzy = fuzzyOffsets[move.y]![move.x]!;
+        const cx = originX + (d.x + fuzzy.dxFactor) * cellSize;
+        const cy = originY + (d.y + fuzzy.dyFactor) * cellSize;
 
         ctx.beginPath();
         ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
@@ -2684,6 +2685,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     showEvalDotsForPlayer,
     toDisplay,
     dotTextureVersion,
+    fuzzyOffsets,
     treeVersion,
   ]);
 

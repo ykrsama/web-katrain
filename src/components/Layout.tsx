@@ -1790,6 +1790,7 @@ export const Layout: React.FC = () => {
     isAnalysisMode,
     modelUrl: settings.katagoModelUrl,
     modelName: engineModelName,
+    engineMode: settings.engineMode,
   });
 
   const statusText = engineError
