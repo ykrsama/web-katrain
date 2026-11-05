@@ -42,7 +42,7 @@ import {
   WHEEL_NAVIGATION_THROTTLE_MS,
 } from '../utils/wheelNavigation';
 import { getActiveChild, findCurrentLineNodeByPlayedMoves } from '../utils/branchNavigation';
-import { fuzzyStoneOffset } from '../utils/fuzzyPlacement';
+import { buildFuzzyStoneOffsets } from '../utils/fuzzyPlacement';
 import { formatBoardMoveLabel } from '../utils/playedMoveQuality';
 import { setTimedNotification, type TimedNotificationType } from '../utils/timedNotification';
 import { getTapConfirmAction, TAP_CONFIRM_TIMEOUT_MS, type TapConfirmPoint } from '../utils/tapConfirm';
@@ -619,6 +619,19 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
   const evalThresholds: readonly number[] = settings.trainerEvalThresholds?.length ? settings.trainerEvalThresholds : KATRAN_EVAL_THRESHOLDS;
   const boardTheme = useMemo(() => getBoardTheme(settings.boardTheme), [settings.boardTheme]);
+  const { fuzzyOffsets, fuzzyStoneScale } = useMemo(() => {
+    // Sabaki's SVG includes a transparent margin (42px body in a 67px viewBox).
+    const bodyRatio = boardTheme.id === 'sabaki' ? 42 / 67 : 1;
+    const diameter = 2 * STONE_SIZE * bodyRatio * Math.max(
+      parsePercent(boardTheme.stones.black.size, 1),
+      parsePercent(boardTheme.stones.white.size, 1)
+    );
+    return {
+      fuzzyOffsets: buildFuzzyStoneOffsets(boardSize, settings.fuzzyStonePlacement, boardRotation ?? 0),
+      // Shudan's .92-cell stone body leaves room for a one-sided .07 shift.
+      fuzzyStoneScale: settings.fuzzyStonePlacement ? Math.min(1, 0.92 / diameter) : 1,
+    };
+  }, [boardRotation, boardSize, boardTheme, settings.fuzzyStonePlacement]);
   const evalColors = useMemo(() => getKaTrainEvalColors(settings.trainerTheme), [settings.trainerTheme]);
   const showEvalDotsForPlayer = useMemo(() => {
     if (settings.trainerEvalShowAi) return { black: true, white: true };
@@ -1020,7 +1033,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     // a parseFloat -- 361 times a redraw, which profiled as the largest single
     // cost of navigating a move.
     const stoneStyleFor = (config: typeof boardTheme.stones.black) => {
-      const diameter = stoneDiameter * parsePercent(config.size, 1);
+      const diameter = stoneDiameter * parsePercent(config.size, 1) * fuzzyStoneScale;
       return {
         diameter,
         radius: diameter / 2,
@@ -1090,9 +1103,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const shadow = cell === 'black' ? blackShadow : whiteShadow;
         if (!shadow) continue;
         const d = toDisplay(x, y);
-        const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
-        const cx = originX + d.x * cellSize + fuzzy.dxFactor * stoneDiameter + style.offsetX;
-        const cy = originY + d.y * cellSize + fuzzy.dyFactor * stoneDiameter + style.offsetY;
+        const fuzzy = fuzzyOffsets[y]![x]!;
+        const cx = originX + d.x * cellSize + fuzzy.dxFactor * cellSize + style.offsetX;
+        const cy = originY + d.y * cellSize + fuzzy.dyFactor * cellSize + style.offsetY;
         ctx.save();
         ctx.globalAlpha = scoringMode && deadStones?.has(`${x},${y}`) ? 0.45 : 1;
         ctx.drawImage(shadow.sprite, cx - style.radius - shadow.padding, cy - style.radius - shadow.padding, shadow.size, shadow.size);
@@ -1109,9 +1122,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const cy = originY + d.y * cellSize;
         const style = cell === 'black' ? blackStyle : whiteStyle;
         const radius = style.radius;
-        const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
-        const stoneCx = cx + fuzzy.dxFactor * stoneDiameter;
-        const stoneCy = cy + fuzzy.dyFactor * stoneDiameter;
+        const fuzzy = fuzzyOffsets[y]![x]!;
+        const stoneCx = cx + fuzzy.dxFactor * cellSize;
+        const stoneCy = cy + fuzzy.dyFactor * cellSize;
         const left = stoneCx - radius + style.offsetX;
         const top = stoneCy - radius + style.offsetY;
 
@@ -1204,6 +1217,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     board,
     boardSize,
     boardTheme,
+    fuzzyStoneScale,
     cellSize,
     deadStones,
     moveNumbers,
@@ -1212,7 +1226,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     scoringMode,
     showOwnership,
     settings.analysisShowOwnership,
-    settings.fuzzyStonePlacement,
+    fuzzyOffsets,
     setupOverlayCanvas,
     stoneTextureVersion,
     territory,
@@ -1497,7 +1511,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const d = toDisplay(x, y);
       const stoneConfig = player === 'black' ? boardTheme.stones.black : boardTheme.stones.white;
       const scale = parsePercent(stoneConfig.size, 1);
-      const diameter = stoneDiameter * scale;
+      const diameter = stoneDiameter * scale * fuzzyStoneScale;
       const radius = diameter / 2;
       const offsetX = parseEm(stoneConfig.imageOffsetX, stoneDiameter);
       const offsetY = parseEm(stoneConfig.imageOffsetY, stoneDiameter);
@@ -1632,6 +1646,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     toDisplay,
     boardTheme,
     currentNode,
+    fuzzyStoneScale,
     activeBranchChildIds,
     settings.showNextMovePreview,
     scoringMode,
@@ -1649,6 +1664,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     if (!ctx) return;
 
     const d = toDisplay(lastMove.x, lastMove.y);
+    const fuzzy = fuzzyOffsets[lastMove.y]![lastMove.x]!;
+    const cx = originX + d.x * cellSize + fuzzy.dxFactor * cellSize;
+    const cy = originY + d.y * cellSize + fuzzy.dyFactor * cellSize;
     const stoneDiameter = 2 * (cellSize * STONE_SIZE);
     const innerImg = stoneImagesRef.current.inner;
     // While numbers are on, the ring gives way to the gold number on this
@@ -1659,8 +1677,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
     if (!numberShown) {
       const innerDiameter = stoneDiameter * 0.8;
-      const left = originX + d.x * cellSize - innerDiameter / 2;
-      const top = originY + d.y * cellSize - innerDiameter / 2;
+      const left = cx - innerDiameter / 2;
+      const top = cy - innerDiameter / 2;
       const color = cell === 'black' ? rgba(STONE_COLORS.white) : rgba(STONE_COLORS.black);
       if (innerImg && innerImg.complete && innerImg.naturalWidth > 0) {
         ctx.drawImage(innerImg, left, top, innerDiameter, innerDiameter);
@@ -1684,12 +1702,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     if (bestCandidate && bestCandidate.x === lastMove.x && bestCandidate.y === lastMove.y) {
       const haloRadius = stoneDiameter / 2 + Math.max(1, cellSize * 0.02);
       ctx.beginPath();
-      ctx.arc(originX + d.x * cellSize, originY + d.y * cellSize, haloRadius, 0, Math.PI * 2);
+      ctx.arc(cx, cy, haloRadius, 0, Math.PI * 2);
       ctx.strokeStyle = rgba(TOP_MOVE_BORDER_COLOR);
       ctx.lineWidth = Math.max(1.5, cellSize * 0.05);
       ctx.stroke();
     }
-  }, [board, cellSize, currentNode, lastMove, originX, originY, setupOverlayCanvas, settings.showMoveNumbers, stoneTextureVersion, toDisplay, releaseOverlayCanvas]);
+  }, [board, cellSize, currentNode, fuzzyOffsets, lastMove, originX, originY, setupOverlayCanvas, settings.showMoveNumbers, stoneTextureVersion, toDisplay, releaseOverlayCanvas]);
 
   useEffect(() => {
     const canvas = ringsCanvasRef.current;
@@ -2583,7 +2601,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         // Same place and same opacity as the stone this number sits on: fuzzy
         // placement moves stones off the intersection, and ownership/scoring
         // fade them, so drawing at the bare intersection would drift.
-        const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
+        const fuzzy = fuzzyOffsets[y]![x]!;
         const ownershipVal = readsOwnershipHere && territory ? (territory[y]?.[x] ?? 0) : null;
         ctx.fillStyle = isLastMove
           ? rgba(MOVE_NUMBER_LAST_COLOR)
@@ -2598,8 +2616,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           cell,
         });
         ctx.translate(
-          originX + d.x * cellSize + fuzzy.dxFactor * stoneDiameter,
-          originY + d.y * cellSize + fuzzy.dyFactor * stoneDiameter
+          originX + d.x * cellSize + fuzzy.dxFactor * cellSize,
+          originY + d.y * cellSize + fuzzy.dyFactor * cellSize
         );
         ctx.scale(squeezeFor(text.length), 1);
         ctx.fillText(text, 0, 0);
@@ -2619,7 +2637,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     releaseOverlayCanvas,
     scoringMode,
     settings.analysisShowOwnership,
-    settings.fuzzyStonePlacement,
+    fuzzyOffsets,
     settings.showMoveNumbers,
     setupOverlayCanvas,
     territory,
@@ -3107,7 +3125,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     for (const m of pvMoves) {
       const stoneConfig = m.player === 'black' ? boardTheme.stones.black : boardTheme.stones.white;
       const scale = parsePercent(stoneConfig.size, 1);
-      const diameter = baseStoneDiameter * scale;
+      const diameter = baseStoneDiameter * scale * fuzzyStoneScale;
       const radius = diameter / 2;
       const left = originX + m.x * cellSize - radius - 1;
       const top = originY + m.y * cellSize - radius;
@@ -3134,6 +3152,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }
   }, [
     boardTheme,
+    fuzzyStoneScale,
     releaseOverlayCanvas,
     cellSize,
     pvOverlayEnabled,
