@@ -1027,6 +1027,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         offsetX: parseEm(config.imageOffsetX, stoneDiameter),
         offsetY: parseEm(config.imageOffsetY, stoneDiameter),
         shadowColor: config.shadowColor && config.shadowColor !== 'transparent' ? config.shadowColor : null,
+        shadowShape: config.shadowShape,
         shadowOffsetX: parseEm(config.shadowOffsetX, stoneDiameter),
         shadowOffsetY: parseEm(config.shadowOffsetY, stoneDiameter),
         shadowBlur: parseEm(config.shadowBlur, stoneDiameter),
@@ -1050,6 +1051,32 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       1,
     ]);
     const readsOwnership = scoringMode || showOwnership;
+
+    // Ground shadows are separate circles below ALL stones. Drawing them in
+    // this pass keeps a neighbouring stone's shadow off the PNG above it.
+    for (let y = 0; y < boardSize; y++) {
+      for (let x = 0; x < boardSize; x++) {
+        const cell = board[y]?.[x];
+        if (!cell) continue;
+        const style = cell === 'black' ? blackStyle : whiteStyle;
+        if (style.shadowShape !== 'circle' || !style.shadowColor) continue;
+        const d = toDisplay(x, y);
+        const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
+        const cx = originX + d.x * cellSize + fuzzy.dxFactor * stoneDiameter + style.offsetX + style.shadowOffsetX;
+        const cy = originY + d.y * cellSize + fuzzy.dyFactor * stoneDiameter + style.offsetY + style.shadowOffsetY;
+        const outerRadius = style.radius + style.shadowBlur;
+        const gradient = ctx.createRadialGradient(cx, cy, style.radius * 0.72, cx, cy, outerRadius);
+        gradient.addColorStop(0, style.shadowColor);
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.save();
+        ctx.globalAlpha = scoringMode && deadStones?.has(`${x},${y}`) ? 0.45 : 1;
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(cx, cy, outerRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
 
     for (let y = 0; y < boardSize; y++) {
       for (let x = 0; x < boardSize; x++) {
@@ -1091,7 +1118,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           : 0;
         const img = imageList[variantIndex];
         ctx.save();
-        if (style.shadowColor) {
+        if (style.shadowColor && style.shadowShape !== 'circle') {
           ctx.shadowColor = style.shadowColor;
           ctx.shadowOffsetX = style.shadowOffsetX;
           ctx.shadowOffsetY = style.shadowOffsetY;

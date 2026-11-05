@@ -7,6 +7,7 @@ export type ThemeStoneConfig = {
   backgroundColor: string;
   foregroundColor: string;
   shadowColor?: string;
+  shadowShape?: 'circle';
   shadowOffsetX?: string;
   shadowOffsetY?: string;
   shadowBlur?: string;
@@ -141,7 +142,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
     name: 'Shell & Slate',
     description: 'Traditional clamshell and slate stones',
     board: {
-      backgroundColor: '#e8c873',
+      backgroundColor: '#d9a55b',
       borderColor: '#d4b45c',
       foregroundColor: '#222222',
       borderWidth: 0,
@@ -152,19 +153,21 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         image: 'stone-black.png',
         backgroundColor: '#0e0e0e',
         foregroundColor: '#eeeeee',
-        shadowColor: 'rgba(0, 0, 0, 0.17)',
+        shadowShape: 'circle',
+        shadowColor: 'rgba(0, 0, 0, 0.35)',
         shadowOffsetX: '0.07em',
-        shadowOffsetY: '0.07em',
-        shadowBlur: '0.02em',
+        shadowOffsetY: '0.1em',
+        shadowBlur: '0.12em',
       },
       white: {
         image: 'stone-white.png',
         backgroundColor: '#ebebeb',
         foregroundColor: '#eeeeee',
-        shadowColor: 'rgba(0, 0, 0, 0.17)',
+        shadowShape: 'circle',
+        shadowColor: 'rgba(0, 0, 0, 0.35)',
         shadowOffsetX: '0.07em',
-        shadowOffsetY: '0.07em',
-        shadowBlur: '0.02em',
+        shadowOffsetY: '0.1em',
+        shadowBlur: '0.12em',
       },
     },
     // Opaque: 0.7 alpha left Yunzi at 4.13:1 and Shell & Slate with no margin.
