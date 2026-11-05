@@ -2008,7 +2008,29 @@ const gameAnalysisFailureUpdate = (
 
 const analysisCacheKey = (...parts: unknown[]): string => JSON.stringify(parts);
 
-export const useGameStore = create<GameStore>((set, get) => ({
+export const useGameStore = create<GameStore>((commit, get) => {
+  const set = (update: Partial<GameStore> | ((state: GameStore) => Partial<GameStore>)): void => {
+    const state = get();
+    const patch = typeof update === 'function' ? update(state) : update;
+    const node = patch.currentNode ?? state.currentNode;
+    const soundEnabled = (patch.settings ?? state.settings).soundEnabled;
+    if (!soundEnabled || (patch.rootNode && patch.rootNode !== state.rootNode)) {
+      skipNavigationSoundForNodeId = null;
+      stopNavigationSounds();
+    } else if (node.id !== state.currentNode.id) {
+      const skip = skipNavigationSoundForNodeId === node.id;
+      skipNavigationSoundForNodeId = null;
+      if (!skip && node.move && node.gameState.moveHistory.length > state.moveHistory.length) {
+        // Keep e85ded9's latency guarantee: schedule cached audio BEFORE the
+        // store write can trigger subscriptions, analysis or React rendering.
+        playNavigationSound(node.move.x < 0 || node.move.y < 0 ? 'pass' : 'stone');
+      } else {
+        stopNavigationSounds();
+      }
+    }
+    commit(patch);
+  };
+  return {
   // Flat properties (mirrored from currentNode.gameState for easy access)
   board: initialGameState.board,
   currentPlayer: initialGameState.currentPlayer,
@@ -7202,7 +7224,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => ({
       boardRotation: (((state.boardRotation ?? 0) + 1) % 4) as 0 | 1 | 2 | 3,
     })),
-}));
+  };
+});
 
 let notificationAutoDismissTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 // The store field is the single visible slot; this holds what is waiting behind
@@ -7237,25 +7260,6 @@ const scheduleNotificationDismiss = () => {
     scheduleNotificationDismiss();
   }, delay);
 };
-
-// All navigation paths (keys, tree clicks, graph jumps and move-number edits)
-// use the same sound lane. New moves already play their own gameplay sound.
-useGameStore.subscribe((state, previousState) => {
-  if (!state.settings.soundEnabled || state.rootNode !== previousState.rootNode) {
-    skipNavigationSoundForNodeId = null;
-    stopNavigationSounds();
-    return;
-  }
-  if (state.currentNode.id === previousState.currentNode.id) return;
-  const skip = skipNavigationSoundForNodeId === state.currentNode.id;
-  skipNavigationSoundForNodeId = null;
-  const move = state.currentNode.move;
-  if (!skip && move && state.moveHistory.length > previousState.moveHistory.length) {
-    playNavigationSound(move.x < 0 || move.y < 0 ? 'pass' : 'stone');
-  } else {
-    stopNavigationSounds();
-  }
-});
 
 useGameStore.subscribe((state, previousState) => {
   if (state.notification === previousState.notification) return;

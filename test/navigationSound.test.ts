@@ -19,6 +19,28 @@ beforeEach(() => {
 });
 
 describe('forward navigation sounds from the game store', () => {
+  it.each(['forward', 'tree click', 'move number', 'end'])(
+    'starts %s audio before committing the new position or notifying UI subscribers', (action) => {
+      const before = useGameStore.getState().currentNode;
+      let nodeWhenSoundStarted: string | undefined;
+      const order: string[] = [];
+      sounds.playNavigationSound.mockImplementationOnce(() => {
+        nodeWhenSoundStarted = useGameStore.getState().currentNode.id;
+        order.push('sound');
+      });
+      const unsubscribe = useGameStore.subscribe(() => order.push('UI update'));
+      try {
+        const game = useGameStore.getState();
+        if (action === 'forward') game.navigateForward();
+        else if (action === 'tree click') game.jumpToNode(before.children[0]);
+        else if (action === 'move number') game.navigateToMove(2);
+        else game.navigateEnd();
+      } finally { unsubscribe(); }
+      expect(nodeWhenSoundStarted).toBe(before.id);
+      expect(order[0]).toBe('sound');
+    },
+  );
+
   it('sounds keyboard/button forward navigation, but not backward navigation', () => {
     useGameStore.getState().navigateForward();
     expect(sounds.playNavigationSound).toHaveBeenCalledExactlyOnceWith('stone');
