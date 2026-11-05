@@ -19,6 +19,7 @@ import {
 import type { Player, GameNode, CandidateMove } from '../../types';
 import { useGameStore } from '../../store/gameStore';
 import { AnalysisPanel } from '../AnalysisPanel';
+import { ScoreWinrateGraph } from '../ScoreWinrateGraph';
 import { CandidateMoveList } from '../CandidateMoveList';
 import { AnalysisExperienceToggle } from '../AnalysisExperienceToggle';
 import { GameInfoPanel } from '../GameInfoPanel';
@@ -801,38 +802,45 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               wrapperClassName: 'flex flex-col min-h-0',
               contentClassName: 'panel-section-content p-0',
               children: (
-                <AnalysisPanel
-                  analysisControls={analysisControls}
-                  updateControls={updateControls}
-                  statusText={statusText}
-                  engineDot={engineDot}
-                  engineMeta={engineMeta}
-                  engineMetaTitle={engineMetaTitle}
-                  engineStatus={engineStatus}
-                  engineError={engineError}
-                  engineBackend={engineBackend}
-                  engineModelLabel={engineModelLabel}
-                  requestedBackend={requestedBackend}
-                  modelUrl={modelUrl}
-                  engineMode={engineMode}
-                  remoteEngineUrl={remoteEngineUrl}
-                  isGameAnalysisRunning={isGameAnalysisRunning}
-                  gameAnalysisType={gameAnalysisType}
-                  gameAnalysisDone={gameAnalysisDone}
-                  gameAnalysisTotal={gameAnalysisTotal}
-                  startQuickGameAnalysis={startQuickGameAnalysis}
-                  startFastGameAnalysis={startFastGameAnalysis}
-                  stopGameAnalysis={stopGameAnalysis}
-                  clearAnalysisCache={clearAnalysisCache}
-                  analysisCacheSize={analysisCacheSize}
-                  onOpenGameAnalysis={onOpenGameAnalysis}
-                  onOpenGameReport={onOpenGameReport}
-                  currentMoveNumber={currentMoveNumber}
-                  winRate={winRate}
-                  scoreLead={scoreLead}
-                  pointsLost={pointsLost}
-                  compact={isMobile}
-                />
+                <>
+                  {isMobile && (
+                    <div className="h-44 min-h-44 shrink-0 p-2" data-mobile-analysis-graph="true">
+                      <ScoreWinrateGraph showScore showWinrate />
+                    </div>
+                  )}
+                  <AnalysisPanel
+                    analysisControls={analysisControls}
+                    updateControls={updateControls}
+                    statusText={statusText}
+                    engineDot={engineDot}
+                    engineMeta={engineMeta}
+                    engineMetaTitle={engineMetaTitle}
+                    engineStatus={engineStatus}
+                    engineError={engineError}
+                    engineBackend={engineBackend}
+                    engineModelLabel={engineModelLabel}
+                    requestedBackend={requestedBackend}
+                    modelUrl={modelUrl}
+                    engineMode={engineMode}
+                    remoteEngineUrl={remoteEngineUrl}
+                    isGameAnalysisRunning={isGameAnalysisRunning}
+                    gameAnalysisType={gameAnalysisType}
+                    gameAnalysisDone={gameAnalysisDone}
+                    gameAnalysisTotal={gameAnalysisTotal}
+                    startQuickGameAnalysis={startQuickGameAnalysis}
+                    startFastGameAnalysis={startFastGameAnalysis}
+                    stopGameAnalysis={stopGameAnalysis}
+                    clearAnalysisCache={clearAnalysisCache}
+                    analysisCacheSize={analysisCacheSize}
+                    onOpenGameAnalysis={onOpenGameAnalysis}
+                    onOpenGameReport={onOpenGameReport}
+                    currentMoveNumber={currentMoveNumber}
+                    winRate={winRate}
+                    scoreLead={scoreLead}
+                    pointsLost={pointsLost}
+                    compact={isMobile}
+                  />
+                </>
               ),
             })}
 
