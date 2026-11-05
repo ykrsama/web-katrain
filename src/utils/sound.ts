@@ -14,7 +14,8 @@ const SOUND_FILES = [
 ];
 
 const lastSoundTimeByKey = new Map<SoundEffectKey, number>();
-const buffers = new Map<string, Promise<AudioBuffer>>();
+const buffers = new Map<string, AudioBuffer>();
+const pendingBuffers = new Map<string, Promise<AudioBuffer>>();
 let audioContext: AudioContext | null = null;
 let fallbackAudio: HTMLAudioElement | null = null;
 let nextStoneSoundIndex = 0;
@@ -36,6 +37,7 @@ const getAudioContext = (): AudioContext | null => {
         if (!Context) return null;
         audioContext = new Context();
         buffers.clear();
+        pendingBuffers.clear();
         return audioContext;
     } catch {
         return null;
@@ -48,20 +50,32 @@ const resumeContext = (context: AudioContext): Promise<void> => (
 
 const loadSound = (context: AudioContext, fileName: string): Promise<AudioBuffer> => {
     const cached = buffers.get(fileName);
-    if (cached) return cached;
+    if (cached) return Promise.resolve(cached);
+    const pending = pendingBuffers.get(fileName);
+    if (pending) return pending;
     const loading = fetch(publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`))
         .then((response) => {
             if (!response.ok) throw new Error(`Sound request failed: ${response.status}`);
             return response.arrayBuffer();
         })
         .then((data) => context.decodeAudioData(data))
-        .catch((error: unknown) => {
+        .then((buffer) => {
+            if (audioContext === context) buffers.set(fileName, buffer);
+            return buffer;
+        })
+        .finally(() => {
             // A transient download/decoder failure must not mute later moves.
-            if (buffers.get(fileName) === loading) buffers.delete(fileName);
-            throw error;
+            if (pendingBuffers.get(fileName) === loading) pendingBuffers.delete(fileName);
         });
-    buffers.set(fileName, loading);
+    pendingBuffers.set(fileName, loading);
     return loading;
+};
+
+const startSound = (context: AudioContext, buffer: AudioBuffer): void => {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start();
 };
 
 // Unlock one shared context during a user gesture. AI replies arrive later,
@@ -72,6 +86,7 @@ export const installSoundUnlockHandlers = (): (() => void) => {
     const unlock = () => {
         const context = getAudioContext();
         if (!context) return;
+        if (context.state === 'running' && buffers.size === SOUND_FILES.length) return;
         try {
             void resumeContext(context).catch(() => undefined);
             const source = context.createBufferSource();
@@ -119,16 +134,20 @@ const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
         return;
     }
     try {
+        const cached = buffers.get(fileName);
+        if (context.state === 'running' && cached) {
+            // Schedule before store subscribers and React do the work of
+            // displaying the move. A resolved Promise still defers this.
+            startSound(context, cached);
+            return;
+        }
         // Invoke resume synchronously while a human move still has activation.
         void Promise.all([resumeContext(context), loadSound(context, fileName)])
             .then(([, buffer]) => {
                 if (audioContext !== context || context.state !== 'running') return;
                 // Do not replay old moves in a burst after a slow load/unlock.
                 if (getSoundNow() - requestedAt > MAX_SOUND_DELAY_MS) return;
-                const source = context.createBufferSource();
-                source.buffer = buffer;
-                source.connect(context.destination);
-                source.start();
+                startSound(context, buffer);
             })
             .catch(() => {
                 if (audioContext === context && getSoundNow() - requestedAt <= MAX_SOUND_DELAY_MS) {
@@ -160,6 +179,7 @@ export const resetAudioContextForTests = (): void => {
     audioContext = null;
     fallbackAudio = null;
     buffers.clear();
+    pendingBuffers.clear();
     lastSoundTimeByKey.clear();
     nextStoneSoundIndex = 0;
     nextCaptureSoundIndex = 0;

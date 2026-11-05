@@ -140,6 +140,22 @@ describe('sound playback', () => {
 });
 
 describe('AI sound activation and recovery', () => {
+  it('starts warmed sounds synchronously before the move updates the game and UI', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.gesture();
+    await flushAudio();
+
+    for (let i = 0; i < 5; i++) {
+      audio.advance();
+      playStoneSound();
+      // No microtask flush: state subscribers/rendering can run immediately
+      // after playStoneSound returns and must not hold up sound scheduling.
+      expect(audio.audibleStarts()).toBe(i + 1);
+    }
+    expect(audio.fetchSound).toHaveBeenCalledTimes(12);
+  });
+
   it('preloads deployed MP3s in a gesture and plays later AI replies on the same context', async () => {
     vi.stubEnv('BASE_URL', '/web-katrain/');
     const audio = mockWebAudio();
