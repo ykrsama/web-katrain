@@ -46,6 +46,8 @@ jobs:
         run: npm run test:typecheck
 
       - name: Build
+        env:
+          VITE_KATAGO_WS_URL: ${{ secrets.VITE_KATAGO_WS_URL }}
         run: npm run build
 
       - name: Upload Pages artifact

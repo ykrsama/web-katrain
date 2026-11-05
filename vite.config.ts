@@ -64,8 +64,8 @@ function versionMetadataPlugin(): Plugin {
 }
 
 /**
- * Where a deployment runs its KataGo engine. Production ships no `.env`, so
- * this is what the `/katago-proxy` route points at there.
+ * Fallback upstream for Vite's development-only `/katago-proxy` route.
+ * Static deployments connect directly to VITE_KATAGO_WS_URL in the client.
  */
 const DEFAULT_KATAGO_WS_URL = 'ws://127.0.0.1:8000';
 

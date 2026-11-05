@@ -1,3 +1,5 @@
+import { publicUrl } from './publicUrl';
+
 type SoundEffectKey = 'stone' | 'capture' | 'pass' | 'new-game';
 
 const MIN_SOUND_INTERVAL_MS = 50;
@@ -89,7 +91,7 @@ const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
     }
 
     try {
-        const audio = new AudioCtor(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
+        const audio = new AudioCtor(publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`));
         audio.preload = 'auto';
         audio.currentTime = 0;
         const playResult = audio.play();

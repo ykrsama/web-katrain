@@ -98,6 +98,42 @@ The current live URL is:
 
 https://sir-teo.github.io/web-katrain/
 
+## Remote Engine on GitHub Pages
+
+GitHub Pages serves static files; it does not run the `/katago-proxy` configured
+in Vite's development server. Production builds instead read
+`VITE_KATAGO_WS_URL` as the default direct WebSocket endpoint. A bare server URL
+gets `/katago` appended; a URL with an explicit path is preserved.
+
+The Pages workflow passes the repository secret `VITE_KATAGO_WS_URL` to the
+build step. Set it to an endpoint such as `wss://engine.example.com/katago`,
+then push the changes or rerun the deployment workflow. Existing browsers
+that saved the old `/katago-proxy` default adopt the deployed endpoint;
+custom URLs remain unchanged. You can also enter the endpoint directly in
+Settings → Engine → Remote Engine URL.
+
+Pages uses HTTPS, so its WebSocket endpoint must use `wss://` with a valid TLS
+certificate. Changing `ws://` to `wss://` is insufficient if the server only
+speaks plain WebSocket. Put a TLS reverse proxy or an HTTPS tunnel that supports
+WebSocket upgrades in front of that server. For example, inside an existing
+Nginx HTTPS server block with a valid certificate:
+
+```nginx
+location /katago {
+    proxy_pass http://YOUR_ENGINE_HOST:YOUR_ENGINE_PORT/katago;
+    proxy_http_version 1.1;
+    proxy_set_header Host $proxy_host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 600s;
+}
+```
+
+Use the proxy's `wss://` address in the secret. If the backend restricts
+WebSocket origins, allow your Pages origin (`https://USERNAME.github.io`).
+The endpoint is embedded in the browser bundle even when supplied through an
+Actions secret; it is public configuration, so do not include private credentials.
+
 ## Headers
 
 For best WASM performance, serve these headers:

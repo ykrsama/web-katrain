@@ -20,6 +20,7 @@ function restoreWindow() {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   resetAudioContextForTests();
   restoreWindow();
@@ -35,7 +36,8 @@ describe('sound helpers', () => {
     expect(() => playNewGameSound()).not.toThrow();
   });
 
-  it('plays the sabaki mp3 files', () => {
+  it('plays the sabaki mp3 files under the GitHub Pages base path', () => {
+    vi.stubEnv('BASE_URL', '/web-katrain/');
     const play = vi.fn(() => Promise.resolve());
     const audioInstances: Array<{ src: string; preload?: string; currentTime: number; play: typeof play }> = [];
 
@@ -61,10 +63,10 @@ describe('sound helpers', () => {
     playNewGameSound();
 
     expect(audioInstances.map((audio) => audio.src)).toEqual([
-      '/themes/sabaki/0.mp3',
-      '/themes/sabaki/capture0.mp3',
-      '/themes/sabaki/pass.mp3',
-      '/themes/sabaki/newgame.mp3',
+      '/web-katrain/themes/sabaki/0.mp3',
+      '/web-katrain/themes/sabaki/capture0.mp3',
+      '/web-katrain/themes/sabaki/pass.mp3',
+      '/web-katrain/themes/sabaki/newgame.mp3',
     ]);
     expect(audioInstances.every((audio) => audio.preload === 'auto')).toBe(true);
     expect(audioInstances.every((audio) => audio.currentTime === 0)).toBe(true);

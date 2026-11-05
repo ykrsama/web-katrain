@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  /** Remote engine base URL or full WebSocket endpoint; HTTPS deployments need wss://. */
+  readonly VITE_KATAGO_WS_URL?: string;
   /** Build-time override for `ENGINE_MAX_VISITS`; see `src/engine/katago/limits.ts`. */
   readonly VITE_KATAGO_MAX_VISITS?: string;
   /** Build-time override for `ENGINE_MAX_TIME_MS`; see `src/engine/katago/limits.ts`. */

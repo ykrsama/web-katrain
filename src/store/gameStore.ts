@@ -6,6 +6,7 @@ import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } fro
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
 import { isKataGoCanceledError } from '../engine/katago/client';
 import { engineCanExtendSearch, getEngineClient, isRemoteEngine } from '../engine/client';
+import { getDefaultRemoteEngineUrl, REMOTE_ENGINE_PROXY_PATH } from '../engine/remote/defaults';
 import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
@@ -423,6 +424,11 @@ const loadStoredSettings = (): Partial<GameSettings> | null => {
     const isV1Settings = legacyEntry?.key === 'web-katrain:settings:v1';
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
+    // Older builds persisted the dev-only proxy on static hosts as well.
+    // Adopt the deployed endpoint while retaining custom server URLs.
+    if (parsed.remoteEngineUrl === REMOTE_ENGINE_PROXY_PATH) {
+      parsed.remoteEngineUrl = getDefaultRemoteEngineUrl();
+    }
     // An uploaded human net lives in a blob: URL that dies with the page, so a
     // stored one would only produce a failing fetch on the next load.
     if ('humanSlModelUrl' in parsed) {
@@ -1199,7 +1205,7 @@ const defaultSettings: GameSettings = {
   analysisPolicyMetric: 'policy',
   analysisShowOwnership: true,
   engineMode: 'remote' as const,
-  remoteEngineUrl: '/katago-proxy',
+  remoteEngineUrl: getDefaultRemoteEngineUrl(),
   katagoModelUrl: publicUrl(KATAGO_SMALL_MODEL_PATH),
   katagoBackend: 'webgpu',
   katagoVisits: DEFAULT_KATAGO_VISITS,
