@@ -4,6 +4,7 @@ import { publicUrl } from './publicUrl';
 export type ThemeStoneConfig = {
   image?: string;
   imageVariations?: string[];
+  imageFilter?: string;
   backgroundColor: string;
   foregroundColor: string;
   shadowColor?: string;
@@ -154,20 +155,24 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         backgroundColor: '#0e0e0e',
         foregroundColor: '#eeeeee',
         shadowShape: 'circle',
-        shadowColor: 'rgba(0, 0, 0, 0.35)',
-        shadowOffsetX: '0.07em',
+        imageFilter: 'brightness(1.1)',
+        shadowColor: 'rgba(23, 10, 2, 0.4)',
+        shadowOffsetX: '0em',
         shadowOffsetY: '0.1em',
-        shadowBlur: '0.12em',
+        shadowBlur: '0.2em',
+        size: '94%',
       },
       white: {
         image: 'stone-white.png',
         backgroundColor: '#ebebeb',
         foregroundColor: '#eeeeee',
         shadowShape: 'circle',
-        shadowColor: 'rgba(0, 0, 0, 0.35)',
-        shadowOffsetX: '0.07em',
+        imageFilter: 'brightness(1.1)',
+        shadowColor: 'rgba(23, 10, 2, 0.4)',
+        shadowOffsetX: '0em',
         shadowOffsetY: '0.1em',
-        shadowBlur: '0.12em',
+        shadowBlur: '0.2em',
+        size: '94%',
       },
     },
     // Opaque: 0.7 alpha left Yunzi at 4.13:1 and Shell & Slate with no margin.

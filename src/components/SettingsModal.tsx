@@ -756,6 +756,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                                                             backgroundPosition: 'center',
                                                             backgroundRepeat: 'no-repeat',
                                                             backgroundSize: 'cover',
+                                                            filter: stone.imageFilter,
                                                             border: stone.borderWidth && stone.borderColor ? `${stone.borderWidth} solid ${stone.borderColor}` : undefined,
                                                             boxShadow: stone.shadowColor && stone.shadowColor !== 'transparent'
                                                                 ? `${stone.shadowOffsetX ?? '0'} ${stone.shadowOffsetY ?? '0'} ${stone.shadowBlur ?? '0'} ${stone.shadowColor}`

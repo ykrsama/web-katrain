@@ -1034,6 +1034,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         borderWidth: parseEm(config.borderWidth, stoneDiameter),
         borderColor: config.borderColor,
         fillStyle: config.backgroundColor ?? null,
+        imageFilter: config.imageFilter ?? 'none',
       };
     };
     const blackStyle = stoneStyleFor(boardTheme.stones.black);
@@ -1052,6 +1053,33 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     ]);
     const readsOwnership = scoringMode || showOwnership;
 
+    const circularShadowFor = (style: typeof blackStyle) => {
+      if (style.shadowShape !== 'circle' || !style.shadowColor) return null;
+      const dpr = window.devicePixelRatio || 1;
+      const padding = Math.ceil(style.shadowBlur * 2 + Math.max(Math.abs(style.shadowOffsetX), Math.abs(style.shadowOffsetY)));
+      const size = style.diameter + padding * 2;
+      const sprite = document.createElement('canvas');
+      sprite.width = sprite.height = Math.ceil(size * dpr);
+      const shadowCtx = sprite.getContext('2d');
+      if (!shadowCtx) return null;
+      const radius = style.radius * dpr;
+      const center = (padding + style.radius) * dpr;
+      // Cast a real blurred circular shadow into the sprite, with the source
+      // circle outside its bounds so only the shadow reaches the board.
+      const sourceX = -radius * 2 - 1;
+      shadowCtx.shadowColor = style.shadowColor;
+      shadowCtx.shadowBlur = style.shadowBlur * dpr;
+      shadowCtx.shadowOffsetX = center - sourceX + style.shadowOffsetX * dpr;
+      shadowCtx.shadowOffsetY = style.shadowOffsetY * dpr;
+      shadowCtx.fillStyle = '#000';
+      shadowCtx.beginPath();
+      shadowCtx.arc(sourceX, center, radius, 0, Math.PI * 2);
+      shadowCtx.fill();
+      return { sprite, padding, size };
+    };
+    const blackShadow = circularShadowFor(blackStyle);
+    const whiteShadow = circularShadowFor(whiteStyle);
+
     // Ground shadows are separate circles below ALL stones. Drawing them in
     // this pass keeps a neighbouring stone's shadow off the PNG above it.
     for (let y = 0; y < boardSize; y++) {
@@ -1059,21 +1087,15 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const cell = board[y]?.[x];
         if (!cell) continue;
         const style = cell === 'black' ? blackStyle : whiteStyle;
-        if (style.shadowShape !== 'circle' || !style.shadowColor) continue;
+        const shadow = cell === 'black' ? blackShadow : whiteShadow;
+        if (!shadow) continue;
         const d = toDisplay(x, y);
         const fuzzy = fuzzyStoneOffset(boardSize, x, y, settings.fuzzyStonePlacement);
-        const cx = originX + d.x * cellSize + fuzzy.dxFactor * stoneDiameter + style.offsetX + style.shadowOffsetX;
-        const cy = originY + d.y * cellSize + fuzzy.dyFactor * stoneDiameter + style.offsetY + style.shadowOffsetY;
-        const outerRadius = style.radius + style.shadowBlur;
-        const gradient = ctx.createRadialGradient(cx, cy, style.radius * 0.72, cx, cy, outerRadius);
-        gradient.addColorStop(0, style.shadowColor);
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        const cx = originX + d.x * cellSize + fuzzy.dxFactor * stoneDiameter + style.offsetX;
+        const cy = originY + d.y * cellSize + fuzzy.dyFactor * stoneDiameter + style.offsetY;
         ctx.save();
         ctx.globalAlpha = scoringMode && deadStones?.has(`${x},${y}`) ? 0.45 : 1;
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(cx, cy, outerRadius, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.drawImage(shadow.sprite, cx - style.radius - shadow.padding, cy - style.radius - shadow.padding, shadow.size, shadow.size);
         ctx.restore();
       }
     }
@@ -1125,6 +1147,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           ctx.shadowBlur = style.shadowBlur;
         }
         if (img && img.complete && img.naturalWidth > 0) {
+          ctx.filter = style.imageFilter;
           ctx.drawImage(img, left, top, style.diameter, style.diameter);
         } else {
           ctx.beginPath();
@@ -1485,6 +1508,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const imageList = player === 'black' ? blackImages : whiteImages;
       const img = imageList[0];
       if (img && img.complete && img.naturalWidth > 0) {
+        ctx.filter = stoneConfig.imageFilter ?? 'none';
         ctx.drawImage(img, left, top, diameter, diameter);
       } else {
         ctx.beginPath();
@@ -3090,7 +3114,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const imageList = m.player === 'black' ? blackImages : whiteImages;
       const img = imageList[0];
       if (img && img.complete && img.naturalWidth > 0) {
+        ctx.save();
+        ctx.filter = stoneConfig.imageFilter ?? 'none';
         ctx.drawImage(img, left, top, diameter, diameter);
+        ctx.restore();
       } else {
         ctx.beginPath();
         ctx.fillStyle = rgba(m.player === 'black' ? STONE_COLORS.black : STONE_COLORS.white);
