@@ -1,254 +1,235 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  installSoundUnlockHandlers,
   playCaptureSound,
   playNewGameSound,
   playPassSound,
   playStoneSound,
   resetAudioContextForTests,
-  resetSoundFailureReport,
-  setSoundInitErrorHandler,
 } from '../src/utils/sound';
 
-const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-
-function restoreWindow() {
-  if (originalWindow) {
-    Object.defineProperty(globalThis, 'window', originalWindow);
-  } else {
-    Reflect.deleteProperty(globalThis, 'window');
-  }
-}
-
+const cleanups: Array<() => void> = [];
 afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.restoreAllMocks();
+  for (const cleanup of cleanups.splice(0)) cleanup();
   resetAudioContextForTests();
-  restoreWindow();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
-describe('sound helpers', () => {
-  it('does nothing outside a browser window', () => {
-    Reflect.deleteProperty(globalThis, 'window');
+const flushAudio = async () => {
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+};
 
-    expect(() => playStoneSound()).not.toThrow();
-    expect(() => playCaptureSound(2)).not.toThrow();
-    expect(() => playPassSound()).not.toThrow();
-    expect(() => playNewGameSound()).not.toThrow();
+function mockFallback() {
+  const srcs: string[] = [];
+  const play = vi.fn(() => Promise.resolve());
+  const Audio = vi.fn(function () {
+    return {
+      src: '', preload: '', currentTime: -1,
+      play() {
+        srcs.push(this.src);
+        return play();
+      },
+    };
+  });
+  vi.stubGlobal('window', { Audio });
+  return { Audio, srcs, play };
+}
+
+function mockWebAudio() {
+  let canResume = true;
+  let now = 100;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  const buffer = { duration: 0.1 } as AudioBuffer;
+  const contexts: MockContext[] = [];
+  class MockContext {
+    state = 'suspended';
+    sampleRate = 48000;
+    destination = {};
+    sources: Array<{ buffer: AudioBuffer | null; connect: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn> }> = [];
+    resume = vi.fn(async () => {
+      if (!canResume) throw new Error('User gesture required');
+      this.state = 'running';
+    });
+    close = vi.fn(async () => { this.state = 'closed'; });
+    decodeAudioData = vi.fn(async () => buffer);
+    createBuffer = vi.fn(() => ({ duration: 0 }) as AudioBuffer);
+    createBufferSource = vi.fn(() => {
+      const source = { buffer: null as AudioBuffer | null, connect: vi.fn(), start: vi.fn() };
+      this.sources.push(source);
+      return source;
+    });
+    constructor() { contexts.push(this); }
+  }
+  const fetchSound = vi.fn(async (_url: string) => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) }));
+  const AudioContext = vi.fn(function () { return new MockContext(); });
+  const target = Object.assign(new EventTarget(), { AudioContext });
+  vi.stubGlobal('window', target);
+  vi.stubGlobal('fetch', fetchSound);
+  return {
+    target, contexts, fetchSound, AudioContext,
+    gesture: (type = 'pointerdown') => target.dispatchEvent(new Event(type)),
+    allowResume: (allowed: boolean) => { canResume = allowed; },
+    advance: () => { now += 100; },
+    audibleStarts: () => contexts.flatMap((context) => context.sources)
+      .filter((source) => source.buffer === buffer && source.start.mock.calls.length > 0).length,
+  };
+}
+
+describe('sound playback', () => {
+  it('does nothing outside a browser window', () => {
+    vi.stubGlobal('window', undefined);
+    expect(() => {
+      playStoneSound(); playCaptureSound(2); playPassSound(); playNewGameSound();
+      cleanups.push(installSoundUnlockHandlers());
+    }).not.toThrow();
   });
 
-  it('plays the sabaki mp3 files under the GitHub Pages base path', () => {
+  it('uses the GitHub Pages base for every fallback sound and reuses one media element', () => {
     vi.stubEnv('BASE_URL', '/web-katrain/');
-    const play = vi.fn(() => Promise.resolve());
-    const audioInstances: Array<{ src: string; preload?: string; currentTime: number; play: typeof play }> = [];
-
-    class MockAudio {
-      preload?: string;
-      currentTime = -1;
-      play = play;
-      src: string;
-      constructor(src: string) {
-        this.src = src;
-        audioInstances.push(this);
-      }
-    }
-
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: MockAudio },
-    });
-
-    playStoneSound();
-    playCaptureSound(2);
-    playPassSound();
-    playNewGameSound();
-
-    expect(audioInstances.map((audio) => audio.src)).toEqual([
+    const { Audio, srcs } = mockFallback();
+    playStoneSound(); playCaptureSound(2); playPassSound(); playNewGameSound();
+    expect(srcs).toEqual([
       '/web-katrain/themes/sabaki/0.mp3',
       '/web-katrain/themes/sabaki/capture0.mp3',
       '/web-katrain/themes/sabaki/pass.mp3',
       '/web-katrain/themes/sabaki/newgame.mp3',
     ]);
-    expect(audioInstances.every((audio) => audio.preload === 'auto')).toBe(true);
-    expect(audioInstances.every((audio) => audio.currentTime === 0)).toBe(true);
-    expect(play).toHaveBeenCalledTimes(4);
+    expect(Audio).toHaveBeenCalledTimes(1);
   });
 
   it('cycles through stone and capture variants', () => {
-    const play = vi.fn(() => Promise.resolve());
-    const srcs: string[] = [];
-    vi.spyOn(performance, 'now')
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(160)
-      .mockReturnValueOnce(220)
-      .mockReturnValueOnce(280)
-      .mockReturnValueOnce(340)
-      .mockReturnValueOnce(400)
-      .mockReturnValueOnce(460)
-      .mockReturnValueOnce(520)
-      .mockReturnValueOnce(580)
-      .mockReturnValueOnce(640)
-      .mockReturnValueOnce(700)
-      .mockReturnValueOnce(760);
-
-    class MockAudio {
-      preload?: string;
-      currentTime = 0;
-      play = play;
-      constructor(src: string) {
-        srcs.push(src);
-      }
-    }
-
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: MockAudio },
-    });
-
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now += 100);
+    const { srcs } = mockFallback();
     for (let i = 0; i < 6; i++) playStoneSound();
     for (let i = 0; i < 6; i++) playCaptureSound(i + 1);
-
     expect(srcs).toEqual([
-      '/themes/sabaki/0.mp3',
-      '/themes/sabaki/1.mp3',
-      '/themes/sabaki/2.mp3',
-      '/themes/sabaki/3.mp3',
-      '/themes/sabaki/4.mp3',
-      '/themes/sabaki/0.mp3',
-      '/themes/sabaki/capture0.mp3',
-      '/themes/sabaki/capture1.mp3',
-      '/themes/sabaki/capture2.mp3',
-      '/themes/sabaki/capture3.mp3',
-      '/themes/sabaki/capture4.mp3',
-      '/themes/sabaki/capture0.mp3',
+      ...[0, 1, 2, 3, 4, 0].map((i) => `/themes/sabaki/${i}.mp3`),
+      ...[0, 1, 2, 3, 4, 0].map((i) => `/themes/sabaki/capture${i}.mp3`),
     ]);
   });
 
-  it('swallows blocked Audio construction', () => {
-    class BlockedAudio {
-      constructor() {
-        throw new Error('audio blocked');
-      }
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: BlockedAudio },
-    });
-
-    expect(() => playStoneSound()).not.toThrow();
-  });
-
-  it('reports blocked Audio construction once', () => {
-    const handler = vi.fn();
-    setSoundInitErrorHandler(handler);
-
-    class BlockedAudio {
-      constructor() {
-        throw new Error('audio blocked');
-      }
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: BlockedAudio },
-    });
-
-    expect(() => playStoneSound()).not.toThrow();
-    expect(() => playPassSound()).not.toThrow();
-
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
-      backend: 'html-audio',
-      message: 'Could not initialize audio file 0.mp3: audio blocked',
-      platform: expect.any(String),
-    }));
-  });
-
-  it('can report again after sound is re-enabled for a retry', () => {
-    const handler = vi.fn();
-    setSoundInitErrorHandler(handler);
-
-    class BlockedAudio {
-      constructor() {
-        throw new Error('audio blocked');
-      }
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: BlockedAudio },
-    });
-
-    playStoneSound();
-    playPassSound();
-    resetSoundFailureReport();
-    playNewGameSound();
-
-    expect(handler).toHaveBeenCalledTimes(2);
-  });
-
-  it('swallows blocked Audio accessor reads', () => {
+  it('silently tolerates blocked audio APIs', () => {
     const blockedWindow = {};
-    Object.defineProperty(blockedWindow, 'Audio', {
-      configurable: true,
-      get() {
-        throw new Error('audio accessor blocked');
-      },
-    });
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: blockedWindow,
-    });
-
+    for (const name of ['Audio', 'AudioContext']) {
+      Object.defineProperty(blockedWindow, name, { get() { throw new Error('Audio blocked'); } });
+    }
+    vi.stubGlobal('window', blockedWindow);
     expect(() => playStoneSound()).not.toThrow();
+  });
+
+  it('retries after rejected playback without disabling later sounds', async () => {
+    const { play, Audio } = mockFallback();
+    play.mockRejectedValueOnce(new Error('Playback blocked'));
+    playStoneSound();
+    await flushAudio();
+    playPassSound();
+    await flushAudio();
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(Audio).toHaveBeenCalledTimes(1);
   });
 
   it('debounces rapid repeats of the same sound effect', () => {
-    const play = vi.fn(() => Promise.resolve());
     vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(120).mockReturnValueOnce(160);
-
-    class MockAudio {
-      preload?: string;
-      currentTime = 0;
-      play = play;
-      src: string;
-      constructor(src: string) {
-        this.src = src;
-      }
-    }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: MockAudio },
-    });
-
-    playStoneSound();
-    playStoneSound();
-    playStoneSound();
-
+    const { play } = mockFallback();
+    playStoneSound(); playStoneSound(); playStoneSound();
     expect(play).toHaveBeenCalledTimes(2);
   });
+});
 
-  it('reports rejected audio playback', async () => {
-    const handler = vi.fn();
-    setSoundInitErrorHandler(handler);
-
-    class MockAudio {
-      preload?: string;
-      currentTime = 0;
-      play = () => Promise.reject(new Error('play blocked'));
-      src: string;
-      constructor(src: string) {
-        this.src = src;
-      }
+describe('AI sound activation and recovery', () => {
+  it('preloads deployed MP3s in a gesture and plays later AI replies on the same context', async () => {
+    vi.stubEnv('BASE_URL', '/web-katrain/');
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.gesture();
+    await flushAudio();
+    playNewGameSound();
+    await flushAudio();
+    // The AI replies outside the gesture, followed by human and AI moves.
+    audio.allowResume(false);
+    for (let i = 0; i < 4; i++) {
+      audio.advance();
+      await Promise.resolve();
+      playStoneSound();
+      await flushAudio();
     }
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: { Audio: MockAudio },
-    });
+    expect(audio.AudioContext).toHaveBeenCalledTimes(1);
+    expect(audio.audibleStarts()).toBe(5);
+    expect(audio.fetchSound).toHaveBeenCalledTimes(12);
+    expect(audio.fetchSound.mock.calls.map(([url]) => url)).toContain('/web-katrain/themes/sabaki/0.mp3');
+  });
 
-    expect(() => playPassSound()).not.toThrow();
-    await Promise.resolve();
+  it('recovers AI sound after the first move was blocked and the human interacts', async () => {
+    const audio = mockWebAudio();
+    audio.allowResume(false);
+    cleanups.push(installSoundUnlockHandlers());
+    playStoneSound();
+    await flushAudio();
+    expect(audio.audibleStarts()).toBe(0);
 
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
-      backend: 'html-audio',
-      message: 'Could not play audio file pass.mp3: play blocked',
-    }));
+    audio.allowResume(true);
+    audio.gesture();
+    await flushAudio();
+    audio.advance();
+    playStoneSound(); // Human move.
+    await flushAudio();
+    audio.allowResume(false);
+    audio.advance();
+    playStoneSound(); // AI reply, without a fresh gesture.
+    await flushAudio();
+    expect(audio.audibleStarts()).toBe(2);
+    expect(audio.AudioContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes an interrupted context on the next touch or keyboard gesture', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.gesture('touchend');
+    await flushAudio();
+    const context = audio.contexts[0];
+    context.state = 'interrupted';
+    audio.gesture('keydown');
+    await flushAudio();
+    playStoneSound();
+    await flushAudio();
+    expect(context.resume).toHaveBeenCalledTimes(2);
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('retries a failed preload instead of caching the failure for later moves', async () => {
+    const audio = mockWebAudio();
+    audio.fetchSound.mockRejectedValueOnce(new Error('Transient network error'));
+    cleanups.push(installSoundUnlockHandlers());
+    audio.gesture();
+    await flushAudio();
+    playStoneSound();
+    await flushAudio();
+    expect(audio.fetchSound).toHaveBeenCalledTimes(13);
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('recreates a closed context instead of leaving the next game silent', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.gesture();
+    await flushAudio();
+    audio.contexts[0].state = 'closed';
+    audio.gesture();
+    await flushAudio();
+    playStoneSound();
+    await flushAudio();
+    expect(audio.AudioContext).toHaveBeenCalledTimes(2);
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('removes gesture listeners when sound is disabled or the layout unmounts', () => {
+    const audio = mockWebAudio();
+    const cleanup = installSoundUnlockHandlers();
+    cleanup();
+    audio.gesture(); audio.gesture('touchend'); audio.gesture('keydown');
+    expect(audio.AudioContext).not.toHaveBeenCalled();
   });
 });

@@ -115,7 +115,7 @@ import { getDroppedSgfOrOgsText, getFirstDraggedFile, hasDraggedFiles, hasPotent
 import { BOARD_THEME_OPTIONS } from '../utils/boardThemes';
 import { appendRestoredAnalysisSummary } from '../utils/importSummary';
 import { getResizeObserverConstructor } from '../utils/resizeObserver';
-import { resetSoundFailureReport, setSoundInitErrorHandler } from '../utils/sound';
+import { installSoundUnlockHandlers } from '../utils/sound';
 import { getSgfImportSizeError } from '../utils/sgfImportLimits';
 import { getPvAnimationProgress, hoveredMoveForNode, type ScopedCandidateHover } from '../utils/pvAnimation';
 
@@ -731,25 +731,7 @@ export const Layout: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    setSoundInitErrorHandler((error) => {
-      // Do not switch the sound setting off here. One failed play (no user
-      // gesture yet, a busy audio device, a blocked autoplay) says nothing about
-      // the next one, and silently disabling sound left the board quiet for the
-      // rest of the session with no obvious way back.
-      const soundDetails = [
-        t('Sound error: {error}', { error: error.message }),
-        t('Backend: {backend}', { backend: error.backend }),
-        t('Platform: {platform}', { platform: error.platform }),
-      ].join('\n');
-
-      toast(t('Could not play sound. It will keep trying.'), 'error', soundDetails);
-    });
-
-    return () => setSoundInitErrorHandler(null);
-  }, [toast]);
-
-  useEffect(() => {
-    if (settings.soundEnabled) resetSoundFailureReport();
+    if (settings.soundEnabled) return installSoundUnlockHandlers();
   }, [settings.soundEnabled]);
 
   const toggleScoringMode = useCallback(() => {

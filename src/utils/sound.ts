@@ -3,139 +3,163 @@ import { publicUrl } from './publicUrl';
 type SoundEffectKey = 'stone' | 'capture' | 'pass' | 'new-game';
 
 const MIN_SOUND_INTERVAL_MS = 50;
+const MAX_SOUND_DELAY_MS = 1000;
 const SABAKI_SOUND_BASE_PATH = '/themes/sabaki/';
 const STONE_SOUND_COUNT = 5;
 const CAPTURE_SOUND_COUNT = 5;
+const SOUND_FILES = [
+    ...Array.from({ length: STONE_SOUND_COUNT }, (_, i) => `${i}.mp3`),
+    ...Array.from({ length: CAPTURE_SOUND_COUNT }, (_, i) => `capture${i}.mp3`),
+    'pass.mp3', 'newgame.mp3',
+];
 
 const lastSoundTimeByKey = new Map<SoundEffectKey, number>();
+const buffers = new Map<string, Promise<AudioBuffer>>();
+let audioContext: AudioContext | null = null;
+let fallbackAudio: HTMLAudioElement | null = null;
 let nextStoneSoundIndex = 0;
 let nextCaptureSoundIndex = 0;
 
-export interface SoundInitError {
-    message: string;
-    backend: 'html-audio';
-    platform: string;
-}
-
-let onSoundInitError: ((error: SoundInitError) => void) | null = null;
-let soundFailureReported = false;
-
-export const setSoundInitErrorHandler = (handler: ((error: SoundInitError) => void) | null): void => {
-    onSoundInitError = handler;
-};
-
-export const resetSoundFailureReport = (): void => {
-    soundFailureReported = false;
-    lastSoundTimeByKey.clear();
-};
-
-const formatSoundError = (error: unknown): string => (
-    error instanceof Error && error.message ? error.message : 'Unknown audio error'
+const getSoundNow = (): number => (
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
 );
 
-const getPlatformLabel = (): string => {
+const getAudioContext = (): AudioContext | null => {
+    if (typeof window === 'undefined') return null;
     try {
-        return typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
+        if (audioContext && audioContext.state !== 'closed') return audioContext;
+        const audioWindow = window as unknown as {
+            AudioContext?: typeof AudioContext;
+            webkitAudioContext?: typeof AudioContext;
+        };
+        const Context = audioWindow.AudioContext || audioWindow.webkitAudioContext;
+        if (!Context) return null;
+        audioContext = new Context();
+        buffers.clear();
+        return audioContext;
     } catch {
-        return 'unknown';
-    }
-};
-
-const reportSoundError = (message: string): void => {
-    if (soundFailureReported) return;
-    if (!onSoundInitError) return;
-    soundFailureReported = true;
-    onSoundInitError({
-        message,
-        backend: 'html-audio',
-        platform: getPlatformLabel(),
-    });
-};
-
-const getSoundNow = (): number => {
-    try {
-        return typeof performance !== 'undefined' ? performance.now() : Date.now();
-    } catch {
-        return Date.now();
-    }
-};
-
-const shouldSkipRepeatedSound = (key: SoundEffectKey): boolean => {
-    const now = getSoundNow();
-    const last = lastSoundTimeByKey.get(key);
-    if (last !== undefined && now - last < MIN_SOUND_INTERVAL_MS) return true;
-    lastSoundTimeByKey.set(key, now);
-    return false;
-};
-
-const getAudioConstructor = (): typeof Audio | null => {
-    if (typeof window === 'undefined') return null; // Handle SSR/Test environment
-    try {
-        const audioWindow = window as unknown as { Audio?: typeof Audio };
-        return audioWindow.Audio || null;
-    } catch (error) {
-        reportSoundError(`Browser audio API is blocked: ${formatSoundError(error)}`);
         return null;
     }
 };
 
-const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
-    if (shouldSkipRepeatedSound(key)) return;
+const resumeContext = (context: AudioContext): Promise<void> => (
+    context.state === 'running' ? Promise.resolve() : context.resume()
+);
 
-    const AudioCtor = getAudioConstructor();
-    if (!AudioCtor) {
-        if (typeof window !== 'undefined') {
-            reportSoundError('Browser audio API is not available.');
+const loadSound = (context: AudioContext, fileName: string): Promise<AudioBuffer> => {
+    const cached = buffers.get(fileName);
+    if (cached) return cached;
+    const loading = fetch(publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`))
+        .then((response) => {
+            if (!response.ok) throw new Error(`Sound request failed: ${response.status}`);
+            return response.arrayBuffer();
+        })
+        .then((data) => context.decodeAudioData(data))
+        .catch((error: unknown) => {
+            // A transient download/decoder failure must not mute later moves.
+            if (buffers.get(fileName) === loading) buffers.delete(fileName);
+            throw error;
+        });
+    buffers.set(fileName, loading);
+    return loading;
+};
+
+// Unlock one shared context during a user gesture. AI replies arrive later,
+// outside that gesture, so creating a fresh media element for each reply can
+// leave only the AI silent under per-element autoplay restrictions.
+export const installSoundUnlockHandlers = (): (() => void) => {
+    if (typeof window === 'undefined') return () => undefined;
+    const unlock = () => {
+        const context = getAudioContext();
+        if (!context) return;
+        try {
+            void resumeContext(context).catch(() => undefined);
+            const source = context.createBufferSource();
+            source.buffer = context.createBuffer(1, 1, context.sampleRate);
+            source.connect(context.destination);
+            source.start();
+            for (const fileName of SOUND_FILES) {
+                void loadSound(context, fileName).catch(() => undefined);
+            }
+        } catch {
+            // Retry on the next gesture, including after an OS interruption.
         }
+    };
+    const events = ['pointerdown', 'touchend', 'keydown'] as const;
+    const target = window;
+    for (const event of events) target.addEventListener(event, unlock, { capture: true, passive: true });
+    return () => {
+        for (const event of events) target.removeEventListener(event, unlock, { capture: true });
+    };
+};
+
+const playFallback = (fileName: string): void => {
+    try {
+        if (typeof window === 'undefined' || !window.Audio) return;
+        // Reuse the element enabled by a human move or the new-game click.
+        fallbackAudio ??= new window.Audio();
+        fallbackAudio.src = publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
+        fallbackAudio.preload = 'auto';
+        fallbackAudio.currentTime = 0;
+        void fallbackAudio.play()?.catch(() => undefined);
+    } catch {
+        // Audio is optional; leave the next move free to retry silently.
+    }
+};
+
+const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
+    const requestedAt = getSoundNow();
+    const last = lastSoundTimeByKey.get(key);
+    if (last !== undefined && requestedAt - last < MIN_SOUND_INTERVAL_MS) return;
+    lastSoundTimeByKey.set(key, requestedAt);
+
+    const context = getAudioContext();
+    if (!context) {
+        playFallback(fileName);
         return;
     }
-
     try {
-        const audio = new AudioCtor(publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`));
-        audio.preload = 'auto';
-        audio.currentTime = 0;
-        const playResult = audio.play();
-        if (playResult && typeof playResult.catch === 'function') {
-            void playResult.catch((error: unknown) => {
-                reportSoundError(`Could not play audio file ${fileName}: ${formatSoundError(error)}`);
+        // Invoke resume synchronously while a human move still has activation.
+        void Promise.all([resumeContext(context), loadSound(context, fileName)])
+            .then(([, buffer]) => {
+                if (audioContext !== context || context.state !== 'running') return;
+                // Do not replay old moves in a burst after a slow load/unlock.
+                if (getSoundNow() - requestedAt > MAX_SOUND_DELAY_MS) return;
+                const source = context.createBufferSource();
+                source.buffer = buffer;
+                source.connect(context.destination);
+                source.start();
+            })
+            .catch(() => {
+                if (audioContext === context && getSoundNow() - requestedAt <= MAX_SOUND_DELAY_MS) {
+                    playFallback(fileName);
+                }
             });
-        }
-    } catch (error) {
-        reportSoundError(`Could not initialize audio file ${fileName}: ${formatSoundError(error)}`);
+    } catch {
+        playFallback(fileName);
     }
 };
 
-const getNextStoneSoundFileName = (): string => {
+export const playStoneSound = (): void => {
     const fileName = `${nextStoneSoundIndex}.mp3`;
     nextStoneSoundIndex = (nextStoneSoundIndex + 1) % STONE_SOUND_COUNT;
-    return fileName;
+    playAudioFile('stone', fileName);
 };
 
-const getNextCaptureSoundFileName = (): string => {
+export const playCaptureSound = (_count: number): void => {
     const fileName = `capture${nextCaptureSoundIndex}.mp3`;
     nextCaptureSoundIndex = (nextCaptureSoundIndex + 1) % CAPTURE_SOUND_COUNT;
-    return fileName;
+    playAudioFile('capture', fileName);
 };
 
-export const playStoneSound = () => {
-    playAudioFile('stone', getNextStoneSoundFileName());
-};
-
-export const playCaptureSound = (_count: number) => {
-    playAudioFile('capture', getNextCaptureSoundFileName());
-};
-
-export const playPassSound = () => {
-    playAudioFile('pass', 'pass.mp3');
-};
-
-export const playNewGameSound = () => {
-    playAudioFile('new-game', 'newgame.mp3');
-};
+export const playPassSound = (): void => playAudioFile('pass', 'pass.mp3');
+export const playNewGameSound = (): void => playAudioFile('new-game', 'newgame.mp3');
 
 export const resetAudioContextForTests = (): void => {
-    onSoundInitError = null;
-    soundFailureReported = false;
+    if (audioContext) void audioContext.close().catch(() => undefined);
+    audioContext = null;
+    fallbackAudio = null;
+    buffers.clear();
     lastSoundTimeByKey.clear();
     nextStoneSoundIndex = 0;
     nextCaptureSoundIndex = 0;
