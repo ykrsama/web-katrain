@@ -739,8 +739,12 @@ class RemoteEngineClient {
     const ri = resp.rootInfo;
     const mi = resp.moveInfos;
 
-    const ownership = new Float32Array(boardSize * boardSize);
-    const ownershipStdev = new Float32Array(boardSize * boardSize);
+    const ownership = resp.ownership?.length === boardSize * boardSize
+      ? new Float32Array(resp.ownership)
+      : new Float32Array(boardSize * boardSize);
+    const ownershipStdev = resp.ownershipStdev?.length === boardSize * boardSize
+      ? new Float32Array(resp.ownershipStdev)
+      : new Float32Array(boardSize * boardSize);
     const policy = buildPolicy(mi, boardSize);
 
     const moves = mi.map((m, idx) => ({
@@ -778,7 +782,7 @@ class RemoteEngineClient {
       playSelectionValue: m.playSelectionValue,
       utility: m.utility,
       humanPrior: undefined,
-      ownership: undefined,
+      ownership: m.ownership,
     }));
 
     return {

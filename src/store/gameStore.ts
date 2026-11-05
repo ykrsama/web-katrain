@@ -272,6 +272,8 @@ interface GameStore extends GameState {
   resign: (player?: Player) => void;
   runAnalysis: (opts?: {
     force?: boolean;
+    /** Fill missing board ownership even with live analysis off, preserving an existing review. */
+    ownershipOnly?: boolean;
     visits?: number;
     maxTimeMs?: number;
     batchSize?: number;
@@ -4181,21 +4183,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   runAnalysis: async (opts) => {
       const state = get();
-      if (!state.isAnalysisMode) return;
+      if (opts?.ownershipOnly ? !state.settings.analysisShowOwnership : !state.isAnalysisMode) return;
+      const boardSize = getBoardSizeFromBoard(state.board);
+      const hasTerritory = (analysis: AnalysisResult | null | undefined): boolean =>
+        !!analysis && (analysis.ownershipMode ?? 'root') !== 'none' &&
+        analysis.territory.length === boardSize &&
+        analysis.territory.every((row) => row.length === boardSize && row.every(Number.isFinite));
+      const ownershipMode = opts?.ownershipOnly
+        ? 'root'
+        : state.settings.katagoOwnershipMode;
+      const requestedVisits = opts?.visits ?? (opts?.ownershipOnly
+        ? Math.min(64, state.settings.katagoFastVisits)
+        : state.settings.katagoVisits);
 
       // Check if current node already has analysis
-      const desiredVisits = Math.max(16, Math.min(opts?.visits ?? state.settings.katagoVisits, ENGINE_MAX_VISITS));
+      const desiredVisits = Math.max(16, Math.min(requestedVisits, ENGINE_MAX_VISITS));
       const avoidMoves = opts?.avoidMoves && opts.avoidMoves.length > 0 ? opts.avoidMoves : undefined;
       if (!opts?.force && !avoidMoves && state.currentNode.analysis) {
         const existing = state.currentNode.analysis;
         const existingOwnershipMode = existing.ownershipMode ?? 'root';
-        const requiredOwnershipMode = state.settings.katagoOwnershipMode;
-        const ownershipOk =
-          requiredOwnershipMode === 'tree'
-            ? existingOwnershipMode === 'tree'
-            : requiredOwnershipMode === 'root'
-              ? existingOwnershipMode === 'root' || existingOwnershipMode === 'tree'
-              : true;
+        const requiredOwnershipMode = ownershipMode;
+        const ownershipOk = hasTerritory(existing) &&
+          (requiredOwnershipMode !== 'tree' || existingOwnershipMode === 'tree');
         const needsPolicy = state.settings.analysisShowPolicy;
         const policyOk = !needsPolicy || !!existing.policy;
         // An engine that cannot extend a search it already ran (a remote one)
@@ -4208,7 +4217,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           nodeAnalysisVisitCount(state.currentNode) >= desiredVisits ||
           (!engineCanExtendSearch(state.settings) &&
             (state.currentNode.analysisVisitsRequested ?? 0) >= desiredVisits);
-        if (requestCovered && ownershipOk && policyOk) {
+        if (ownershipOk && (opts?.ownershipOnly || (requestCovered && policyOk))) {
           set({ analysisData: existing });
           return;
         }
@@ -4228,7 +4237,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const fillDameBeforePass = state.settings.katagoFillDameBeforePass;
           const nnRandomize = opts?.nnRandomize ?? state.settings.katagoNnRandomize;
           const conservativePass = opts?.conservativePass ?? state.settings.katagoConservativePass;
-          const visits = Math.max(16, Math.min(opts?.visits ?? state.settings.katagoVisits, ENGINE_MAX_VISITS));
+          const visits = desiredVisits;
           // Reading the position is not on the AI's clock: `Max Time (ms)` is the
           // budget for choosing a move (makeAiMove, analyzeForPlayout), while a
           // board read runs to the depth it was asked for and only stops at the
@@ -4247,12 +4256,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             )
           );
           const batchSize = Math.max(1, Math.min(opts?.batchSize ?? state.settings.katagoBatchSize, 64));
-          const boardSize = getBoardSizeFromBoard(state.board);
           const maxChildren = Math.max(4, Math.min(opts?.maxChildren ?? state.settings.katagoMaxChildren, boardSize * boardSize));
           const topK = Math.max(1, Math.min(opts?.topK ?? state.settings.katagoTopK, 50));
           const reuseTree = opts?.reuseTree ?? state.settings.katagoReuseTree;
           const ownershipRefreshIntervalMs = opts?.ownershipRefreshIntervalMs;
-          const reportEveryMsRaw = opts?.reportEveryMs;
+          const reportEveryMsRaw = opts?.ownershipOnly ? 0 : opts?.reportEveryMs;
           const reportEveryMs =
             typeof reportEveryMsRaw === 'number' && Number.isFinite(reportEveryMsRaw)
               ? Math.max(0, reportEveryMsRaw)
@@ -4288,7 +4296,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
               policy: analysis.policy,
               humanPolicy: analysis.humanPolicy,
               ownershipStdev: analysis.ownershipStdev,
-              ownershipMode: state.settings.katagoOwnershipMode,
+              ownershipMode: opts.includeTerritory
+                ? ownershipMode
+                : hasTerritory(node.analysis) ? (node.analysis?.ownershipMode ?? 'root') : 'none',
             };
 
             const roi = get().regionOfInterest;
@@ -4322,7 +4332,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
             // simply finished later, with several requests in flight — used to
             // overwrite a deeper review already on this node.
             const incomingVisits = typeof analysis.rootVisits === 'number' ? Math.max(0, Math.floor(analysis.rootVisits)) : 0;
-            if (keepDeeper && incomingVisits <= analysisDepth(node.analysis)) {
+            if (node.analysis && (opts?.ownershipOnly || (keepDeeper && incomingVisits <= analysisDepth(node.analysis)))) {
+              // A quick territory read supplements an existing deep review.
+              // Its win rate, score, candidates and requested depth stay intact.
+              if (!hasTerritory(node.analysis)) {
+                node.analysis = {
+                  ...node.analysis,
+                  territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
+                  ownershipStdev: analysis.ownershipStdev,
+                  ownershipMode: 'root',
+                };
+                set((s) => ({
+                  ...(s.currentNode.id === node.id ? { analysisData: node.analysis } : {}),
+                  treeVersion: s.treeVersion + 1,
+                }));
+              }
               if (isFinal) {
                 const engineInfo = getEngineClient(get().settings).getEngineInfo();
                 set({
@@ -4400,7 +4424,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         JSON.stringify(state.regionOfInterest ?? null),
         topK,
         analysisPvLen,
-        state.settings.katagoOwnershipMode,
+        ownershipMode,
         wideRootNoise,
         rootPolicyTemperature,
         fillDameBeforePass,
@@ -4473,7 +4497,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           reportDuringSearchEveryMs,
           ownershipRefreshIntervalMs,
           reuseTree,
-          ownershipMode: state.settings.katagoOwnershipMode,
+          ownershipMode,
           analysisGroup: 'interactive',
           priority: ctx.priority,
           signal: ctx.signal,
@@ -4593,7 +4617,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ];
 
       const engineChanged = engineKeys.some((k) => newSettings[k] !== undefined && newSettings[k] !== state.settings[k]);
-      if (!engineChanged) return { settings: nextSettings };
+      if (!engineChanged) {
+        const existing = state.currentNode.analysis;
+        // Older remote clients saved all-zero ownership instead of the server's
+        // map. An explicit Show Territory retries that blank result as well.
+        if (newSettings.analysisShowOwnership === true && !state.settings.analysisShowOwnership &&
+            existing && existing.territory.length > 0 && existing.territory.every((row) => row.every((value) => value === 0))) {
+          state.currentNode.analysis = { ...existing, ownershipMode: 'none' };
+          return { settings: nextSettings, analysisData: state.currentNode.analysis, treeVersion: state.treeVersion + 1 };
+        }
+        return { settings: nextSettings };
+      }
 
       // Switching between the local worker and a remote server changes how many
       // analyses may be in flight; see the queue's setConcurrency.

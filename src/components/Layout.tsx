@@ -1249,7 +1249,15 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     if (!isAnalysisMode) return;
     void runAnalysis();
-  }, [currentNode.id, isAnalysisMode, runAnalysis]);
+  }, [currentNode.id, isAnalysisMode, settings.analysisShowOwnership, runAnalysis]);
+
+  // Fast reviews may have scores/candidates without ownership. Showing the
+  // overlay must fill that gap even when live analysis is switched off.
+  useEffect(() => {
+    if (isAnalysisMode || !settings.analysisShowOwnership || isEditMode || scoringMode || isSelectingRegionOfInterest) return;
+    void runAnalysis({ ownershipOnly: true });
+  }, [currentNode.id, currentNode.analysis?.ownershipMode, isAnalysisMode, settings.analysisShowOwnership,
+    isEditMode, scoringMode, isSelectingRegionOfInterest, runAnalysis]);
 
   // PV animation
   // A hover read off another position is not a hover any more: the current node

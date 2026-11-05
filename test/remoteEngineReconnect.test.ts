@@ -225,3 +225,45 @@ describe('remote engine reconnect', () => {
     20_000,
   );
 });
+
+describe('remote ownership response conversion', () => {
+  it.each([9, 13, 19])('keeps root ownership in progress and final results on a %i board', async (size) => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+    const client = getRemoteEngineClient('ws://test.invalid/katago');
+    const progress: ArrayLike<number>[] = [];
+    const pending = client.analyze(baseArgs({
+      board: emptyBoard(size), ownershipMode: 'root',
+      onProgress: (result: { ownership: ArrayLike<number> }) => progress.push(result.ownership),
+    }));
+    await waitFor(() => FakeSocket.instances[0]?.sent.length === 1);
+    const socket = FakeSocket.instances[0]!;
+    const query = socket.queries()[0]!;
+    expect(query.includeOwnership).toBe(true);
+    expect(query.overrideSettings).toMatchObject({ reportAnalysisWinratesAs: 'BLACK' });
+    const ownership = Array(size * size).fill(0);
+    ownership[0] = 1;
+    ownership[size * size - 1] = -1;
+    const ownershipStdev = Array(size * size).fill(0.5);
+    socket.reply({ ...analysisReply(String(query.id)), isDuringSearch: true, ownership, ownershipStdev });
+    socket.reply({ ...analysisReply(String(query.id)), ownership, ownershipStdev });
+    const result = await pending;
+    expect(Array.from(result.ownership)).toEqual(ownership);
+    expect(Array.from(result.ownershipStdev ?? [])).toEqual(ownershipStdev);
+    expect(Array.from(progress[0]!)).toEqual(ownership);
+  });
+
+  it('preserves per-candidate ownership for tree ownership analysis', async () => {
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+    const client = getRemoteEngineClient('ws://test.invalid/katago');
+    const pending = client.analyze(baseArgs({ ownershipMode: 'tree', includeMovesOwnership: true }));
+    await waitFor(() => FakeSocket.instances[0]?.sent.length === 1);
+    const socket = FakeSocket.instances[0]!;
+    const query = socket.queries()[0]!;
+    const ownership = Array(19 * 19).fill(0.75);
+    socket.reply({ ...analysisReply(String(query.id)), moveInfos: [{
+      move: 'D4', visits: 20, winrate: 0.6, scoreLead: 1, scoreSelfplay: 1,
+      scoreStdev: 2, prior: 0.2, pv: ['D4'], order: 0, ownership,
+    }] });
+    expect((await pending).moves[0]?.ownership).toEqual(ownership);
+  });
+});

@@ -111,6 +111,9 @@ export interface RemoteResponse {
   moveInfos: RemoteMoveInfo[];
   rootInfo: RemoteRootInfo;
   isDuringSearch: boolean;
+  /** Row-major ownership, in the query's requested black perspective. */
+  ownership?: number[];
+  ownershipStdev?: number[];
   /** Present when the query failed. */
   error?: string;
   /** Present when the engine has a non-fatal warning. */
