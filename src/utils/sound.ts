@@ -18,8 +18,6 @@ const buffers = new Map<string, AudioBuffer>();
 const pendingBuffers = new Map<string, Promise<AudioBuffer>>();
 let audioContext: AudioContext | null = null;
 let fallbackAudio: HTMLAudioElement | null = null;
-let nextStoneSoundIndex = 0;
-let nextCaptureSoundIndex = 0;
 type NavigationSound = 'stone' | 'pass';
 type NavigationClip = { started: boolean };
 const NAVIGATION_ACTIVITY_MS = 120;
@@ -106,8 +104,7 @@ export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
     }
     const clip: NavigationClip = { started: false };
     navigationClip = clip;
-    const fileName = kind === 'pass' ? 'pass.mp3' : `${nextStoneSoundIndex}.mp3`;
-    if (kind === 'stone') nextStoneSoundIndex = (nextStoneSoundIndex + 1) % STONE_SOUND_COUNT;
+    const fileName = kind === 'pass' ? 'pass.mp3' : `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`;
     const canStart = () => navigationClip === clip && getSoundNow() - lastNavigationAt <= MAX_SOUND_DELAY_MS;
     const finish = () => {
         if (navigationClip !== clip) return;
@@ -245,14 +242,12 @@ const playAudioFile = (key: SoundEffectKey, fileName: string): void => {
 };
 
 export const playStoneSound = (): void => {
-    const fileName = `${nextStoneSoundIndex}.mp3`;
-    nextStoneSoundIndex = (nextStoneSoundIndex + 1) % STONE_SOUND_COUNT;
+    const fileName = `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`;
     playAudioFile('stone', fileName);
 };
 
 export const playCaptureSound = (_count: number): void => {
-    const fileName = `capture${nextCaptureSoundIndex}.mp3`;
-    nextCaptureSoundIndex = (nextCaptureSoundIndex + 1) % CAPTURE_SOUND_COUNT;
+    const fileName = `capture${Math.floor(Math.random() * CAPTURE_SOUND_COUNT)}.mp3`;
     playAudioFile('capture', fileName);
 };
 
@@ -272,6 +267,4 @@ export const resetAudioContextForTests = (): void => {
     buffers.clear();
     pendingBuffers.clear();
     lastSoundTimeByKey.clear();
-    nextStoneSoundIndex = 0;
-    nextCaptureSoundIndex = 0;
 };

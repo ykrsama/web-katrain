@@ -97,6 +97,7 @@ describe('sound playback', () => {
   });
 
   it('uses the GitHub Pages base for every fallback sound and reuses one media element', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     vi.stubEnv('BASE_URL', '/web-katrain/');
     const { Audio, srcs } = mockFallback();
     playStoneSound(); playCaptureSound(2); playPassSound(); playNewGameSound();
@@ -109,15 +110,18 @@ describe('sound playback', () => {
     expect(Audio).toHaveBeenCalledTimes(1);
   });
 
-  it('cycles through stone and capture variants', () => {
+  it('randomly selects stone and capture variants, allowing repeats', () => {
+    const variants = [4, 1, 1, 0, 3, 2];
+    const random = vi.spyOn(Math, 'random');
+    for (const index of [...variants, ...variants]) random.mockReturnValueOnce((index + 0.5) / 5);
     let now = 0;
     vi.spyOn(performance, 'now').mockImplementation(() => now += 100);
     const { srcs } = mockFallback();
     for (let i = 0; i < 6; i++) playStoneSound();
     for (let i = 0; i < 6; i++) playCaptureSound(i + 1);
     expect(srcs).toEqual([
-      ...[0, 1, 2, 3, 4, 0].map((i) => `/themes/sabaki/${i}.mp3`),
-      ...[0, 1, 2, 3, 4, 0].map((i) => `/themes/sabaki/capture${i}.mp3`),
+      ...variants.map((i) => `/themes/sabaki/${i}.mp3`),
+      ...variants.map((i) => `/themes/sabaki/capture${i}.mp3`),
     ]);
   });
 
@@ -226,6 +230,7 @@ describe('AI sound activation and recovery', () => {
   });
 
   it('retries a failed preload instead of caching the failure for later moves', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const audio = mockWebAudio();
     audio.fetchSound.mockRejectedValueOnce(new Error('Transient network error'));
     cleanups.push(installSoundUnlockHandlers());
@@ -345,6 +350,7 @@ describe('serial forward-navigation sounds', () => {
   });
 
   it('serializes the HTML audio fallback as well', () => {
+    vi.spyOn(Math, 'random').mockReturnValueOnce(0.9).mockReturnValueOnce(0.3);
     const audio = mockFallback();
     for (let i = 0; i < 10; i++) playNavigationSound();
     expect(audio.play).toHaveBeenCalledTimes(1);
@@ -352,6 +358,7 @@ describe('serial forward-navigation sounds', () => {
     expect(audio.play).toHaveBeenCalledTimes(1);
     playNavigationSound();
     expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(audio.srcs).toEqual(['/themes/sabaki/4.mp3', '/themes/sabaki/1.mp3']);
     expect(audio.Audio).toHaveBeenCalledTimes(1);
   });
 });
