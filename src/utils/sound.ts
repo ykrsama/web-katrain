@@ -20,6 +20,14 @@ let audioContext: AudioContext | null = null;
 let fallbackAudio: HTMLAudioElement | null = null;
 let nextStoneSoundIndex = 0;
 let nextCaptureSoundIndex = 0;
+type NavigationSound = 'stone' | 'pass';
+type NavigationClip = { started: boolean };
+const NAVIGATION_ACTIVITY_MS = 120;
+const heldKeys = new Set<string>();
+let navigationClip: NavigationClip | null = null;
+let pendingNavigationSound: NavigationSound | null = null;
+let lastNavigationAt = -Infinity;
+let navigationAudio: HTMLAudioElement | null = null;
 
 const getSoundNow = (): number => (
     typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -71,11 +79,70 @@ const loadSound = (context: AudioContext, fileName: string): Promise<AudioBuffer
     return loading;
 };
 
-const startSound = (context: AudioContext, buffer: AudioBuffer): void => {
+const startSound = (context: AudioContext, buffer: AudioBuffer, onEnded?: () => void): void => {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(context.destination);
+    if (onEnded) source.onended = onEnded;
     source.start();
+};
+
+/** Let the current clip finish, but drop every unstarted navigation sound. */
+export const stopNavigationSounds = (): void => {
+    pendingNavigationSound = null;
+    lastNavigationAt = -Infinity;
+    if (navigationClip && !navigationClip.started) navigationClip = null;
+};
+
+/** One playing clip and, while a key is held, only the latest movement intent. */
+export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
+    if (typeof window === 'undefined') return;
+    lastNavigationAt = getSoundNow();
+    if (navigationClip) {
+        // Mouse clicks that arrive during playback are simply coalesced. They
+        // must not leave a sound waiting after the user has stopped clicking.
+        pendingNavigationSound = heldKeys.size > 0 ? kind : null;
+        return;
+    }
+    const clip: NavigationClip = { started: false };
+    navigationClip = clip;
+    const fileName = kind === 'pass' ? 'pass.mp3' : `${nextStoneSoundIndex}.mp3`;
+    if (kind === 'stone') nextStoneSoundIndex = (nextStoneSoundIndex + 1) % STONE_SOUND_COUNT;
+    const canStart = () => navigationClip === clip && getSoundNow() - lastNavigationAt <= MAX_SOUND_DELAY_MS;
+    const finish = () => {
+        if (navigationClip !== clip) return;
+        navigationClip = null;
+        const next = pendingNavigationSound;
+        pendingNavigationSound = null;
+        if (next && heldKeys.size > 0 && getSoundNow() - lastNavigationAt <= NAVIGATION_ACTIVITY_MS) {
+            playNavigationSound(next);
+        }
+    };
+    const fallback = () => {
+        if (!canStart()) { finish(); return; }
+        try {
+            if (!window.Audio) { finish(); return; }
+            navigationAudio ??= new window.Audio();
+            navigationAudio.src = publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
+            navigationAudio.onended = finish;
+            navigationAudio.onerror = finish;
+            clip.started = true;
+            void navigationAudio.play()?.catch(finish);
+        } catch { finish(); }
+    };
+    const context = getAudioContext();
+    if (!context) { fallback(); return; }
+    const start = (buffer: AudioBuffer) => {
+        if (!canStart() || audioContext !== context || context.state !== 'running') { finish(); return; }
+        clip.started = true;
+        startSound(context, buffer, finish);
+    };
+    try {
+        const cached = buffers.get(fileName);
+        if (context.state === 'running' && cached) start(cached);
+        else void Promise.all([resumeContext(context), loadSound(context, fileName)])
+            .then(([, buffer]) => start(buffer)).catch(fallback);
+    } catch { fallback(); }
 };
 
 // Unlock one shared context during a user gesture. AI replies arrive later,
@@ -100,11 +167,29 @@ export const installSoundUnlockHandlers = (): (() => void) => {
             // Retry on the next gesture, including after an OS interruption.
         }
     };
-    const events = ['pointerdown', 'touchend', 'keydown'] as const;
     const target = window;
-    for (const event of events) target.addEventListener(event, unlock, { capture: true, passive: true });
+    const keyDown = (event: KeyboardEvent) => {
+        const key = event.code || event.key;
+        if (key && !['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(event.key)) heldKeys.add(key);
+        unlock();
+    };
+    const keyUp = (event: KeyboardEvent) => {
+        heldKeys.delete(event.code || event.key);
+        stopNavigationSounds();
+    };
+    const blur = () => { heldKeys.clear(); stopNavigationSounds(); };
+    for (const event of ['pointerdown', 'touchend'] as const) {
+        target.addEventListener(event, unlock, { capture: true, passive: true });
+    }
+    target.addEventListener('keydown', keyDown, { capture: true });
+    target.addEventListener('keyup', keyUp, { capture: true });
+    target.addEventListener('blur', blur);
     return () => {
-        for (const event of events) target.removeEventListener(event, unlock, { capture: true });
+        for (const event of ['pointerdown', 'touchend'] as const) target.removeEventListener(event, unlock, { capture: true });
+        target.removeEventListener('keydown', keyDown, { capture: true });
+        target.removeEventListener('keyup', keyUp, { capture: true });
+        target.removeEventListener('blur', blur);
+        blur();
     };
 };
 
@@ -175,6 +260,12 @@ export const playPassSound = (): void => playAudioFile('pass', 'pass.mp3');
 export const playNewGameSound = (): void => playAudioFile('new-game', 'newgame.mp3');
 
 export const resetAudioContextForTests = (): void => {
+    navigationClip = null;
+    pendingNavigationSound = null;
+    lastNavigationAt = -Infinity;
+    heldKeys.clear();
+    navigationAudio?.pause();
+    navigationAudio = null;
     if (audioContext) void audioContext.close().catch(() => undefined);
     audioContext = null;
     fallbackAudio = null;

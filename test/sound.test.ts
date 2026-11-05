@@ -5,6 +5,8 @@ import {
   playNewGameSound,
   playPassSound,
   playStoneSound,
+  playNavigationSound,
+  stopNavigationSounds,
   resetAudioContextForTests,
 } from '../src/utils/sound';
 
@@ -23,18 +25,24 @@ const flushAudio = async () => {
 
 function mockFallback() {
   const srcs: string[] = [];
+  const instances: Array<{ onended: (() => void) | null }> = [];
   const play = vi.fn(() => Promise.resolve());
   const Audio = vi.fn(function () {
-    return {
+    const instance = {
       src: '', preload: '', currentTime: -1,
+      onended: null as (() => void) | null,
+      onerror: null as (() => void) | null,
+      pause: vi.fn(),
       play() {
         srcs.push(this.src);
         return play();
       },
     };
+    instances.push(instance);
+    return instance;
   });
   vi.stubGlobal('window', { Audio });
-  return { Audio, srcs, play };
+  return { Audio, srcs, play, instances };
 }
 
 function mockWebAudio() {
@@ -47,7 +55,7 @@ function mockWebAudio() {
     state = 'suspended';
     sampleRate = 48000;
     destination = {};
-    sources: Array<{ buffer: AudioBuffer | null; connect: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn> }> = [];
+    sources: Array<{ buffer: AudioBuffer | null; connect: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; onended: (() => void) | null }> = [];
     resume = vi.fn(async () => {
       if (!canResume) throw new Error('User gesture required');
       this.state = 'running';
@@ -56,7 +64,7 @@ function mockWebAudio() {
     decodeAudioData = vi.fn(async () => buffer);
     createBuffer = vi.fn(() => ({ duration: 0 }) as AudioBuffer);
     createBufferSource = vi.fn(() => {
-      const source = { buffer: null as AudioBuffer | null, connect: vi.fn(), start: vi.fn() };
+      const source = { buffer: null as AudioBuffer | null, connect: vi.fn(), start: vi.fn(), onended: null as (() => void) | null };
       this.sources.push(source);
       return source;
     });
@@ -70,8 +78,10 @@ function mockWebAudio() {
   return {
     target, contexts, fetchSound, AudioContext,
     gesture: (type = 'pointerdown') => target.dispatchEvent(new Event(type)),
+    key: (type: 'keydown' | 'keyup') => target.dispatchEvent(Object.assign(new Event(type), { key: 'ArrowRight', code: 'ArrowRight' })),
+    endClip: () => contexts.flatMap((context) => context.sources).filter((source) => source.buffer === buffer).at(-1)?.onended?.(),
     allowResume: (allowed: boolean) => { canResume = allowed; },
-    advance: () => { now += 100; },
+    advance: (ms = 100) => { now += ms; },
     audibleStarts: () => contexts.flatMap((context) => context.sources)
       .filter((source) => source.buffer === buffer && source.start.mock.calls.length > 0).length,
   };
@@ -247,5 +257,101 @@ describe('AI sound activation and recovery', () => {
     cleanup();
     audio.gesture(); audio.gesture('touchend'); audio.gesture('keydown');
     expect(audio.AudioContext).not.toHaveBeenCalled();
+  });
+});
+
+describe('serial forward-navigation sounds', () => {
+  it('finishes each clip before starting the next, with no queue per move', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    for (let i = 0; i < 20; i++) { audio.advance(30); playNavigationSound(); }
+    expect(audio.audibleStarts()).toBe(1);
+    audio.endClip();
+    expect(audio.audibleStarts()).toBe(2);
+    // No further movement: the other 19 moves do not become queued clips.
+    audio.endClip();
+    expect(audio.audibleStarts()).toBe(2);
+  });
+
+  it('does not start another clip after key release even if many moves were coalesced', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.target.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Shift', code: 'ShiftLeft' }));
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    audio.advance(30); playNavigationSound();
+    audio.key('keyup');
+    audio.endClip();
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('stops continuing when movement stops even if the key is still down', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    audio.advance(30); playNavigationSound();
+    audio.advance(500);
+    audio.endClip();
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('does not overlap or leave queued audio after rapid mouse clicks', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.gesture();
+    await flushAudio();
+    for (let i = 0; i < 10; i++) playNavigationSound();
+    expect(audio.audibleStarts()).toBe(1);
+    audio.endClip();
+    expect(audio.audibleStarts()).toBe(1);
+    playNavigationSound();
+    expect(audio.audibleStarts()).toBe(2);
+  });
+
+  it.each(['stop', 'blur'])('drops continuation on %s while letting the current clip finish', async (action) => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    audio.advance(30); playNavigationSound();
+    if (action === 'stop') stopNavigationSounds();
+    else audio.gesture('blur');
+    audio.endClip();
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('does not play late-decoded navigation sounds after the key was released', async () => {
+    const audio = mockWebAudio();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    audio.fetchSound.mockImplementation(async () => {
+      await gate;
+      return { ok: true, arrayBuffer: async () => new ArrayBuffer(1) };
+    });
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    playNavigationSound();
+    audio.key('keyup');
+    release();
+    await flushAudio();
+    expect(audio.audibleStarts()).toBe(0);
+  });
+
+  it('serializes the HTML audio fallback as well', () => {
+    const audio = mockFallback();
+    for (let i = 0; i < 10; i++) playNavigationSound();
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    audio.instances[0].onended?.();
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    playNavigationSound();
+    expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(audio.Audio).toHaveBeenCalledTimes(1);
   });
 });

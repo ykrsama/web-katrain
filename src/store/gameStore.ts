@@ -2,7 +2,7 @@ import { createWithEqualityFn as create } from 'zustand/traditional';
 import { DEFAULT_BOARD_SIZE, DEFAULT_TOP_MOVES, KOMI, type FloatArray, type GameRules, type GameState, type BoardState, type Player, type AnalysisResult, type BoardDrawing, type GameNode, type Move, type GameSettings, type CandidateMove, type RegionOfInterest, type BoardSize, type KataGoBackendPreference, type EditTool } from '../types';
 import { findMistakeNavigationTarget } from '../utils/mistakeNavigation';
 import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLiberties, getLegalMoves, isEye, isValidMove } from '../utils/gameLogic';
-import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound } from '../utils/sound';
+import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound, playNavigationSound, stopNavigationSounds } from '../utils/sound';
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
 import { isKataGoCanceledError } from '../engine/katago/client';
 import { engineCanExtendSearch, getEngineClient, isRemoteEngine } from '../engine/client';
@@ -1482,6 +1482,7 @@ let selfplayToken = 0;
 // only ever judges that node: stepping through a loaded game, or navigating
 // while an analysis is in flight, must not undo anything.
 let lastPlayedNodeId: string | null = null;
+let skipNavigationSoundForNodeId: string | null = null;
 
 /**
  * After a setup edit changed the stones on the board: the analysis in flight
@@ -4905,6 +4906,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
        // Stepping into a recorded move is still placing a stone, so it sounds
        // like one.
        playStepSound({ enabled: state.settings.soundEnabled, from: state.currentNode, to: existingChild });
+       skipNavigationSoundForNodeId = existingChild.id;
        get().jumpToNode(existingChild);
        lastPlayedNodeId = existingChild.id;
        const after = get();
@@ -4992,6 +4994,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const newNode = createNode(state.currentNode, move, newGameState);
     lastPlayedNodeId = newNode.id;
+    skipNavigationSoundForNodeId = newNode.id;
     state.currentNode.children.push(newNode);
 
     set({
@@ -5861,6 +5864,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   undoMove: () => get().navigateBack(),
 
   navigateBack: () => set((state) => {
+    stopNavigationSounds();
     if (state.isInsertMode && state.currentNode.parent && state.insertAfterNodeId) {
       const insertAfter = findNodeById(state.rootNode, state.insertAfterNodeId);
       if (insertAfter) {
@@ -5906,7 +5910,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   navigateForward: () => set((state) => {
       const nextNode = getActiveChild(state.currentNode, state.activeBranchChildIds);
-      if (!nextNode) return {};
+      if (!nextNode) { stopNavigationSounds(); return {}; }
       return {
           currentNode: nextNode,
           board: nextNode.gameState.board,
@@ -6385,6 +6389,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   }),
 
   jumpToNode: (node: GameNode) => set((state) => {
+      if (node.id === state.currentNode.id) { stopNavigationSounds(); return {}; }
       // Just set current node and sync state
       return {
           currentNode: node,
@@ -7129,6 +7134,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       );
 
       if (existingChild) {
+           skipNavigationSoundForNodeId = existingChild.id;
            get().jumpToNode(existingChild);
            const after = get();
            const ended = isPassMove(after.currentNode.move) && isPassMove(after.currentNode.parent?.move);
@@ -7153,6 +7159,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const newNode = createNode(state.currentNode, move, newGameState);
       lastPlayedNodeId = newNode.id;
+      skipNavigationSoundForNodeId = newNode.id;
       state.currentNode.children.push(newNode);
 
       set({
@@ -7230,6 +7237,25 @@ const scheduleNotificationDismiss = () => {
     scheduleNotificationDismiss();
   }, delay);
 };
+
+// All navigation paths (keys, tree clicks, graph jumps and move-number edits)
+// use the same sound lane. New moves already play their own gameplay sound.
+useGameStore.subscribe((state, previousState) => {
+  if (!state.settings.soundEnabled || state.rootNode !== previousState.rootNode) {
+    skipNavigationSoundForNodeId = null;
+    stopNavigationSounds();
+    return;
+  }
+  if (state.currentNode.id === previousState.currentNode.id) return;
+  const skip = skipNavigationSoundForNodeId === state.currentNode.id;
+  skipNavigationSoundForNodeId = null;
+  const move = state.currentNode.move;
+  if (!skip && move && state.moveHistory.length > previousState.moveHistory.length) {
+    playNavigationSound(move.x < 0 || move.y < 0 ? 'pass' : 'stone');
+  } else {
+    stopNavigationSounds();
+  }
+});
 
 useGameStore.subscribe((state, previousState) => {
   if (state.notification === previousState.notification) return;
