@@ -81,7 +81,7 @@ export async function assertScoreQuizGuesses(devtoolsPort, appUrl, screenshotDir
         assert.equal(await evaluate(cdp, `[...document.querySelectorAll('.score-quiz-response span')].find(e=>e.textContent==='Your guess').nextElementSibling.textContent`), 'Even');
         await click(`[...document.querySelectorAll('[aria-labelledby=score-quiz-title] button')].find(e=>e.textContent.trim()==='Guess again')`);
         await replace('4.5');
-        await click(`[...document.querySelectorAll('[aria-label="Predicted leader"] button')].find(e=>e.textContent.trim()==='white')`);
+        await click(`[...document.querySelectorAll('[aria-label="Predicted leader"] button')].find(e=>e.textContent.trim()==='White')`);
         await click(reveal);
         await wait(`scoreGuessRequests===2&&!${input}&&!!document.querySelector('.score-quiz-stats')`);
         await wait(`(()=>{const r=document.querySelector('.score-quiz-response').getBoundingClientRect(),b=document.querySelector('.score-quiz-body').getBoundingClientRect();return r.top>=b.top-1&&r.bottom<=b.bottom+1})()`);
