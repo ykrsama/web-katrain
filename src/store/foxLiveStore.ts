@@ -7,7 +7,7 @@ import type { FoxLiveRoom, FoxLiveSnapshot } from '../utils/foxLiveProtocol';
 type FoxLiveState = {
   phase: FoxLivePhase | 'idle'; snapshot: FoxLiveSnapshot | null; location: FoxLiveRoom | null; error: string | null;
   attached: boolean; following: boolean;
-  connect(room: FoxLiveRoom): void; attach(): void; follow(): void; stop(): void;
+  connect(room: FoxLiveRoom, onReady?: (snapshot: FoxLiveSnapshot) => void): void; attach(): void; follow(): void; stop(): void;
 };
 let disconnect: (() => void) | undefined, unsubscribe: (() => void) | undefined;
 let rootId: string | undefined, line: GameNode[] = [], mutating = false;
@@ -15,7 +15,8 @@ let livePositions: GameState[] = [];
 let generation = 0;
 export const useFoxLiveStore = create<FoxLiveState>((set, get) => ({
   phase: 'idle', snapshot: null, location: null, error: null, attached: false, following: true,
-  connect(room) {
+  connect(room, onReady) {
+    let notified = false;
     get().stop(); const own = ++generation;
     set({ phase: 'connecting', location: room, error: null });
     disconnect = connectFoxLive(room, {
@@ -31,6 +32,7 @@ export const useFoxLiveStore = create<FoxLiveState>((set, get) => ({
             livePositions = line.map(node => node.gameState);
           }
           set({ snapshot, error: null });
+          if (!notified) { notified = true; onReady?.(snapshot); }
         } catch {
           generation++; disconnect?.();
           set({ phase: 'error', error: 'The live move could not be replayed. Reconnect to resync.' });

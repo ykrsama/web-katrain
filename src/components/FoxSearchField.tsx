@@ -3,9 +3,9 @@ import type { RefObject } from 'react';
 import { useT } from '../i18n';
 import type { FoxSearchEntry } from '../utils/foxSearchHistory';
 
-export function FoxSearchField({ query, setQuery, history, onHistoryChange, disabled, inputRef }: {
+export function FoxSearchField({ query, setQuery, history, onHistoryChange, onSelect, disabled, inputRef }: {
   query: string; setQuery(query: string): void;
-  history: FoxSearchEntry[]; onHistoryChange(entries: FoxSearchEntry[]): void; disabled: boolean; inputRef: RefObject<HTMLInputElement | null>;
+  history: FoxSearchEntry[]; onHistoryChange(entries: FoxSearchEntry[]): void; onSelect(query: string): void; disabled: boolean; inputRef: RefObject<HTMLInputElement | null>;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
@@ -25,7 +25,7 @@ export function FoxSearchField({ query, setQuery, history, onHistoryChange, disa
       {expanded && entries.length > 0 && <section className="fox-search-history" id="fox-search-history" aria-label={t('Search history')}>
         <div><span>{t('Search history')}</span><button type="button" onClick={() => onHistoryChange([])}>{t('Clear search history')}</button></div>
         <ul>{entries.map(entry => <li key={entry.query}>
-          <button type="button" onClick={() => { setQuery(entry.query); inputRef.current?.focus(); setExpanded(false); }}>{entry.query}</button>
+          <button type="button" disabled={disabled} onClick={() => { setQuery(entry.query); inputRef.current?.focus(); setExpanded(false); onSelect(entry.query); }}>{entry.query}</button>
           <button type="button" aria-label={t('Delete search: {query}', { query: entry.query })} onClick={() => onHistoryChange(history.filter(item => item !== entry))}>×</button>
         </li>)}</ul>
       </section>}

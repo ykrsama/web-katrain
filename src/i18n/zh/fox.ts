@@ -8,6 +8,7 @@ export default {
   'Clear search history': '清空搜索历史',
   'Delete search: {query}': '删除搜索记录：{query}',
   'Fox record imported.': '已导入野狐棋谱。',
+  'Following live': '跟随中',
   'Previous page': '上一页',
   'Next page': '下一页',
   'Actions': '操作',

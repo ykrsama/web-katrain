@@ -23,14 +23,14 @@ with sync_playwright() as p:
   page.route('**/api/fox/games?*',lambda r:r.fulfill(json={'uid':'123','count':1,'games':[{'chessid':'123','black':'Fixture B','white':'Fixture W','date':'fixture','moves':2}],'next_cursor':None,'can_request_next':False}))
   page.route('**/api/fox/sgf?*',lambda r:r.fulfill(json={'chessid':'123','sgf':sgf,'bytes':len(sgf),'info':{'black':'Fixture B','white':'Fixture W','komi':'7.5'}}))
   open_dialog(page);page.get_by_label('Search Fox players').fill('Fixture');page.get_by_role('button',name='Find records',exact=True).click()
-  page.get_by_role('button',name='Preview / import').click();page.locator('.fox-import-settings').wait_for()
+  page.get_by_role('button',name='Import',exact=True).click()
  try:
   c,page=start();fixture(page,'(;SZ[19]KM[7.5];B[pd];W[dp])')
-  page.keyboard.press('Escape');open_dialog(page)
+  page.locator('.fox-import-settings').wait_for();page.keyboard.press('Escape');open_dialog(page)
   assert page.locator('.fox-import-settings').count()==0,'Selected record survives dialog dismissal'
   results['preview_resets_on_reopen']=True;c.close()
   for sgf in ['(;SZ[19]KM[7.5];B[pd][dp];W[qq])','(;SZ[19]KM[7.5]B[pd]W[dp])','(;SZ[19]KM[7.5];B[pd](;W[qq])(;B[aa]W[bb]))']:
-   c,page=start();fixture(page,sgf);page.get_by_role('button',name='Import onto board',exact=True).click()
+   c,page=start();fixture(page,sgf);page.get_by_role('alert').wait_for()
    assert page.locator('.fox-import-error').count()==1,'A multi-move node was silently accepted: '+sgf
    assert 'multiple moves' in page.locator('.fox-import-error').inner_text();c.close()
   results['all_tree_multi_move_nodes_rejected']=True

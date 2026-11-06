@@ -25,11 +25,16 @@ export function FoxLiveRecords({ player, onImport, onClose }: { player: FoxUser;
   const snapshot = selected ? live.snapshot : null;
   const connect = (room: FoxLiveLocation) => {
     setError(null);
-    try { live.connect(room); }
+    try {
+      live.connect(room, snapshot => {
+        const options = foxImportOptions({ KM: [snapshot.komi], RU: [snapshot.rules] });
+        if (!options.needsConfirmation) watch(snapshot, options);
+      });
+    }
     catch (cause) { setError(cause instanceof FoxImportError ? cause : new FoxImportError('Could not connect to the Fox live room.')); }
   };
-  const watch = (options: FoxImportOptions) => {
-    if (!snapshot || !validFoxImportOptions(options)) return;
+  const watch = (snapshot: FoxLiveSnapshot, options: FoxImportOptions) => {
+    if (!validFoxImportOptions(options)) return;
     try {
       const parsed = applyFoxImportOptions(parseSgf(foxLiveSgf(snapshot, Number(options.komi))), options);
       onImport(parsed, `fox-live-${snapshot.chessId}.sgf`);
@@ -41,11 +46,11 @@ export function FoxLiveRecords({ player, onImport, onClose }: { player: FoxUser;
     <h3>{t('Fox live observation')}</h3>
     {!Array.isArray(player.live) ? <p className="fox-import-warning">{t('Live lookup is unavailable. Please update the Fox service.')}</p> : !player.live.length ? <p className="fox-record-empty">{t('This player is not currently playing a live game.')}</p> : player.live.map((room, index) => <div className="fox-live-match" key={`${room.serverType}-${room.serverId}-${room.roomId}-${room.createTime}`}>
       <div><strong>{player.nickname}</strong><span>{t('Currently playing')}{player.live.length > 1 ? ` · ${index + 1}` : ''}</span></div>
-      <button type="button" className="fox-primary" onClick={() => connect(room)} disabled={selected && live.phase === 'connecting'}>{t('Watch live game')}</button>
+      <button type="button" className="fox-primary" onClick={() => connect(room)} disabled={selected && ['connecting', 'reconnecting'].includes(live.phase)}>{t('Watch live game')}</button>
     </div>)}
     {selected && live.phase !== 'idle' && <p role="status">{t(phaseLabels[live.phase])}</p>}
     {(error || (selected && live.error)) && <p className="fox-import-error" role="alert">{error ? t(error.message, error.vars) : t(live.error!)}</p>}
-    {snapshot && <FoxLivePreview key={snapshot.chessId} snapshot={snapshot} phase={live.phase} onWatch={watch} onStop={live.stop} />}
+    {snapshot && foxImportOptions({ KM: [snapshot.komi], RU: [snapshot.rules] }).needsConfirmation && <FoxLivePreview key={snapshot.chessId} snapshot={snapshot} phase={live.phase} onWatch={options => watch(snapshot, options)} onStop={live.stop} />}
 
   </section>;
 }
@@ -59,16 +64,4 @@ function FoxLivePreview({ snapshot, phase, onWatch, onStop }: { snapshot: FoxLiv
     <FoxImportSettings value={options} onChange={setOptions} />
     <div className="fox-import-actions"><button type="button" onClick={onStop}>{t('Stop observing')}</button><button type="button" className="fox-primary" disabled={!validFoxImportOptions(options) || phase === 'error' || phase === 'reconnecting'} onClick={() => onWatch(options)}>{t('Watch on board')}</button></div>
   </section>;
-}
-
-export function FoxLiveStatus() {
-  const t = useT();
-  const live = useFoxLiveStore();
-  if (!live.attached || !live.snapshot) return null;
-  return <aside className="fox-live-status" aria-label={t('Fox live observation')}>
-    <div><strong>{t(phaseLabels[live.phase])}</strong><span>{t('{black} vs {white}', { black: live.snapshot.black, white: live.snapshot.white })} · {t('{count} moves', { count: live.snapshot.moves.length })}</span>
-      {live.error && <span className="fox-import-error" role="alert">{t(live.error)}</span>}</div>
-    <button type="button" onClick={live.follow}>{live.following ? t('Following latest move') : t('Follow latest move')}</button>
-    <button type="button" onClick={live.stop}>{t('Stop observing')}</button>
-  </aside>;
 }

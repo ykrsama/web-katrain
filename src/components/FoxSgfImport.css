@@ -14,7 +14,7 @@
 .fox-import-dialog h3 { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
 .fox-import-dialog p { margin: 8px 0; }
 .fox-import-dialog header p, .fox-import-dialog small { color: var(--ui-text-muted); font-size: 12px; }
-.fox-import-dialog button, .fox-import-dialog select, .fox-import-dialog input:not([type=checkbox]), .fox-live-status button {
+.fox-import-dialog button, .fox-import-dialog select, .fox-import-dialog input:not([type=checkbox]) {
   border: 1px solid var(--ui-border-strong); border-radius: 7px;
   background: var(--ui-input); color: var(--ui-text); padding: 8px 10px;
   font: inherit; min-width: 0; min-height: 40px;
@@ -54,15 +54,20 @@
 .fox-import-actions a { color: var(--ui-accent); text-decoration: underline; }
 .fox-import-actions button:last-child { background: var(--ui-accent); color: var(--ui-accent-contrast); border-color: var(--ui-accent); }
 .fox-import-actions button:last-child:hover:not(:disabled) { background: var(--ui-accent); filter: brightness(.95); }
-.fox-live-status { position: relative; z-index: 40; flex: none; width: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 12px; color: var(--ui-text); background: var(--ui-panel); border-bottom: 1px solid var(--ui-border-strong); font-size: 12px; }
-.fox-live-status > div { display: flex; flex-direction: column; min-width: 0; }
-.fox-live-status span { overflow-wrap: anywhere; }
-.fox-live-status strong { color: var(--ui-accent); }
-@media (max-width: 640px) {
-  .fox-live-status { flex-wrap: wrap; gap: 8px; }
-  .fox-live-status > div { flex: 1 1 140px; }
-  .fox-live-status button { min-height: 44px; }
-}
+.fox-live-status { display: flex; flex: 0 1 auto; align-items: center; flex-wrap: wrap; gap: 5px; margin-left: auto; min-width: 0; color: var(--ui-text-muted); font-size: 11px; }
+.fox-live-badge { display: inline-flex; align-items: center; gap: 5px; color: var(--ui-accent); white-space: nowrap; }
+.fox-live-badge::before { content: ''; width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.fox-live-badge.error { color: var(--ui-danger); }
+.fox-live-badge.ended { color: var(--ui-text-muted); }
+.fox-live-status button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 7px; min-height: 30px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ui-text-muted); font: inherit; }
+.fox-live-status button[aria-pressed=true] { color: var(--ui-accent); background: var(--ui-accent-soft); }
+.fox-live-status button:hover { background: var(--ui-surface-2); }
+.fox-live-status-error { flex-basis: 100%; color: var(--ui-danger); overflow-wrap: anywhere; }
+.wk-dashboard .gamestrip:has(.fox-live-status) { flex-wrap: wrap; }
+.wk-dashboard .gamestrip:has(.fox-live-status) :is(.gs-file, .gs-save, .gs-sep-file) { display: none; }
+.mobile-match-strip:has(.fox-live-status) { flex-wrap: wrap; }
+.mobile-match-strip > .fox-live-status { flex-basis: 100%; justify-content: flex-end; border-top: 1px solid var(--ui-border); padding-top: 4px; }
+.mobile-match-strip .fox-live-status button { min-height: 36px; min-width: 36px; }
 @media (max-width: 480px) {
   .fox-import-dialog { padding: 12px; border-radius: 11px; }
   .fox-import-dialog header p { max-width: 220px; }

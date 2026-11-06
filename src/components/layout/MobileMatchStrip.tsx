@@ -1,4 +1,5 @@
 import React from 'react';
+import { FoxLiveStatus } from '../FoxLiveStatus';
 import type { GameRules, Player } from '../../types';
 import { useT } from '../../i18n';
 import { formatRulesLabel } from '../../utils/gameInfoDisplay';
@@ -98,6 +99,7 @@ export const MobileMatchStrip: React.FC<MobileMatchStripProps> = ({
       {handicap > 0 ? <span className="mobile-match-fact" aria-hidden="true">H{handicap}</span> : null}
       <span className="mobile-match-fact">{t('komi')} {komi}</span>
     </div>
+    <FoxLiveStatus />
   </div>
   );
 };

@@ -3,7 +3,7 @@ import { shallow } from 'zustand/shallow';
 import { setNotificationHeld, useGameStore } from '../store/gameStore';
 import { GoBoard } from './GoBoard';
 import { FoxSgfImport } from './FoxSgfImport';
-import { FoxLiveStatus } from './FoxLiveRecords';
+import { useFoxLiveStore } from '../store/foxLiveStore';
 import { AnalysisCommandBar } from './AnalysisCommandBar';
 import { CandidatePvTiles } from './CandidatePvTiles';
 import { EditToolbar } from './EditToolbar';
@@ -1823,10 +1823,10 @@ export const Layout: React.FC = () => {
   // Fill the top of that spare band with the player facts the bottom bar has
   // to drop at phone widths; the gate keeps it off viewports where it would
   // shrink the board instead (tablet portrait, landscape).
+  const foxLiveAttached = useFoxLiveStore(state => state.attached);
   const showMobileMatchStrip =
     isMobile
-    && !mobileContextToolActive
-    && shouldShowMobileMatchStrip(viewportWidth, viewportHeight);
+    && (foxLiveAttached || (!mobileContextToolActive && shouldShowMobileMatchStrip(viewportWidth, viewportHeight)));
   const showBoardAnalysisCommandBar = showAnalysisCommandBar && !mobileContextToolActive;
   const [boardToolOffsetY, setBoardToolOffsetY] = useState(12);
   const analysisCommandBarSlotClass = mobileContextToolActive
@@ -3901,7 +3901,6 @@ export const Layout: React.FC = () => {
       <div className="sr-only" aria-live="polite" aria-atomic="true" data-board-announcer="true">
         {boardAnnouncement}
       </div>
-      <FoxLiveStatus />
       <LazyModalBoundary
         onError={(error) => {
           const message = error instanceof Error ? error.message : String(error);

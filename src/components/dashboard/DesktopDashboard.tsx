@@ -26,6 +26,7 @@ import { evalColorToCss, getKaTrainEvalColors } from '../../utils/katrainTheme';
 import { ANALYSIS_VISIT_PRESETS, clampAnalysisVisits, visitPresetLabel } from '../../utils/visitPresets';
 import { formatRulesLabel } from '../../utils/gameInfoDisplay';
 import { GameInfoPanel } from '../GameInfoPanel';
+import { FoxLiveStatus } from '../FoxLiveStatus';
 import { formatReadableScoreLead, formatWinRateFavorLabel, POINTS_LOST_EXPLANATION } from '../../utils/analysisSummary';
 import { useT } from '../../i18n';
 import { readLocalStorage, removeLocalStorage, writeLocalStorage } from '../../utils/storage';
@@ -788,6 +789,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                 {/* The clock belongs with the game facts; it renders nothing
                     when no time control is configured. */}
                 <Timer variant="status" />
+                <FoxLiveStatus />
               </>
             )}
           </div>

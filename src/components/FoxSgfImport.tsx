@@ -8,6 +8,7 @@ import { FoxImportError, assertFoxMoveNodes } from '../utils/foxImport';
 import { foxApiUrl } from '../utils/foxApi';
 import type { FoxPage as Page, FoxRecord as RecordData, FoxUser } from '../types/fox';
 import { FoxLiveRecords } from './FoxLiveRecords';
+import { useFoxLiveStore } from '../store/foxLiveStore';
 import { FoxImportSettings } from './FoxImportSettings';
 import { FoxSearchField } from './FoxSearchField';
 import { applyFoxImportOptions, foxImportOptions, validFoxImportOptions, type FoxImportOptions } from '../utils/foxImportOptions';
@@ -51,6 +52,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     try {
       const response = await fetch(foxApiUrl(route), { signal: active.signal, cache: 'no-store', credentials: 'omit' });
       const data = await response.json();
+      if (active.signal.aborted) throw new DOMException('Aborted', 'AbortError');
       if (!response.ok) {
         setError({ key: 'Fox request failed ({status}). Please retry later.', vars: { status: response.status }, detail: data.error });
         return Promise.reject(null);
@@ -64,12 +66,12 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     else if (cause instanceof Error && cause.name === 'AbortError') setError({ key: 'Request canceled or timed out. You can retry.' });
     else setError({ key: 'Could not load the Fox record.', detail: cause instanceof Error ? cause.message : String(cause) });
   }
-  async function search() {
+  async function search(searchText = query) {
     setError(null); setPages([]); setRecord(null); setIdentity(''); setUid('');
     setPlayer(null);
     setBusy(true);
     try {
-      const searchQuery = query.trim();
+      const searchQuery = searchText.trim();
       const user = await request<FoxUser>(`player?${new URLSearchParams({ q: searchQuery })}`);
       setHistory(current => {
         const updated = addFoxSearchHistory(current, { query: searchQuery });
@@ -100,23 +102,26 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     } catch (cause) { report(cause); } finally { setBusy(false); }
   }
   async function select(chessid: string) {
+    useFoxLiveStore.getState().stop();
     setBusy(true); setError(null); setRecord(null);
     try {
       const data = await request<RecordData>(`sgf?id=${encodeURIComponent(chessid)}`);
       const parsed = parseSgf(data.sgf);
-      setOptions(foxImportOptions(parsed.tree?.props ?? {}));
-      setRecord(data);
+      assertFoxMoveNodes(parsed.tree);
+      const detected = foxImportOptions(parsed.tree?.props ?? {});
+      if (detected.needsConfirmation) { setOptions(detected); setRecord(data); }
+      else importRecord(data, detected);
     }
     catch (cause) { report(cause); } finally { setBusy(false); }
   }
-  function importRecord() {
-    if (!record || !validFoxImportOptions(options)) return;
+  function importRecord(data = record, chosen = options) {
+    if (!data || !validFoxImportOptions(chosen)) return;
     setError(null);
     try {
-      const parsed = parseSgf(record.sgf);
+      const parsed = parseSgf(data.sgf);
       assertFoxMoveNodes(parsed.tree);
-      applyFoxImportOptions(parsed, options);
-      onImport(parsed, `fox-${record.chessid}.sgf`);
+      applyFoxImportOptions(parsed, chosen);
+      onImport(parsed, `fox-${data.chessid}.sgf`);
       useGameStore.setState({ notification: { message: t('Fox record imported.'), type: 'success' } });
       close();
     } catch (cause) { report(cause); }
@@ -127,7 +132,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
       <div ref={dialog} className="fox-import-dialog" role="dialog" aria-modal="true" aria-labelledby="fox-import-title" tabIndex={-1}>
         <header><div><h2 id="fox-import-title">{t('Fox records')}</h2><p>{t('Live observation and historical records')}</p></div><button type="button" aria-label={t('Close Fox records')} onClick={close}>{t('Close')}</button></header>
         <form className="fox-import-search" onSubmit={event => { event.preventDefault(); if (!busy) void search(); }}>
-          <FoxSearchField query={query} setQuery={setQuery} history={history} onHistoryChange={entries => { setHistory(entries); saveFoxSearchHistory(entries); }} disabled={busy} inputRef={queryInput} />
+          <FoxSearchField query={query} setQuery={setQuery} history={history} onHistoryChange={entries => { setHistory(entries); saveFoxSearchHistory(entries); }} onSelect={value => void search(value)} disabled={busy} inputRef={queryInput} />
           <button type="submit" disabled={busy}>{busy ? t('Requesting…') : t('Find records')}</button>
         </form>
         {player && <FoxLiveRecords key={player.uid} player={player} onImport={onImport} onClose={close} />}
@@ -138,7 +143,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
           <div className="fox-import-table-wrap"><table><thead><tr><th>{t('Black / White')}</th><th>{t('Date / Moves')}</th><th>{t('Actions')}</th></tr></thead><tbody>
             {page.games.map(game => <tr key={game.chessid} data-fox-chessid={game.chessid}>
               <td><strong>{game.black}</strong><br />{game.white}</td><td>{game.date}<br />{t('{count} moves', { count: game.moves })}</td>
-              <td><button type="button" disabled={busy} onClick={() => void select(game.chessid)}>{t('Preview / import')}</button></td>
+              <td><button type="button" disabled={busy} onClick={() => void select(game.chessid)}>{t('Import')}</button></td>
             </tr>)}
           </tbody></table></div>
           <nav aria-label={t('Fox record pagination')}><button type="button" disabled={busy || pageIndex === 0} onClick={() => { setPageIndex(pageIndex - 1); setRecord(null); }}>{t('Previous page')}</button><span>{t('Page {page} · {count} records', { page: pageIndex + 1, count: page.games.length })}</span><button type="button" disabled={busy || !page.can_request_next} onClick={() => void next()}>{t('Next page')}</button></nav>
@@ -146,7 +151,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
         {record && <section className="fox-import-detail">
           <h3>{t('{black} vs {white}', { black: record.info.black, white: record.info.white })}</h3>
           <FoxImportSettings value={options} onChange={setOptions} />
-          <div className="fox-import-actions"><a href={foxApiUrl(`download/${record.chessid}.sgf`)} download>{t('Download original SGF')}</a><button type="button" disabled={busy || !validFoxImportOptions(options)} onClick={importRecord}>{t('Import onto board')}</button></div>
+          <div className="fox-import-actions"><button type="button" disabled={busy || !validFoxImportOptions(options)} onClick={() => importRecord()}>{t('Import onto board')}</button></div>
         </section>}
       </div>
     </div>}

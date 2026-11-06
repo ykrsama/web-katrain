@@ -144,6 +144,23 @@ describe('Fox live board session', () => {
     expect(Socket.instances[0].readyState).toBe(3);
     expect(useFoxLiveStore.getState().phase).toBe('idle');
   });
+  it('can open the first received position immediately without reopening it on live updates', () => {
+    vi.stubGlobal('WebSocket', Socket);
+    game();
+    const ready = vi.fn((snapshot: FoxLiveSnapshot) => {
+      useGameStore.getState().loadGame(parseSgf(foxLiveSgf(snapshot, 7.5)));
+      useFoxLiveStore.getState().attach();
+    });
+    useFoxLiveStore.getState().connect(room, ready);
+    handshake(Socket.instances[0]);
+    expect(useFoxLiveStore.getState().attached).toBe(true);
+    expect(useGameStore.getState().moveHistory).toHaveLength(1);
+    const root = useGameStore.getState().rootNode;
+    Socket.instances[0].receive(103, 30017, b(1, move(4, 4, 2, 3)));
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(useGameStore.getState().rootNode).toBe(root);
+    expect(useGameStore.getState().moveHistory).toHaveLength(2);
+  });
   it('disconnects if the reader changes the board state on the observed line', () => {
     vi.stubGlobal('WebSocket', Socket);
     game(); useFoxLiveStore.getState().connect(room); handshake(Socket.instances[0]); useFoxLiveStore.getState().attach();
