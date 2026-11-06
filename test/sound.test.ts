@@ -16,6 +16,7 @@ const cleanups: Array<() => void> = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   resetAudioContextForTests();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -55,6 +56,7 @@ function mockWebAudio() {
   const contexts: MockContext[] = [];
   class MockContext {
     state = 'suspended';
+    currentTime = 10;
     sampleRate = 48000;
     destination = {};
     sources: Array<{ buffer: AudioBuffer | null; connect: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; onended: (() => void) | null }> = [];
@@ -268,7 +270,8 @@ describe('AI sound activation and recovery', () => {
 });
 
 describe('serial forward-navigation sounds', () => {
-  it('plays capture files for captures, including the latest held-key continuation', () => {
+  it('plays a stone then a capture for the latest held-key continuation in the HTML fallback', () => {
+    vi.useFakeTimers();
     const audio = mockFallback();
     vi.stubGlobal('window', Object.assign(new EventTarget(), { Audio: audio.Audio }));
     cleanups.push(installSoundUnlockHandlers());
@@ -277,7 +280,32 @@ describe('serial forward-navigation sounds', () => {
     playNavigationSound('stone');
     playNavigationSound('capture');
     audio.instances[0].onended?.();
-    expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/capture0.mp3']);
+    expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/0.mp3']);
+    window.dispatchEvent(Object.assign(new Event('keyup'), { key: 'ArrowRight', code: 'ArrowRight' }));
+    vi.advanceTimersByTime(99);
+    expect(audio.srcs).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/0.mp3', '/themes/sabaki/capture0.mp3']);
+    audio.instances[0].onended?.();
+    audio.instances[1].onended?.();
+    expect(audio.srcs).toHaveLength(3);
+  });
+
+  it('schedules both capture sounds 100ms apart and waits for both before continuing', async () => {
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound('capture');
+    const parts = audio.contexts[0].sources.filter(source => (source.buffer?.duration ?? 0) > 0);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].start).toHaveBeenCalledWith();
+    expect(parts[1].start).toHaveBeenCalledWith(10.1);
+    playNavigationSound('stone');
+    parts[0].onended?.();
+    expect(audio.audibleStarts()).toBe(2);
+    parts[1].onended?.();
+    expect(audio.audibleStarts()).toBe(3);
   });
 
   it('finishes each clip before starting the next, with no queue per move', async () => {

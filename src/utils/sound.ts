@@ -19,13 +19,14 @@ const pendingBuffers = new Map<string, Promise<AudioBuffer>>();
 let audioContext: AudioContext | null = null;
 let fallbackAudio: HTMLAudioElement | null = null;
 type NavigationSound = 'stone' | 'capture' | 'pass';
-type NavigationClip = { started: boolean };
+type NavigationClip = { started: boolean; captureTimer?: ReturnType<typeof setTimeout> };
 const NAVIGATION_ACTIVITY_MS = 120;
 const heldKeys = new Set<string>();
 let navigationClip: NavigationClip | null = null;
 let pendingNavigationSound: NavigationSound | null = null;
 let lastNavigationAt = -Infinity;
 let navigationAudio: HTMLAudioElement | null = null;
+let navigationCaptureAudio: HTMLAudioElement | null = null;
 
 const getSoundNow = (): number => (
     typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -77,12 +78,13 @@ const loadSound = (context: AudioContext, fileName: string): Promise<AudioBuffer
     return loading;
 };
 
-const startSound = (context: AudioContext, buffer: AudioBuffer, onEnded?: () => void): void => {
+const startSound = (context: AudioContext, buffer: AudioBuffer, onEnded?: () => void, delaySeconds = 0): void => {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(context.destination);
     if (onEnded) source.onended = onEnded;
-    source.start();
+    if (delaySeconds > 0) source.start(context.currentTime + delaySeconds);
+    else source.start();
 };
 
 /** Prepare the shared audio context before the first move. */
@@ -109,9 +111,8 @@ export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
     }
     const clip: NavigationClip = { started: false };
     navigationClip = clip;
-    const fileName = kind === 'pass' ? 'pass.mp3'
-        : kind === 'capture' ? `capture${Math.floor(Math.random() * CAPTURE_SOUND_COUNT)}.mp3`
-        : `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`;
+    const fileNames = [kind === 'pass' ? 'pass.mp3' : `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`];
+    if (kind === 'capture') fileNames.push(`capture${Math.floor(Math.random() * CAPTURE_SOUND_COUNT)}.mp3`);
     const canStart = () => navigationClip === clip && getSoundNow() - lastNavigationAt <= MAX_SOUND_DELAY_MS;
     const finish = () => {
         if (navigationClip !== clip) return;
@@ -122,30 +123,48 @@ export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
             playNavigationSound(next);
         }
     };
+    // A capturing move is one navigation intent with two sounds. Finish both
+    // before starting another intent, even if the stone clip ends first.
+    const ended = new Set<number>();
+    const partEnded = (index: number) => {
+        ended.add(index);
+        if (ended.size === fileNames.length) finish();
+    };
     const fallback = () => {
         if (!canStart()) { finish(); return; }
         try {
             if (!window.Audio) { finish(); return; }
             navigationAudio ??= new window.Audio();
-            navigationAudio.src = publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileName}`);
-            navigationAudio.onended = finish;
-            navigationAudio.onerror = finish;
+            const playPart = (audio: HTMLAudioElement, index: number) => {
+                audio.src = publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileNames[index]!}`);
+                audio.onended = () => partEnded(index);
+                audio.onerror = () => partEnded(index);
+                try { void audio.play()?.catch(() => partEnded(index)); }
+                catch { partEnded(index); }
+            };
             clip.started = true;
-            void navigationAudio.play()?.catch(finish);
+            playPart(navigationAudio, 0);
+            if (fileNames.length > 1) {
+                navigationCaptureAudio ??= new window.Audio();
+                const captureAudio = navigationCaptureAudio;
+                clip.captureTimer = setTimeout(() => {
+                    if (navigationClip === clip) playPart(captureAudio, 1);
+                }, 100);
+            }
         } catch { finish(); }
     };
     const context = getAudioContext();
     if (!context) { fallback(); return; }
-    const start = (buffer: AudioBuffer) => {
+    const start = (clipBuffers: AudioBuffer[]) => {
         if (!canStart() || audioContext !== context || context.state !== 'running') { finish(); return; }
         clip.started = true;
-        startSound(context, buffer, finish);
+        clipBuffers.forEach((buffer, index) => startSound(context, buffer, () => partEnded(index), index * 0.1));
     };
     try {
-        const cached = buffers.get(fileName);
-        if (context.state === 'running' && cached) start(cached);
-        else void Promise.all([resumeContext(context), loadSound(context, fileName)])
-            .then(([, buffer]) => start(buffer)).catch(fallback);
+        const cached = fileNames.map(fileName => buffers.get(fileName));
+        if (context.state === 'running' && cached.every((buffer): buffer is AudioBuffer => !!buffer)) start(cached);
+        else void Promise.all([resumeContext(context), Promise.all(fileNames.map(fileName => loadSound(context, fileName)))])
+            .then(([, clipBuffers]) => start(clipBuffers)).catch(fallback);
     } catch { fallback(); }
 };
 
@@ -262,12 +281,15 @@ export const playPassSound = (): void => playAudioFile('pass', 'pass.mp3');
 export const playNewGameSound = (): void => playAudioFile('new-game', 'newgame.mp3');
 
 export const resetAudioContextForTests = (): void => {
+    if (navigationClip?.captureTimer) clearTimeout(navigationClip.captureTimer);
     navigationClip = null;
     pendingNavigationSound = null;
     lastNavigationAt = -Infinity;
     heldKeys.clear();
     navigationAudio?.pause();
     navigationAudio = null;
+    navigationCaptureAudio?.pause();
+    navigationCaptureAudio = null;
     if (audioContext) void audioContext.close().catch(() => undefined);
     audioContext = null;
     fallbackAudio = null;
