@@ -44,8 +44,8 @@ for (const origin of origins) {
         throw new Error(`Worker health/CORS check failed: HTTP ${response.status} for ${origin}`);
       }
       const data = await response.json();
-      if (data.ok !== true || data.fox !== 'public-records-only' || data.runtime !== 'cloudflare-worker') {
-        throw new Error('Worker URL did not return the expected Fox service.');
+      if (data.ok !== true || data.fox !== 'public-records-only' || data.runtime !== 'cloudflare-worker' || data.live_lookup !== true) {
+        throw new Error('Worker URL did not return the expected Fox service with live player lookup.');
       }
       failure = undefined;
       break;

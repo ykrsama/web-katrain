@@ -28,7 +28,7 @@ export function createFoxWorker(transport: FoxFetch, cache?: FoxCache) {
         headers.set('Access-Control-Expose-Headers', 'Content-Disposition, Retry-After');
       }
       const download = url.pathname.match(/^\/api\/fox\/download\/([0-9]{1,32})\.sgf$/);
-      if (!['/api/fox/status', '/api/fox/search', '/api/fox/games', '/api/fox/sgf'].includes(url.pathname) && !download) return reply({ error: 'Unknown API route.' }, 404);
+      if (!['/api/fox/status', '/api/fox/player', '/api/fox/search', '/api/fox/games', '/api/fox/sgf'].includes(url.pathname) && !download) return reply({ error: 'Unknown API route.' }, 404);
       if (request.method === 'OPTIONS') {
         const method = request.headers.get('Access-Control-Request-Method');
         if (method && !['GET', 'HEAD'].includes(method)) return reply({ error: 'Method is not allowed.' }, 405);
@@ -46,7 +46,7 @@ export function createFoxWorker(transport: FoxFetch, cache?: FoxCache) {
         return values[0] ?? fallback;
       };
       try {
-        if (url.pathname === '/api/fox/status') return reply({ ok: true, fox: 'public-records-only', runtime: 'cloudflare-worker' });
+        if (url.pathname === '/api/fox/status') return reply({ ok: true, fox: 'public-records-only', runtime: 'cloudflare-worker', live_lookup: true });
         // Cloudflare supplies this header; local development shares one bucket.
         const { success } = await env.FOX_RATE_LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'local' });
         if (!success) {
@@ -57,6 +57,7 @@ export function createFoxWorker(transport: FoxFetch, cache?: FoxCache) {
           const user = await client.resolve(arg('q'), arg('mode', 'nickname'));
           return reply({ user, ...await client.games(user.uid) });
         }
+        if (url.pathname === '/api/fox/player') return reply(await client.resolve(arg('q'), 'nickname'));
         if (url.pathname === '/api/fox/games') return reply(await client.games(arg('uid'), arg('cursor', '0')));
         const record = await client.sgf(download ? download[1] : arg('id'));
         if (!download) return reply(record);

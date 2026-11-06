@@ -6,15 +6,16 @@ import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { parseSgf } from '../utils/sgf';
 import { FoxImportError, resolveFoxKomi, assertFoxMoveNodes } from '../utils/foxImport';
 import { foxApiUrl } from '../utils/foxApi';
-import type { FoxPage as Page, FoxRecord as RecordData } from '../types/fox';
+import type { FoxPage as Page, FoxRecord as RecordData, FoxUser } from '../types/fox';
+import { FoxLiveRecords } from './FoxLiveRecords';
 import './FoxSgfImport.css';
 
 type Notice = { key: string; vars?: TranslationVars; detail?: string };
 
 export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: boolean; onClose: () => void; returnFocus?: HTMLElement | null; onImport: (parsed: ReturnType<typeof parseSgf>, sourceName: string) => void }) {
   const t = useT();
+  const [player, setPlayer] = useState<FoxUser | null>(null);
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState('nickname');
   const [pages, setPages] = useState<Page[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [identity, setIdentity] = useState('');
@@ -26,7 +27,8 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   const [message, setMessage] = useState<Notice | null>(null);
   const [error, setError] = useState<Notice | null>(null);
   const controller = useRef<AbortController | null>(null);
-  const dialog = useInitialDialogFocus<HTMLDivElement>(open, { returnFocus });
+  const queryInput = useRef<HTMLInputElement>(null);
+  const dialog = useInitialDialogFocus<HTMLDivElement>(open, { returnFocus, initialFocusRef: queryInput });
   useBackGestureToClose(() => { controller.current?.abort(); setBusy(false); onClose(); }, open);
   const page = pages[pageIndex];
 
@@ -61,16 +63,15 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   }
   async function search() {
     setError(null); setMessage(null); setPages([]); setRecord(null); setIdentity(''); setUid(''); setReplace(false);
-    if (mode === 'uid' && !/^[0-9]{1,32}$/.test(query.trim())) {
-      setError({ key: 'Fox UID must contain 1–32 ASCII digits. Use nickname mode for numeric nicknames.' });
-      return;
-    }
+    setPlayer(null);
     setBusy(true);
     try {
-      const result = await request<Page>(`search?${new URLSearchParams({ q: query, mode })}`);
+      const user = await request<FoxUser>(`player?${new URLSearchParams({ q: query })}`);
+      setPlayer(user); setUid(user.uid);
+      const result = await request<Page>(`games?${new URLSearchParams({ uid: user.uid })}`);
       const unique = [...new Map(result.games.map(game => [game.chessid, game])).values()];
       setPages([{ ...result, games: unique }]); setPageIndex(0); setUid(result.uid);
-      setIdentity(`${result.user?.nickname || query} · UID ${result.uid}`);
+      setIdentity(user.nickname || query);
       setMessage({ key: 'Fox returned {count} records; {unique} unique records on this page.', vars: { count: result.count, unique: unique.length } });
     } catch (cause) { report(cause); } finally { setBusy(false); }
   }
@@ -116,12 +117,13 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   return <>
     {open && <div className="fox-import-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
       <div ref={dialog} className="fox-import-dialog" role="dialog" aria-modal="true" aria-labelledby="fox-import-title" tabIndex={-1}>
-        <header><div><h2 id="fox-import-title">{t('Public Fox records')}</h2><p>{t('Public Fox import · Historical records only, not live observation')}</p></div><button type="button" aria-label={t('Close Fox import')} onClick={close}>{t('Close')}</button></header>
+        <header><div><h2 id="fox-import-title">{t('Fox records')}</h2><p>{t('Live observation and historical records')}</p></div><button type="button" aria-label={t('Close Fox records')} onClick={close}>{t('Close')}</button></header>
         <form className="fox-import-search" onSubmit={event => { event.preventDefault(); if (!busy) void search(); }}>
-          <select aria-label={t('Fox search mode')} value={mode} onChange={event => setMode(event.target.value)} disabled={busy}><option value="nickname">{t('Nickname')}</option><option value="uid">UID</option></select>
-          <input aria-label={t('Fox nickname or UID')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('Fox nickname or UID')} maxLength={120} required disabled={busy} />
+          <input ref={queryInput} aria-label={t('Fox nickname or player name')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('Fox nickname or player name')} maxLength={120} required disabled={busy} />
           <button type="submit" disabled={busy}>{busy ? t('Requesting…') : t('Find records')}</button>
         </form>
+        {player && <FoxLiveRecords key={player.uid} player={player} onImport={onImport} onClose={close} />}
+        {player && <h3 className="fox-history-heading">{t('Fox historical records')}</h3>}
         {identity && <p className="fox-import-identity">{identity}</p>}
         {error && <div role="alert" className="fox-import-error">{t(error.key, error.vars)}{error.detail && <details><summary>{t('Upstream details (original language)')}</summary><p>{error.detail}</p></details>}</div>}
         {message && <p role="status">{t(message.key, message.vars)}</p>}
@@ -144,7 +146,6 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
           <label className="fox-import-confirm"><input type="checkbox" checked={replace} onChange={event => setReplace(event.target.checked)} />{t('Import replaces the current board. I have saved any game I want to keep.')}</label>
           <div className="fox-import-actions"><a href={foxApiUrl(`download/${record.chessid}.sgf`)} download>{t('Download original SGF')}</a><button type="button" disabled={busy || !replace} onClick={importRecord}>{t('Import onto board')}</button></div>
         </section>}
-        {!page && !busy && <p className="fox-import-hint">{t('Search by public nickname or UID. No Fox login is required, and local records are not uploaded.')}</p>}
       </div>
     </div>}
   </>;

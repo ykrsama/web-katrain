@@ -1,6 +1,6 @@
-import type { FoxGame, FoxPage, FoxRecord, FoxUser } from '../../src/types/fox';
+import type { FoxGame, FoxLiveLocation, FoxPage, FoxRecord, FoxUser } from '../../src/types/fox';
 
-export const FOX_LIMITS = { timeoutMs: 15000, maxBytes: 4 * 1024 * 1024, cacheSeconds: 120, nicknameLength: 120 };
+export const FOX_LIMITS = { timeoutMs: 15000, maxBytes: 4 * 1024 * 1024, cacheSeconds: 120, profileCacheSeconds: 5, nicknameLength: 120 };
 const USER_URL = 'https://newframe.foxwq.com/cgi/QueryUserInfoPanel';
 const H5 = 'https://h5.foxwq.com/yehuDiamond/chessbook_local/';
 const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1';
@@ -72,10 +72,12 @@ export class FoxClient {
   private readonly cache?: FoxCache;
   constructor(transport: FoxFetch, cache?: FoxCache) { this.transport = transport; this.cache = cache; }
 
-  private async request(base: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+  private async request(base: string, params: Record<string, string>, cacheSeconds = FOX_LIMITS.cacheSeconds): Promise<Record<string, unknown>> {
     const url = new URL(base);
     url.search = new URLSearchParams(params).toString();
-    const key = new Request(url);
+    const cacheUrl = new URL(url);
+    cacheUrl.searchParams.set('__fox_cache_ttl', String(cacheSeconds));
+    const key = new Request(cacheUrl);
     // Cache availability must never decide whether a public record can be read.
     let cached: Response | undefined;
     try { cached = await this.cache?.match(key); } catch { /* Fetch upstream instead. */ }
@@ -93,7 +95,7 @@ export class FoxClient {
       const data = await readJson(response);
       try {
         await this.cache?.put(key, new Response(JSON.stringify(data), {
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${FOX_LIMITS.cacheSeconds}` },
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${cacheSeconds}` },
         }));
       } catch { /* Cache writes are best effort. */ }
       return data;
@@ -107,12 +109,24 @@ export class FoxClient {
   async resolve(query: string, mode: string): Promise<FoxUser> {
     if (!query.trim() || query.length > FOX_LIMITS.nicknameLength) throw new FoxError('Enter a valid Fox nickname or UID.', 400);
     query = query.trim();
-    if (mode === 'uid') return { uid: identity(query, 'UID'), nickname: '', mode };
+    if (mode === 'uid') return { uid: identity(query, 'UID'), nickname: '', mode, live: [] };
     if (mode !== 'nickname') throw new FoxError('Mode must be nickname or uid.', 400);
-    const data = await this.request(USER_URL, { srcuid: '0', username: query });
+    const data = await this.request(USER_URL, { srcuid: '0', username: query }, FOX_LIMITS.profileCacheSeconds);
     const uid = upstreamIdentity(data.uid, 'UID');
     if (/^0+$/.test(uid)) throw new FoxError('Fox account not found.');
-    return { uid, nickname: first(data, ['username', 'name', 'englishname'], query), mode };
+    const live: FoxLiveLocation[] = [];
+    if (Array.isArray(data.state_info)) {
+      for (const item of data.state_info) {
+        // 2 = playing; 3 = observing somebody else's game. Do not follow that room.
+        if (!object(item) || Number(item.state) !== 2 || !object(item.room_key)) continue;
+        const key = item.room_key;
+        const values = [key.svr_type, key.svr_id, key.room_id, key.create_time].map(Number);
+        if (!values.every(value => Number.isSafeInteger(value) && value > 0 && value <= 0x7fffffff)) continue;
+        const [serverType, serverId, roomId, createTime] = values;
+        if (!live.some(room => room.serverType === serverType && room.serverId === serverId && room.roomId === roomId && room.createTime === createTime)) live.push({ serverType, serverId, roomId, createTime, playerUid: uid });
+      }
+    }
+    return { uid, nickname: first(data, ['username', 'name', 'englishname'], query), mode, live };
   }
 
   async games(uid: string, cursor = '0'): Promise<FoxPage> {

@@ -1,5 +1,6 @@
 export type FoxGame = { chessid: string; black: string; white: string; date: string; moves: number | string };
-export type FoxUser = { uid: string; nickname: string; mode: 'nickname' | 'uid' };
+export type FoxLiveLocation = { serverType: number; serverId: number; roomId: number; createTime: number; playerUid: string };
+export type FoxUser = { uid: string; nickname: string; mode: 'nickname' | 'uid'; live: FoxLiveLocation[] };
 export type FoxPage = {
   games: FoxGame[];
   count: number;

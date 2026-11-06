@@ -17,11 +17,12 @@ with sync_playwright() as p:
   return c,page
  def open_dialog(page):
   page.get_by_role('button',name='More file actions',exact=True).click()
-  page.get_by_role('button',name='Import from Fox',exact=True).click()
+  page.get_by_role('button',name='Fox records',exact=True).click()
  def fixture(page,sgf):
-  page.route('**/api/fox/search?*',lambda r:r.fulfill(json={'user':{'uid':'123','nickname':'Fixture'},'uid':'123','count':1,'games':[{'chessid':'123','black':'Fixture B','white':'Fixture W','date':'fixture','moves':2}],'next_cursor':None,'can_request_next':False}))
+  page.route('**/api/fox/player?*',lambda r:r.fulfill(json={'uid':'123','nickname':'Fixture','mode':'nickname','live':[]}))
+  page.route('**/api/fox/games?*',lambda r:r.fulfill(json={'uid':'123','count':1,'games':[{'chessid':'123','black':'Fixture B','white':'Fixture W','date':'fixture','moves':2}],'next_cursor':None,'can_request_next':False}))
   page.route('**/api/fox/sgf?*',lambda r:r.fulfill(json={'chessid':'123','sgf':sgf,'bytes':len(sgf),'info':{'black':'Fixture B','white':'Fixture W','komi':'7.5'}}))
-  open_dialog(page);page.get_by_label('Fox nickname or UID').fill('Fixture');page.get_by_role('button',name='Find records',exact=True).click()
+  open_dialog(page);page.get_by_label('Fox nickname or player name').fill('Fixture');page.get_by_role('button',name='Find records',exact=True).click()
   page.get_by_role('button',name='Preview / import').click();page.locator('.fox-import-confirm input').wait_for()
  try:
   c,page=start();fixture(page,'(;SZ[19]KM[7.5];B[pd];W[dp])')
@@ -33,17 +34,22 @@ with sync_playwright() as p:
    assert page.locator('.fox-import-error').count()==1,'A multi-move node was silently accepted: '+sgf
    assert 'multiple moves' in page.locator('.fox-import-error').inner_text();c.close()
   results['all_tree_multi_move_nodes_rejected']=True
-  c,page=start();page.route('**/api/fox/search?*',lambda route:route.abort())
-  open_dialog(page);page.get_by_label('Fox nickname or UID').fill('Cancelled');page.get_by_role('button',name='Find records',exact=True).click();page.keyboard.press('Escape');open_dialog(page)
+  c,page=start();page.route('**/api/fox/player?*',lambda route:route.abort())
+  open_dialog(page);page.get_by_label('Fox nickname or player name').fill('Cancelled');page.get_by_role('button',name='Find records',exact=True).click();page.keyboard.press('Escape');open_dialog(page)
   page.wait_for_timeout(300)
   assert page.locator('.fox-import-error').count()==0,'Cancelled session leaked an error into reopened modal'
   assert page.get_by_role('button',name='Find records',exact=True).is_enabled();c.close()
   results['dismissed_request_cannot_write_new_session']=True
-  # No gateway on static deployments: the import action must not be exposed.
+  # An unavailable API must report the search failure without exposing room/link inputs.
   c=browser.new_context(viewport={'width':1365,'height':900},locale='en-US',service_workers='block');page=c.new_page()
-  page.route('**/api/fox/status',lambda route:route.fulfill(status=404,json={'error':'fixture no backend'}))
+  page.route('**/api/fox/player?*',lambda route:route.fulfill(status=404,json={'error':'fixture no backend'}))
   page.goto(URL,wait_until='commit',timeout=60000);page.get_by_role('button',name='More file actions',exact=True).wait_for(timeout=60000);page.get_by_role('button',name='More file actions',exact=True).click()
-  assert page.get_by_role('button',name='Import from Fox',exact=True).count()==0,'Static deployment exposes a broken Fox action'
-  results['missing_backend_hides_entry']=True;c.close()
+  assert page.get_by_role('button',name='Fox records',exact=True).count()==1,'Static deployment must retain live observation'
+  page.get_by_role('button',name='Fox records',exact=True).click()
+  page.get_by_label('Fox nickname or player name').fill('Fixture')
+  page.get_by_role('button',name='Find records',exact=True).click()
+  page.get_by_role('alert').wait_for()
+  assert page.locator('.fox-live-match').count()==0,'Failed lookups must not claim a current game'
+  results['missing_backend_reports_search_error']=True;c.close()
   (OUT/'pr-boundary-verification.json').write_text(json.dumps(results,indent=2));print(json.dumps(results,indent=2))
  finally:browser.close()

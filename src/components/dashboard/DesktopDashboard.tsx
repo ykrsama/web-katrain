@@ -1418,7 +1418,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <Icon name="camera" size={14} /><span className="mi-label">{t('Board from photo')}</span>
           </button>
           {onFoxImport && <button type="button" className="menu-item" onClick={() => { const trigger = popTriggerRef.current; closePop(); onFoxImport(trigger); }}>
-            <Icon name="search" size={14} /><span className="mi-label">{t('Import from Fox')}</span>
+            <Icon name="search" size={14} /><span className="mi-label">{t('Fox records')}</span>
           </button>}
         </div>
       )}

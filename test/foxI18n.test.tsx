@@ -44,7 +44,7 @@ describe('Fox import locale integration', () => {
         original.settings.appLocale = locale;
         useGameStore.setState({ settings: { ...stateBefore.settings, appLocale: locale } });
         const html = renderToStaticMarkup(<FoxSgfImport open onClose={() => undefined} onImport={() => undefined} />);
-        expect(html).toContain(locale === 'en' ? 'Public Fox records' : '野狐公开棋谱');
+        expect(html).toContain(locale === 'en' ? 'Fox records' : '野狐棋谱');
         expect(html).toContain(locale === 'en' ? 'Find records' : '查询棋谱');
         expect(html).not.toContain('fox-import-launcher');
         if (locale === 'en') expect(html).not.toMatch(/[\u3400-\u9fff]/);

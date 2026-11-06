@@ -1,10 +1,24 @@
-# Fox public-record import
+# Fox records
 
-This feature adds **Import from Fox** to the desktop **⋯ → Import** menu and the mobile **Menu → Game** actions. The Chinese label is **野狐抓谱**. There is no floating launcher.
+The **Fox records / 野狐棋谱** entry in the desktop **⋯ → Import** menu and mobile **Menu → Game** actions searches historical records and current live games from a single nickname/player-name field. The dialog follows the current UI theme.
 
-The menu entry appears after the configured `/api/fox/status` capability check succeeds. `VITE_FOX_API_BASE_URL` selects the Cloudflare Worker origin; when unset, API paths target the frontend origin root. A static Pages build without an accessible API hides the entry.
+The entry is always available. Both nickname discovery and historical records use the configured Cloudflare API (`VITE_FOX_API_BASE_URL`, or the frontend origin when unset). The subsequent live connection runs directly from the browser. A missing API is reported when searching instead of exposing room/link configuration.
 
-It imports public historical records, not live games. No Fox account, cookies or credentials are required. Availability and retention remain controlled by Fox; this is an unofficial client and does not guarantee complete account history.
+Nickname lookup and live observation require no Fox account or cookies. Availability and retention remain controlled by Fox; this is an unofficial client and does not guarantee complete account history or access to every live room.
+
+## Live observation
+
+Search a Fox nickname or player name once. The result shows **Live observation** and **Historical records** together. If the player is currently playing, select **Watch live game** to preview the position, confirm komi and replacement of the current board, then choose **Watch on board**. The UI does not accept share links, UIDs or room identifiers.
+
+`GET /api/fox/player?q=<nickname>` resolves the name and reads the public profile's `state_info`. Only `state: 2` locations are treated as the player's current game; `state: 3` is the player watching somebody else and is excluded. Room coordinates are validated, deduplicated and kept internal. Lookup aliases may return a different display name. A profile with no playing location means no current game was found through this lookup; it does not establish that no tournament broadcast featuring that name exists. Profile data is cached for only five seconds, separately from the historical cache.
+
+The browser uses the discovered room key to connect to `wss://wss.foxwq.com/`, requests a temporary visitor identity and enters the game. Board size, chess ID and player identities are read from the actual room snapshot; the requested player's UID must be present before the position is accepted. No extra Worker, database or server deployment is needed beyond the existing Fox API. Only read-only discovery, entry and heartbeat messages are sent; no move or chat commands are sent to Fox.
+
+Fox-encoded komi such as `375` still needs an explicit value in points. Closing the dialog after attaching leaves observation running, with **Follow latest move** and **Stop observing** controls on the main board. Closing an unattached preview cancels it. Reviewing an earlier position or exploring a branch pauses automatic following; selecting **Follow latest move** resumes it. Loading another game disconnects observation. Stop keeps the last position and its variations available for saving.
+
+The decoder replays the ordered operation history, including moves, passes and undos. Commentary/reference branches are excluded from the played line. Withdrawn moves and local study branches are retained as variations. A no-move end marker terminates the exported main line when the broadcast retracts moves. Sequence gaps, resets, broken connections and missing heartbeats trigger bounded reconnection with a new complete snapshot; stale callbacks from old sockets are ignored.
+
+The current live reader supports Chinese/Japanese Go without handicap or initial setup, including clock-only time-extension rooms. Unsupported setup/special rules fail explicitly; use historical import for those records. Closed/expired rooms and room reuse are reported instead of showing another game. Live access and connectivity remain controlled by Fox. Protocol tests and browser interaction checks use synthetic messages; separate public nickname checks exercise real discovery and visitor entry.
 
 ## GitHub Pages + Cloudflare Worker
 
@@ -48,7 +62,7 @@ The old Python loopback gateway and its duplicate protocol implementation have b
 
 ## Use and SGF safety
 
-1. Select **nickname** or **UID** explicitly. All-digit nicknames still use nickname lookup unless UID mode is selected.
+1. Search by Fox nickname/player name. Numeric names remain nicknames; UID mode remains available only to API clients.
 2. Query and preview a record. Pagination uses the final `chessid` as its cursor, not a page number; overlapping records are deduplicated, and repeated-only pages stop pagination.
 3. Download the original SGF, or import a copy onto the board. Confirm replacement of the current board after saving anything you want to keep.
 4. For special komi such as `KM[375]`, verify the rules and enter komi **in points** explicitly. The importer does not silently assume 375 points or guess a conversion factor. The original download stays byte-identical; only the parsed import copy gets the confirmed value.
@@ -69,7 +83,7 @@ Status/error state stores source keys and interpolation variables, so it re-rend
 From the repository root:
 
 ```bash
-npx vitest run test/foxWorker.test.ts test/foxApi.test.ts --maxWorkers=1
+npx vitest run test/foxLive.test.ts test/foxWorker.test.ts test/foxApi.test.ts --maxWorkers=1
 node --test test/foxImport.node-check.mjs
 npx vitest run test/foxI18n.test.tsx --maxWorkers=1
 npm run verify
@@ -84,14 +98,15 @@ Optional browser boundary checks (requires Playwright and a running Vite server)
 FOX_TEST_URL=http://127.0.0.1:5173 python3 scripts/check-fox-boundaries.py
 ```
 
-These checks use explicitly synthetic routed responses for stale replacement consent, cancelled/reopened requests, repeated/mixed moves in any variation, and missing-backend static deployments. Their evidence is written to the ignored `.external/fox-evidence/` directory.
+These checks use explicitly synthetic routed responses for stale replacement consent, cancelled/reopened requests, repeated/mixed moves in any variation, and live-only static deployments. Their evidence is written to the ignored `.external/fox-evidence/` directory.
 
-The Worker was also exercised in the real local workerd runtime against public Fox HTTPS endpoints: nickname lookup, two pages of records, SGF preview and byte-identical raw download. Earlier browser checks against the former loopback gateway covered encoded-komi refusal and explicit confirmation, library-to-import switching, separate save download, full replay, mobile menu and runtime language switching. The separate cloud probe passed all three upstream stages; the production Worker still needs deployment with your account credentials. Engine-specific tests remain opt-in; these checks do not establish live GPU analysis or live observation support.
+The Worker was also exercised in the real local workerd runtime against public Fox HTTPS endpoints: nickname lookup, two pages of records, SGF preview and byte-identical raw download. Earlier browser checks against the former loopback gateway covered encoded-komi refusal and explicit confirmation, library-to-import switching, separate save download, full replay, mobile menu and runtime language switching. The separate cloud probe passed all three upstream stages; the production Worker still needs deployment with your account credentials. Public nickname discovery and guest WebSocket snapshots were verified for 功夫肥猫, 神游世界 and obw12345. Browser checks with synthetic live messages cover preview, board updates, paused reviewing, follow, stop and theme/mobile layouts. Engine-specific tests remain opt-in; these checks do not establish live GPU analysis.
 
 ## Worker API
 
 - `GET /api/fox/status`: capability and runtime identity. Does not query Fox.
-- `GET /api/fox/search?q=<nickname>&mode=nickname` (or explicit `mode=uid`).
+- `GET /api/fox/player?q=<nickname>`: display identity and validated current-game locations.
+- `GET /api/fox/search?q=<nickname>&mode=nickname` (or explicit `mode=uid`): legacy combined historical lookup.
 - `GET /api/fox/games?uid=<uid>&cursor=<last-chessid>`.
 - `GET /api/fox/sgf?id=<chessid>`: raw SGF plus metadata.
 - `GET /api/fox/download/<chessid>.sgf`: unchanged attachment.

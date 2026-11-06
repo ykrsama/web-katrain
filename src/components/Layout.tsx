@@ -3,7 +3,7 @@ import { shallow } from 'zustand/shallow';
 import { setNotificationHeld, useGameStore } from '../store/gameStore';
 import { GoBoard } from './GoBoard';
 import { FoxSgfImport } from './FoxSgfImport';
-import { foxApiUrl } from '../utils/foxApi';
+import { FoxLiveStatus } from './FoxLiveRecords';
 import { AnalysisCommandBar } from './AnalysisCommandBar';
 import { CandidatePvTiles } from './CandidatePvTiles';
 import { EditToolbar } from './EditToolbar';
@@ -547,17 +547,6 @@ export const Layout: React.FC = () => {
   const [photoBoardInitialFile, setPhotoBoardInitialFile] = useState<File | null>(null);
   const [isPasteSgfOpen, setIsPasteSgfOpen] = useState(false);
   const [isFoxImportOpen, setIsFoxImportOpen] = useState(false);
-  const [foxImportAvailable, setFoxImportAvailable] = useState(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 5000);
-    let active = true;
-    void fetch(foxApiUrl('status'), { signal: controller.signal, cache: 'no-store', credentials: 'omit' })
-      .then(async response => response.ok ? response.json() : null)
-      .then(status => { if (active) setFoxImportAvailable(status?.ok === true && status?.fox === 'public-records-only'); })
-      .catch(() => { if (active) setFoxImportAvailable(false); });
-    return () => { active = false; controller.abort(); window.clearTimeout(timer); };
-  }, []);
   const openFoxImport = useCallback((returnFocus?: HTMLElement | null) => {
     modalReturnFocusRef.current = returnFocus ?? null;
     setIsFoxImportOpen(true);
@@ -3909,6 +3898,7 @@ export const Layout: React.FC = () => {
       <div className="sr-only" aria-live="polite" aria-atomic="true" data-board-announcer="true">
         {boardAnnouncement}
       </div>
+      <FoxLiveStatus />
       <LazyModalBoundary
         onError={(error) => {
           const message = error instanceof Error ? error.message : String(error);
@@ -4228,7 +4218,7 @@ export const Layout: React.FC = () => {
         saveLabel={saveControlLabel}
         onSaveToLibrary={handleOpenSaveToLibraryDialog}
         onLoad={handleLoadClick}
-        onFoxImport={foxImportAvailable ? openFoxImport : undefined}
+        onFoxImport={openFoxImport}
         onScanBoard={() => openPhotoBoard()}
         onScoreQuiz={() => setIsScoreQuizOpen(true)}
         onRankLadder={() => setIsTournamentOpen(true)}
@@ -4490,7 +4480,7 @@ export const Layout: React.FC = () => {
             onSaveToLibrary={handleOpenSaveToLibraryDialog}
             onLoadSgf={handleLoadClick}
             onPasteSgf={handlePasteSgf}
-            onFoxImport={foxImportAvailable ? openFoxImport : undefined}
+            onFoxImport={openFoxImport}
             onScanBoard={(returnFocus) => openPhotoBoard(null, returnFocus)}
             onBlindfold={() => setIsBlindfoldOpen(true)}
             onSettings={() => setIsSettingsOpen(true)}

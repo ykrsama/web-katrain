@@ -365,7 +365,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                 </span>
               </button>
               {onFoxImport && <button type="button" className={menuAction} onClick={() => { onClose(); onFoxImport(actionReturnFocusRef.current); }}>
-                <span className="flex min-w-0 items-center gap-2"><FaSearch className="shrink-0" aria-hidden="true" /> {t('Import from Fox')}</span>
+                <span className="flex min-w-0 items-center gap-2"><FaSearch className="shrink-0" aria-hidden="true" /> {t('Fox records')}</span>
               </button>}
             </div>
           </div>

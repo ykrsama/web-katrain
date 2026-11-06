@@ -1,6 +1,7 @@
 import { createWithEqualityFn as create } from 'zustand/traditional';
 import { DEFAULT_BOARD_SIZE, DEFAULT_TOP_MOVES, KOMI, type FloatArray, type GameRules, type GameState, type BoardState, type Player, type AnalysisResult, type BoardDrawing, type GameNode, type Move, type GameSettings, type CandidateMove, type RegionOfInterest, type BoardSize, type KataGoBackendPreference, type EditTool } from '../types';
 import { findMistakeNavigationTarget } from '../utils/mistakeNavigation';
+import { reconcileFoxLiveLine } from '../utils/foxLiveBoard';
 import { applyCapturesInPlace, applySelfCaptureInPlace, boardsEqual, getLiberties, getLegalMoves, isEye, isValidMove } from '../utils/gameLogic';
 import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound, playNavigationSound, stopNavigationSounds } from '../utils/sound';
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
@@ -303,6 +304,7 @@ interface GameStore extends GameState {
   resumeBlindfold: () => void;
   resetGame: () => void;
   loadGame: (sgf: ParsedSgf) => void;
+  syncFoxLiveMoves: (rootId: string, previous: GameNode[], moves: Move[], follow: boolean, result?: string) => GameNode[] | null;
   passTurn: () => void;
   resign: (player?: Player) => void;
   /** Write the result of a counted game onto the record; see the action. */
@@ -7549,6 +7551,18 @@ export const useGameStore = create<GameStore>((commit, get) => {
       pinnedVariations: [],
       treeVersion: state.treeVersion + 1,
     });
+  },
+
+  syncFoxLiveMoves: (rootId, previous, moves, follow, result) => {
+    const state = get();
+    if (state.rootNode.id !== rootId) return null;
+    const line = reconcileFoxLiveLine(state.rootNode, previous, moves,
+      (parent, move) => createChildForMove(parent, move, isSuicideLegal(state.settings.gameRules), rulesOf(state.settings.gameRules).ko),
+      parent => createNode(parent, null, parent.gameState));
+    if (result) state.rootNode.properties = { ...state.rootNode.properties, RE: [result] };
+    set({ treeVersion: state.treeVersion + 1, ...clearEditHistory(), ...repathPins(state.rootNode, state.pinnedVariations) });
+    if (follow) get().jumpToNode(line.at(-1)!);
+    return line;
   },
 
   loadGame: (sgf: ParsedSgf) => {

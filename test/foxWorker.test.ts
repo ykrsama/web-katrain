@@ -30,6 +30,26 @@ function setup() {
 afterEach(() => vi.useRealTimers());
 
 describe('Fox public protocol', () => {
+  it('finds a named player’s current game, excluding spectated rooms and malformed or duplicate locations', async () => {
+    const { request, transport } = setup();
+    const playing = { state: 2, room_key: { svr_type: 20010, svr_id: 1, room_id: 123, create_time: '123456' } };
+    transport.mockResolvedValueOnce(Response.json({ result: 0, uid: '123', username: 'Display alias', openid: 'must-not-leak', state_info: [playing, playing,
+      { state: 3, room_key: { ...playing.room_key, room_id: 456 } },
+      { state: 2, room_key: { ...playing.room_key, create_time: 'invalid' } },
+    ] }));
+    const response = await request('player?q=obw12345');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ uid: '123', nickname: 'Display alias', mode: 'nickname', live: [{ serverType: 20010, serverId: 1, roomId: 123, createTime: 123456, playerUid: '123' }] });
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(new URL(String(transport.mock.calls[0][0])).searchParams.get('username')).toBe('obw12345');
+  });
+
+  it('returns an empty current-game list for offline profiles without querying historical records', async () => {
+    const { request, transport } = setup();
+    expect(await (await request('player?q=Fixture')).json()).toMatchObject({ uid: '123', live: [] });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it('resolves Unicode and numeric nicknames explicitly and preserves the chessid cursor', async () => {
     const { request, transport } = setup();
     const response = await request('search?' + new URLSearchParams({ q: '榴莲拌肥肠', mode: 'nickname' }));
