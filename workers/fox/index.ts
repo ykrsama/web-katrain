@@ -57,7 +57,7 @@ export function createFoxWorker(transport: FoxFetch, cache?: FoxCache) {
           const user = await client.resolve(arg('q'), arg('mode', 'nickname'));
           return reply({ user, ...await client.games(user.uid) });
         }
-        if (url.pathname === '/api/fox/player') return reply(await client.resolve(arg('q'), 'nickname'));
+        if (url.pathname === '/api/fox/player') return reply(await client.resolve(arg('q'), arg('mode', 'auto')));
         if (url.pathname === '/api/fox/games') return reply(await client.games(arg('uid'), arg('cursor', '0')));
         const record = await client.sgf(download ? download[1] : arg('id'));
         if (!download) return reply(record);

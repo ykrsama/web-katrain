@@ -30,6 +30,33 @@ function setup() {
 afterEach(() => vi.useRealTimers());
 
 describe('Fox public protocol', () => {
+  it('prefers a matching numeric nickname in automatic search, preserving its live game', async () => {
+    const { request, transport } = setup();
+    transport.mockResolvedValueOnce(Response.json({ result: 0, uid: '456', username: '123', state_info: [{ state: 2, room_key: { svr_type: 20010, svr_id: 1, room_id: 123, create_time: 123456 } }] }));
+    expect(await (await request('player?q=123')).json()).toMatchObject({ uid: '456', mode: 'nickname', live: [{ playerUid: '456' }] });
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(new URL(String(transport.mock.calls[0][0])).searchParams.get('username')).toBe('123');
+  });
+
+  it.each([101201, 104013, 0])('uses a numeric UID only after an explicit missing-account response (%s)', async result => {
+    const { request, transport } = setup();
+    transport.mockResolvedValueOnce(Response.json({ result, uid: '0' }));
+    expect(await (await request('player?q=00123')).json()).toMatchObject({ uid: '00123', mode: 'uid' });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not turn upstream failures or a missing text nickname into a UID match', async () => {
+    const { request, transport } = setup();
+    for (const response of [new Response('', { status: 503 }), Response.json({ result: 8 }), Response.json({ result: 0 }), Response.json({ result: 101201, uid: '123' })]) {
+      transport.mockResolvedValueOnce(response);
+      expect((await request('player?q=123')).status).toBe(502);
+    }
+    transport.mockResolvedValueOnce(Response.json({ result: 104013, uid: '0' }));
+    expect((await request('player?q=not-found')).status).toBe(404);
+    transport.mockRejectedValueOnce(new Error('fixture network failure'));
+    expect((await request('player?q=123')).status).toBe(502);
+  });
+
   it('finds a named player’s current game, excluding spectated rooms and malformed or duplicate locations', async () => {
     const { request, transport } = setup();
     const playing = { state: 2, room_key: { svr_type: 20010, svr_id: 1, room_id: 123, create_time: '123456' } };
@@ -73,6 +100,8 @@ describe('Fox public protocol', () => {
 
   it('uses explicit UIDs without a nickname lookup and rejects invalid or duplicate inputs', async () => {
     const { request, transport } = setup();
+    expect(await (await request('player?q=00123&mode=uid')).json()).toMatchObject({ uid: '00123', mode: 'uid' });
+    expect(transport).not.toHaveBeenCalled();
     expect((await request('search?q=00123&mode=uid')).status).toBe(200);
     expect(transport).toHaveBeenCalledTimes(1);
     expect(new URL(String(transport.mock.calls[0][0])).searchParams.get('dstuid')).toBe('00123');

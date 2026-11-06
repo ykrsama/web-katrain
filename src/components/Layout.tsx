@@ -547,10 +547,6 @@ export const Layout: React.FC = () => {
   const [photoBoardInitialFile, setPhotoBoardInitialFile] = useState<File | null>(null);
   const [isPasteSgfOpen, setIsPasteSgfOpen] = useState(false);
   const [isFoxImportOpen, setIsFoxImportOpen] = useState(false);
-  const openFoxImport = useCallback((returnFocus?: HTMLElement | null) => {
-    modalReturnFocusRef.current = returnFocus ?? null;
-    setIsFoxImportOpen(true);
-  }, []);
   const closeFoxImport = useCallback(() => setIsFoxImportOpen(false), []);
   const [saveToLibraryDialog, setSaveToLibraryDialog] = useState<SaveToLibraryDialogState | null>(null);
   const [isUnsavedChangesOpen, setIsUnsavedChangesOpen] = useState(false);
@@ -2145,6 +2141,13 @@ export const Layout: React.FC = () => {
     setMenuOpen(false);
     if (!(await prepareForGameReplacement())) return;
     setIsNewGameOpen(true);
+  }, [prepareForGameReplacement]);
+
+  const openFoxImport = useCallback(async (returnFocus?: HTMLElement | null) => {
+    modalReturnFocusRef.current = returnFocus ?? null;
+    setMenuOpen(false);
+    if (!(await prepareForGameReplacement())) return;
+    setIsFoxImportOpen(true);
   }, [prepareForGameReplacement]);
 
   const startQuickNewGame = useCallback(async () => {

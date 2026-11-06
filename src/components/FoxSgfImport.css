@@ -25,6 +25,18 @@
 .fox-import-dialog :is(button, input, select, a):focus-visible, .fox-live-status button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .fox-import-dialog input::placeholder { color: var(--ui-text-faint); opacity: 1; }
 .fox-import-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.fox-search-field { position: relative; min-width: 0; }
+.fox-search-input { display: flex; }
+.fox-search-input input { width: 100%; }
+.fox-search-history { position: absolute; top: calc(100% + 5px); inset-inline: 0; z-index: 5; padding: 6px; background: var(--ui-panel); border: 1px solid var(--ui-border-strong); border-radius: 9px; box-shadow: 0 8px 24px #0003; }
+.fox-search-history > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; color: var(--ui-text-muted); font-size: 12px; }
+.fox-search-history ul { list-style: none; padding: 0; margin: 4px 0 0; max-height: 200px; overflow-y: auto; }
+.fox-search-history li { display: flex; }
+.fox-search-history li button:first-child { flex: 1; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+.fox-search-history button { border: 0; }
+.fox-import-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.fox-import-settings label { display: flex; flex-direction: column; gap: 5px; }
+.fox-import-settings :is(input, select) { width: 100%; }
 .fox-import-identity { color: var(--ui-accent); font-weight: 600; }
 .fox-import-error { color: var(--ui-danger); overflow-wrap: anywhere; }
 .fox-import-warning { color: var(--ui-warning); font-size: 12px; }
@@ -38,8 +50,6 @@
 .fox-import-detail { margin-top: 12px; padding: 14px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); }
 .fox-import-detail > label:not(.fox-import-confirm) { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
 .fox-import-detail input[type=number] { flex: 1; width: 100%; }
-.fox-import-confirm { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; margin: 16px 0; }
-.fox-import-confirm input { margin-top: 4px; accent-color: var(--ui-accent); }
 .fox-import-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .fox-import-actions a { color: var(--ui-accent); text-decoration: underline; }
 .fox-import-actions button:last-child { background: var(--ui-accent); color: var(--ui-accent-contrast); border-color: var(--ui-accent); }

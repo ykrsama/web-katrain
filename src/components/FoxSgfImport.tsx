@@ -4,10 +4,14 @@ import { useT, type TranslationVars } from '../i18n';
 import { useBackGestureToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { parseSgf } from '../utils/sgf';
-import { FoxImportError, resolveFoxKomi, assertFoxMoveNodes } from '../utils/foxImport';
+import { FoxImportError, assertFoxMoveNodes } from '../utils/foxImport';
 import { foxApiUrl } from '../utils/foxApi';
 import type { FoxPage as Page, FoxRecord as RecordData, FoxUser } from '../types/fox';
 import { FoxLiveRecords } from './FoxLiveRecords';
+import { FoxImportSettings } from './FoxImportSettings';
+import { FoxSearchField } from './FoxSearchField';
+import { applyFoxImportOptions, foxImportOptions, validFoxImportOptions, type FoxImportOptions } from '../utils/foxImportOptions';
+import { addFoxSearchHistory, readFoxSearchHistory, saveFoxSearchHistory } from '../utils/foxSearchHistory';
 import './FoxSgfImport.css';
 
 type Notice = { key: string; vars?: TranslationVars; detail?: string };
@@ -21,10 +25,9 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   const [identity, setIdentity] = useState('');
   const [uid, setUid] = useState('');
   const [record, setRecord] = useState<RecordData | null>(null);
-  const [komi, setKomi] = useState('');
-  const [replace, setReplace] = useState(false);
+  const [options, setOptions] = useState<FoxImportOptions>(() => foxImportOptions({}));
+  const [history, setHistory] = useState(readFoxSearchHistory);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<Notice | null>(null);
   const [error, setError] = useState<Notice | null>(null);
   const controller = useRef<AbortController | null>(null);
   const queryInput = useRef<HTMLInputElement>(null);
@@ -62,17 +65,22 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     else setError({ key: 'Could not load the Fox record.', detail: cause instanceof Error ? cause.message : String(cause) });
   }
   async function search() {
-    setError(null); setMessage(null); setPages([]); setRecord(null); setIdentity(''); setUid(''); setReplace(false);
+    setError(null); setPages([]); setRecord(null); setIdentity(''); setUid('');
     setPlayer(null);
     setBusy(true);
     try {
-      const user = await request<FoxUser>(`player?${new URLSearchParams({ q: query })}`);
+      const searchQuery = query.trim();
+      const user = await request<FoxUser>(`player?${new URLSearchParams({ q: searchQuery })}`);
+      setHistory(current => {
+        const updated = addFoxSearchHistory(current, { query: searchQuery });
+        saveFoxSearchHistory(updated); return updated;
+      });
       setPlayer(user); setUid(user.uid);
       const result = await request<Page>(`games?${new URLSearchParams({ uid: user.uid })}`);
       const unique = [...new Map(result.games.map(game => [game.chessid, game])).values()];
       setPages([{ ...result, games: unique }]); setPageIndex(0); setUid(result.uid);
-      setIdentity(user.nickname || query);
-      setMessage({ key: 'Fox returned {count} records; {unique} unique records on this page.', vars: { count: result.count, unique: unique.length } });
+      setIdentity(user.nickname || searchQuery);
+
     } catch (cause) { report(cause); } finally { setBusy(false); }
   }
   async function next() {
@@ -83,7 +91,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
       const result = await request<Page>(`games?${new URLSearchParams({ uid, cursor: page.next_cursor })}`);
       const seen = new Set(pages.flatMap(item => item.games.map(game => game.chessid)));
       const unique = result.games.filter(game => { if (seen.has(game.chessid)) return false; seen.add(game.chessid); return true; });
-      setMessage({ key: 'Fox returned {count} records; {unique} new records after deduplication.', vars: { count: result.count, unique: unique.length } });
+
       if (!unique.length) {
         setPages(current => current.map((item, i) => i === pageIndex ? { ...item, can_request_next: false } : item));
         return;
@@ -92,24 +100,24 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     } catch (cause) { report(cause); } finally { setBusy(false); }
   }
   async function select(chessid: string) {
-    setBusy(true); setError(null); setRecord(null); setKomi(''); setReplace(false);
-    try { setRecord(await request<RecordData>(`sgf?id=${encodeURIComponent(chessid)}`)); }
+    setBusy(true); setError(null); setRecord(null);
+    try {
+      const data = await request<RecordData>(`sgf?id=${encodeURIComponent(chessid)}`);
+      const parsed = parseSgf(data.sgf);
+      setOptions(foxImportOptions(parsed.tree?.props ?? {}));
+      setRecord(data);
+    }
     catch (cause) { report(cause); } finally { setBusy(false); }
   }
   function importRecord() {
-    if (!record || !replace) return;
+    if (!record || !validFoxImportOptions(options)) return;
     setError(null);
     try {
       const parsed = parseSgf(record.sgf);
       assertFoxMoveNodes(parsed.tree);
-      const confirmedKomi = resolveFoxKomi(parsed.tree?.props.KM?.[0], komi);
-      if (confirmedKomi !== undefined) {
-        parsed.komi = confirmedKomi;
-        if (parsed.tree) parsed.tree.props.KM = [String(confirmedKomi)];
-      }
+      applyFoxImportOptions(parsed, options);
       onImport(parsed, `fox-${record.chessid}.sgf`);
-      useGameStore.setState({ notification: { message: t('Imported Fox record: {black} vs {white} · {moves} moves · komi {komi}. Original download unchanged.', { black: record.info.black, white: record.info.white, moves: parsed.moves.length, komi: parsed.komi }), type: 'success' } });
-      setMessage({ key: 'Imported {moves} moves. Replay starts at the beginning; use the navigation controls to advance.', vars: { moves: parsed.moves.length } });
+      useGameStore.setState({ notification: { message: t('Fox record imported.'), type: 'success' } });
       close();
     } catch (cause) { report(cause); }
   }
@@ -119,14 +127,13 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
       <div ref={dialog} className="fox-import-dialog" role="dialog" aria-modal="true" aria-labelledby="fox-import-title" tabIndex={-1}>
         <header><div><h2 id="fox-import-title">{t('Fox records')}</h2><p>{t('Live observation and historical records')}</p></div><button type="button" aria-label={t('Close Fox records')} onClick={close}>{t('Close')}</button></header>
         <form className="fox-import-search" onSubmit={event => { event.preventDefault(); if (!busy) void search(); }}>
-          <input ref={queryInput} aria-label={t('Fox nickname or player name')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('Fox nickname or player name')} maxLength={120} required disabled={busy} />
+          <FoxSearchField query={query} setQuery={setQuery} history={history} onHistoryChange={entries => { setHistory(entries); saveFoxSearchHistory(entries); }} disabled={busy} inputRef={queryInput} />
           <button type="submit" disabled={busy}>{busy ? t('Requesting…') : t('Find records')}</button>
         </form>
         {player && <FoxLiveRecords key={player.uid} player={player} onImport={onImport} onClose={close} />}
         {player && <h3 className="fox-history-heading">{t('Fox historical records')}</h3>}
         {identity && <p className="fox-import-identity">{identity}</p>}
-        {error && <div role="alert" className="fox-import-error">{t(error.key, error.vars)}{error.detail && <details><summary>{t('Upstream details (original language)')}</summary><p>{error.detail}</p></details>}</div>}
-        {message && <p role="status">{t(message.key, message.vars)}</p>}
+        {error && <div role="alert" className="fox-import-error">{t(error.key, error.vars)}</div>}
         {page && <>
           <div className="fox-import-table-wrap"><table><thead><tr><th>{t('Black / White')}</th><th>{t('Date / Moves')}</th><th>{t('Actions')}</th></tr></thead><tbody>
             {page.games.map(game => <tr key={game.chessid} data-fox-chessid={game.chessid}>
@@ -137,14 +144,9 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
           <nav aria-label={t('Fox record pagination')}><button type="button" disabled={busy || pageIndex === 0} onClick={() => { setPageIndex(pageIndex - 1); setRecord(null); }}>{t('Previous page')}</button><span>{t('Page {page} · {count} records', { page: pageIndex + 1, count: page.games.length })}</span><button type="button" disabled={busy || !page.can_request_next} onClick={() => void next()}>{t('Next page')}</button></nav>
         </>}
         {record && <section className="fox-import-detail">
-          <h3>{t('{black} vs {white}', { black: record.info.black, white: record.info.white })}</h3><p>{t('Record {id} · {bytes} bytes · original komi KM[{komi}]', { id: record.chessid, bytes: record.bytes, komi: record.info.komi })}</p>
-          {record.secure_transport === false && <p className="fox-import-warning">{t('Untrusted transport: this record used a legacy HTTP fallback. Verify its source before importing.')}</p>}
-          <p className="fox-import-warning">{t('Original SGF: variations, handicap and komi have not been normalized.')}</p>
-          {Math.abs(Number(record.info.komi)) >= 100 && <p className="fox-import-warning">{t('KM[{komi}] may use Fox-specific encoding. Confirm the komi before importing.', { komi: record.info.komi })}</p>}
-          <label>{t('Import komi (points)')}<input aria-label={t('Import komi')} type="number" step="0.5" min="-99.5" max="99.5" value={komi} placeholder={t('Confirm encoded komi before entering a value')} onChange={event => setKomi(event.target.value)} /></label>
-          <small>{t('Only the import copy is adjusted. Enter a verified value such as 7.5; 375 is not treated as 375 points. Downloads remain unchanged.')}</small>
-          <label className="fox-import-confirm"><input type="checkbox" checked={replace} onChange={event => setReplace(event.target.checked)} />{t('Import replaces the current board. I have saved any game I want to keep.')}</label>
-          <div className="fox-import-actions"><a href={foxApiUrl(`download/${record.chessid}.sgf`)} download>{t('Download original SGF')}</a><button type="button" disabled={busy || !replace} onClick={importRecord}>{t('Import onto board')}</button></div>
+          <h3>{t('{black} vs {white}', { black: record.info.black, white: record.info.white })}</h3>
+          <FoxImportSettings value={options} onChange={setOptions} />
+          <div className="fox-import-actions"><a href={foxApiUrl(`download/${record.chessid}.sgf`)} download>{t('Download original SGF')}</a><button type="button" disabled={busy || !validFoxImportOptions(options)} onClick={importRecord}>{t('Import onto board')}</button></div>
         </section>}
       </div>
     </div>}

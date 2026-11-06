@@ -12,6 +12,10 @@ export class FoxError extends Error {
   constructor(message: string, status = 502) { super(message); this.status = status; }
 }
 
+class FoxAccountNotFound extends FoxError {
+  constructor() { super('Fox account not found.', 404); }
+}
+
 export function identity(value: string, label: string): string {
   if (!/^[0-9]{1,32}$/.test(value)) throw new FoxError(`${label} must contain 1–32 ASCII digits.`, 400);
   return value;
@@ -34,7 +38,7 @@ function first(data: Record<string, unknown>, keys: string[], fallback = ''): st
   return typeof value === 'string' ? value : fallback;
 }
 
-async function readJson(response: Response): Promise<Record<string, unknown>> {
+async function readJson(response: Response, isProfile = false): Promise<Record<string, unknown>> {
   if (!response.ok) {
     await response.body?.cancel();
     throw new FoxError(`Fox HTTP ${response.status}.`);
@@ -63,6 +67,10 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   catch { throw new FoxError('Fox returned invalid JSON.'); }
   if (!object(data)) throw new FoxError('Fox returned a non-object response.');
   const code = data.result ?? data.errcode ?? -1;
+  // Both public profile responses mean the requested nickname was not found.
+  // Keep transport, rate-limit and other upstream errors distinct: they must
+  // not silently redirect a numeric nickname to another account's UID.
+  if (isProfile && ['101201', '104013'].includes(String(code)) && /^0*$/.test(String(data.uid ?? ''))) throw new FoxAccountNotFound();
   if (String(code) !== '0') throw new FoxError(`Fox error ${code}: ${String(data.resultstr || data.errmsg || 'Request failed').slice(0, 300)}`);
   return data;
 }
@@ -82,7 +90,7 @@ export class FoxClient {
     let cached: Response | undefined;
     try { cached = await this.cache?.match(key); } catch { /* Fetch upstream instead. */ }
     if (cached) {
-      try { return await readJson(cached); } catch { /* Ignore a corrupt/stale cache entry. */ }
+      try { return await readJson(cached, base === USER_URL); } catch { /* Ignore a corrupt/stale cache entry. */ }
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FOX_LIMITS.timeoutMs);
@@ -92,7 +100,7 @@ export class FoxClient {
         redirect: 'manual',
         signal: controller.signal,
       });
-      const data = await readJson(response);
+      const data = await readJson(response, base === USER_URL);
       try {
         await this.cache?.put(key, new Response(JSON.stringify(data), {
           headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${cacheSeconds}` },
@@ -109,11 +117,18 @@ export class FoxClient {
   async resolve(query: string, mode: string): Promise<FoxUser> {
     if (!query.trim() || query.length > FOX_LIMITS.nicknameLength) throw new FoxError('Enter a valid Fox nickname or UID.', 400);
     query = query.trim();
+    if (mode === 'auto') {
+      try { return await this.resolve(query, 'nickname'); }
+      catch (error) {
+        if (error instanceof FoxAccountNotFound && /^[0-9]{1,32}$/.test(query)) return this.resolve(query, 'uid');
+        throw error;
+      }
+    }
     if (mode === 'uid') return { uid: identity(query, 'UID'), nickname: '', mode, live: [] };
-    if (mode !== 'nickname') throw new FoxError('Mode must be nickname or uid.', 400);
+    if (mode !== 'nickname') throw new FoxError('Mode must be auto, nickname or uid.', 400);
     const data = await this.request(USER_URL, { srcuid: '0', username: query }, FOX_LIMITS.profileCacheSeconds);
     const uid = upstreamIdentity(data.uid, 'UID');
-    if (/^0+$/.test(uid)) throw new FoxError('Fox account not found.');
+    if (/^0+$/.test(uid)) throw new FoxAccountNotFound();
     const live: FoxLiveLocation[] = [];
     if (Array.isArray(data.state_info)) {
       for (const item of data.state_info) {
