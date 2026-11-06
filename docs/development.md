@@ -30,7 +30,8 @@ The Vite dev server sends the COOP/COEP headers required for threaded WASM.
 | `npm run deploy:fox` | Deploy the Worker and verify status/CORS using the CI configuration; see [Fox deployment](fox-sgf-import.md). |
 | `npm run verify` | **The one to run before pushing.** typecheck → test:typecheck → lint → test → build, with npm's `&&` so the first failure stops it. Runs the code checks used in CI; `npm audit` and the browser viewport suite run separately. |
 | `npm run test:engine` | Run optional engine suites (`ENGINE_TESTS=1`). |
-| `npm test` | Run all Vitest tests. Note this typechecks nothing — Vitest transpiles without checking, so a test can pass while failing to compile. With `CI` set, tests that run a real MCTS search are skipped: seconds locally, minutes on a shared runner. `ENGINE_TESTS=1 npm test` runs them regardless. |
+| `npm test` | Run all Vitest tests. Note this typechecks nothing — Vitest transpiles without checking, so a test can pass while failing to compile. With `CI` set, optional engine suites are skipped, though some regular rule regressions still run CPU searches. `ENGINE_TESTS=1 npm test` enables the optional suites too. |
+| `npm run test:deploy` | Run 24 release smoke suites for game rules, SGF import, saving/library recovery, engine input fixtures, PWA assets and Fox. Used by the Pages deployment; omits full CPU searches and large stress fixtures. Full tests and test type-checking remain in the independent CI workflow. |
 | `npm run typecheck` | Type-check the app and node projects. It runs `tsc -b`, and it has to: the root `tsconfig.json` has `"files": []` and only references the two project configs, so a bare `tsc --noEmit` here type-checks nothing at all and exits 0. |
 | `npm run test:typecheck` | Type-check the test project. |
 | `npm run test:viewport` | Check 11 desktop/mobile sizes and study workflows in Chrome with a fresh Vite cache and browser profile. Runs in CI and separately from `verify`; about 3 minutes locally. |
@@ -96,6 +97,15 @@ npm run lint
 npm run build
 npm run build:fox
 ```
+
+Pages deployment runs `test:deploy` instead of repeating the full suite and test
+type-checking already performed by `.github/workflows/ci.yml` for the same main
+commit. The smoke list lives in `vitest.deploy.config.ts` and shares Vite's
+aliases and test exclusions. Audit, lint, the app's type-checked build, Worker
+bundle validation and Worker status/CORS checks still gate publication. Full CI
+and browser jobs report independently and do not block Pages deployment. The
+full CPU-search, SGF round-trip, ZIP limit and AI timing regressions remain in
+`npm test`; no test was deleted or globally skipped for release speed.
 
 Browser checks cover rendered layout, real interactions, and study operations.
 The viewport suite runs in CI; responsiveness, analysis, and study checks run locally.

@@ -14,6 +14,7 @@
     "deploy:fox": "node scripts/deploy-fox-worker.mjs",
     "build": "tsc -b && vite build",
     "test": "vitest run",
+    "test:deploy": "vitest run --config vitest.deploy.config.ts",
     "test:engine": "ENGINE_TESTS=1 vitest run",
     "test:viewport": "node scripts/check-viewports.mjs",
     "test:responsiveness": "node scripts/check-responsiveness.mjs",

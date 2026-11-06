@@ -39,11 +39,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test
-
-      - name: Type-check tests
-        run: npm run test:typecheck
+      # Full tests and test type-checking already run for this commit in CI.
+      # Keep release-critical smoke coverage here without waiting for CPU
+      # searches, large SGF/ZIP fixtures and the full regression suite again.
+      - name: Deployment smoke tests
+        run: npm run test:deploy
 
       - name: Build
         env:
