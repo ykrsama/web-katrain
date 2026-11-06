@@ -7,7 +7,7 @@ export default {
   'Untrusted transport: this record used a legacy HTTP fallback. Verify its source before importing.': '不可信传输：此棋谱使用旧版 HTTP 回退地址下载，请核对来源后再导入。',
   'Import from Fox': '野狐抓谱',
   'Public Fox records': '野狐公开棋谱',
-  'Same-origin Fox import · Historical records only, not live observation': '同源野狐抓谱 · 仅历史棋谱，非实时观战',
+  'Public Fox import · Historical records only, not live observation': '野狐公开棋谱导入 · 仅历史棋谱，非实时观战',
   'Close Fox import': '关闭野狐抓谱',
   'Fox search mode': '野狐查询模式',
   'Fox nickname or UID': '野狐昵称或 UID',

@@ -1,0 +1,18 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "web-katrain-fox",
+  "main": "index.ts",
+  "compatibility_date": "2026-11-06",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "FOX_ALLOWED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173"
+  },
+  "ratelimits": [
+    {
+      "name": "FOX_RATE_LIMITER",
+      "namespace_id": "18767",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ]
+}

@@ -239,6 +239,10 @@ export default defineConfig(({ mode }) => {
         'Cross-Origin-Embedder-Policy': 'require-corp',
       },
       proxy: {
+        '/api/fox': {
+          target: 'http://127.0.0.1:18767',
+          changeOrigin: true,
+        },
         // Proxy WebSocket connections to the remote KataGo engine.
         // This avoids COEP/CORS issues by making the WebSocket same-origin.
         '/katago-proxy': {

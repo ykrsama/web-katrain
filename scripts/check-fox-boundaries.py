@@ -2,7 +2,7 @@
 from pathlib import Path
 import json,os
 from playwright.sync_api import sync_playwright,TimeoutError
-URL=os.environ.get('FOX_TEST_URL','http://127.0.0.1:18767')
+URL=os.environ.get('FOX_TEST_URL','http://127.0.0.1:5173')
 OUT=Path(__file__).resolve().parent.parent/'.external/fox-evidence'
 OUT.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
@@ -10,6 +10,7 @@ with sync_playwright() as p:
  results={}
  def start():
   c=browser.new_context(viewport={'width':1365,'height':900},locale='en-US',service_workers='block');page=c.new_page()
+  page.route('**/api/fox/status',lambda route:route.fulfill(json={'ok':True,'fox':'public-records-only'}))
   try:page.goto(URL,wait_until='domcontentloaded',timeout=90000)
   except TimeoutError:pass
   page.get_by_role('button',name='More file actions',exact=True).wait_for(timeout=60000)

@@ -3,6 +3,7 @@ import { shallow } from 'zustand/shallow';
 import { setNotificationHeld, useGameStore } from '../store/gameStore';
 import { GoBoard } from './GoBoard';
 import { FoxSgfImport } from './FoxSgfImport';
+import { foxApiUrl } from '../utils/foxApi';
 import { AnalysisCommandBar } from './AnalysisCommandBar';
 import { CandidatePvTiles } from './CandidatePvTiles';
 import { EditToolbar } from './EditToolbar';
@@ -551,7 +552,7 @@ export const Layout: React.FC = () => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 5000);
     let active = true;
-    void fetch('/api/fox/status', { signal: controller.signal })
+    void fetch(foxApiUrl('status'), { signal: controller.signal, cache: 'no-store', credentials: 'omit' })
       .then(async response => response.ok ? response.json() : null)
       .then(status => { if (active) setFoxImportAvailable(status?.ok === true && status?.fox === 'public-records-only'); })
       .catch(() => { if (active) setFoxImportAvailable(false); });

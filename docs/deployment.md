@@ -85,8 +85,18 @@ The repository includes `.github/workflows/deploy-pages.yml`. On pushes to
 4. Runs `npm run audit`, `npm run lint`, `npm test`, and
    `npm run test:typecheck`. A failure in any of them stops the deploy.
 5. Runs `npm run build`.
-6. Uploads `dist/` as a Pages artifact.
-7. Deploys through `actions/deploy-pages`.
+6. Bundles and validates the Cloudflare Fox Worker without publishing it.
+7. If `VITE_FOX_API_BASE_URL` is configured as an Actions repository variable,
+   deploys the Worker using Cloudflare secrets and checks its status and CORS.
+   Any failure stops the Pages release.
+8. Uploads `dist/` as a Pages artifact and deploys through `actions/deploy-pages`.
+
+For public Fox records, configure the Worker URL, Cloudflare credentials and
+allowed frontend origins as described in [Fox import deployment](fox-sgf-import.md#github-pages--cloudflare-worker).
+The Worker is automatically created and updated by the same workflow. A missing
+URL keeps static-only deployment available; GitHub Pages itself cannot run the
+Fox API. Local development uses `npm run dev:fox` alongside Vite instead of the
+old Python gateway.
 
 The gates in step 4 are the same checks `npm run` offers locally, in the same
 order web-chess uses, so a green local run means a green deploy. Note that
@@ -185,6 +195,8 @@ kept offline after the first time it loads.
 
 Navigation requests fall back to the cached app shell when offline. Static
 assets are cache-first. Other same-origin GET requests are cached at runtime.
+Fox API requests under `/api/fox/` bypass the service worker and are never
+served from its offline cache.
 
 ## Updates
 

@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy GitHub Pages and Fox Worker
 
 on:
   push:
@@ -48,7 +48,20 @@ jobs:
       - name: Build
         env:
           VITE_KATAGO_WS_URL: ${{ secrets.VITE_KATAGO_WS_URL }}
+          VITE_FOX_API_BASE_URL: ${{ vars.VITE_FOX_API_BASE_URL }}
         run: npm run build
+
+      - name: Validate Worker bundle
+        run: npm run build:fox
+
+      - name: Deploy and check Fox Worker
+        if: ${{ vars.VITE_FOX_API_BASE_URL != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_FOX_API_BASE_URL: ${{ vars.VITE_FOX_API_BASE_URL }}
+          FOX_ALLOWED_ORIGINS: ${{ vars.FOX_ALLOWED_ORIGINS }}
+        run: npm run deploy:fox
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

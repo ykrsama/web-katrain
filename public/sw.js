@@ -324,6 +324,8 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+  // Public-record APIs must not fall back to an old capability or game page.
+  if (url.pathname.startsWith('/api/fox/')) return;
   if (!isSameOrigin(url)) return;
 
   if (request.mode === 'navigate') {

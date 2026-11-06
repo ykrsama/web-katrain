@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 .external/
+.wrangler/
+__pycache__/
 *.local
 
 # Local environment (e.g. VITE_REMOTE_ENGINE_URL for the opt-in remote engine test)

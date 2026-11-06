@@ -172,6 +172,21 @@ function runFetch(options: {
   return { answered: answered as Promise<FakeResponse | undefined> | null, stores };
 }
 
+describe('Fox API network boundary', () => {
+  it('never serves cached capability checks or records, including download navigations', () => {
+    for (const path of ['status', 'search?q=fixture', 'download/123.sgf']) {
+      const url = `https://example.test/api/fox/${path}`;
+      const { answered } = runFetch({
+        url,
+        mode: path.startsWith('download/') ? 'navigate' : 'cors',
+        network: () => { throw new Error('offline'); },
+        seeded: { 'web-katrain-v3:runtime': { [url]: response('stale API response') } },
+      });
+      expect(answered).toBeNull();
+    }
+  });
+});
+
 describe('service worker install', () => {
   it('caches the whole list when every request succeeds', async () => {
     const { added } = await runInstall();

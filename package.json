@@ -9,6 +9,9 @@
     "predev": "npm run copy:tfjs-wasm && npm run fetch:model",
     "prebuild": "npm run copy:tfjs-wasm && npm run fetch:model",
     "dev": "vite",
+    "dev:fox": "wrangler dev --config workers/fox/wrangler.json --port 18767",
+    "build:fox": "wrangler deploy --config workers/fox/wrangler.json --dry-run",
+    "deploy:fox": "node scripts/deploy-fox-worker.mjs",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:engine": "ENGINE_TESTS=1 vitest run",
@@ -53,7 +56,8 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.158.0"
   },
   "overrides": {
     "@typescript-eslint/typescript-estree": { "minimatch": "^11.0.1" },

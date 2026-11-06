@@ -25,6 +25,9 @@ The Vite dev server sends the COOP/COEP headers required for threaded WASM.
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start Vite. Runs `copy:tfjs-wasm` and `fetch:model` first. |
+| `npm run dev:fox` | Run the local Cloudflare Fox Worker on port 18767. Vite proxies `/api/fox` to it. |
+| `npm run build:fox` | Validate and bundle the Worker without publishing it. |
+| `npm run deploy:fox` | Deploy the Worker and verify status/CORS using the CI configuration; see [Fox deployment](fox-sgf-import.md). |
 | `npm run verify` | **The one to run before pushing.** typecheck → test:typecheck → lint → test → build, with npm's `&&` so the first failure stops it. Runs the code checks used in CI; `npm audit` and the browser viewport suite run separately. |
 | `npm run test:engine` | Run optional engine suites (`ENGINE_TESTS=1`). |
 | `npm test` | Run all Vitest tests. Note this typechecks nothing — Vitest transpiles without checking, so a test can pass while failing to compile. With `CI` set, tests that run a real MCTS search are skipped: seconds locally, minutes on a shared runner. `ENGINE_TESTS=1 npm test` runs them regardless. |
@@ -91,6 +94,7 @@ npm test
 npm run test:typecheck
 npm run lint
 npm run build
+npm run build:fox
 ```
 
 Browser checks cover rendered layout, real interactions, and study operations.

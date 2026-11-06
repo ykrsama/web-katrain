@@ -5,11 +5,10 @@ import { useBackGestureToClose } from '../hooks/useEscapeToClose';
 import { useInitialDialogFocus } from '../hooks/useInitialDialogFocus';
 import { parseSgf } from '../utils/sgf';
 import { FoxImportError, resolveFoxKomi, assertFoxMoveNodes } from '../utils/foxImport';
+import { foxApiUrl } from '../utils/foxApi';
+import type { FoxPage as Page, FoxRecord as RecordData } from '../types/fox';
 import './FoxSgfImport.css';
 
-type Game = { chessid: string; black: string; white: string; date: string; moves: number | string };
-type Page = { games: Game[]; count: number; next_cursor: string | null; can_request_next: boolean; user?: { uid: string; nickname: string }; uid: string };
-type RecordData = { chessid: string; sgf: string; bytes: number; secure_transport?: boolean; info: { black: string; white: string; komi: string } };
 type Notice = { key: string; vars?: TranslationVars; detail?: string };
 
 export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: boolean; onClose: () => void; returnFocus?: HTMLElement | null; onImport: (parsed: ReturnType<typeof parseSgf>, sourceName: string) => void }) {
@@ -45,7 +44,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
     const active = new AbortController(); controller.current = active;
     const timer = window.setTimeout(() => active.abort(), 65000);
     try {
-      const response = await fetch(`/api/fox/${route}`, { signal: active.signal });
+      const response = await fetch(foxApiUrl(route), { signal: active.signal, cache: 'no-store', credentials: 'omit' });
       const data = await response.json();
       if (!response.ok) {
         setError({ key: 'Fox request failed ({status}). Please retry later.', vars: { status: response.status }, detail: data.error });
@@ -117,7 +116,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
   return <>
     {open && <div className="fox-import-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
       <div ref={dialog} className="fox-import-dialog" role="dialog" aria-modal="true" aria-labelledby="fox-import-title" tabIndex={-1}>
-        <header><div><h2 id="fox-import-title">{t('Public Fox records')}</h2><p>{t('Same-origin Fox import · Historical records only, not live observation')}</p></div><button type="button" aria-label={t('Close Fox import')} onClick={close}>{t('Close')}</button></header>
+        <header><div><h2 id="fox-import-title">{t('Public Fox records')}</h2><p>{t('Public Fox import · Historical records only, not live observation')}</p></div><button type="button" aria-label={t('Close Fox import')} onClick={close}>{t('Close')}</button></header>
         <form className="fox-import-search" onSubmit={event => { event.preventDefault(); if (!busy) void search(); }}>
           <select aria-label={t('Fox search mode')} value={mode} onChange={event => setMode(event.target.value)} disabled={busy}><option value="nickname">{t('Nickname')}</option><option value="uid">UID</option></select>
           <input aria-label={t('Fox nickname or UID')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('Fox nickname or UID')} maxLength={120} required disabled={busy} />
@@ -143,7 +142,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
           <label>{t('Import komi (points)')}<input aria-label={t('Import komi')} type="number" step="0.5" min="-99.5" max="99.5" value={komi} placeholder={t('Confirm encoded komi before entering a value')} onChange={event => setKomi(event.target.value)} /></label>
           <small>{t('Only the import copy is adjusted. Enter a verified value such as 7.5; 375 is not treated as 375 points. Downloads remain unchanged.')}</small>
           <label className="fox-import-confirm"><input type="checkbox" checked={replace} onChange={event => setReplace(event.target.checked)} />{t('Import replaces the current board. I have saved any game I want to keep.')}</label>
-          <div className="fox-import-actions"><a href={`/api/fox/download/${record.chessid}.sgf`} download>{t('Download original SGF')}</a><button type="button" disabled={busy || !replace} onClick={importRecord}>{t('Import onto board')}</button></div>
+          <div className="fox-import-actions"><a href={foxApiUrl(`download/${record.chessid}.sgf`)} download>{t('Download original SGF')}</a><button type="button" disabled={busy || !replace} onClick={importRecord}>{t('Import onto board')}</button></div>
         </section>}
         {!page && !busy && <p className="fox-import-hint">{t('Search by public nickname or UID. No Fox login is required, and local records are not uploaded.')}</p>}
       </div>
