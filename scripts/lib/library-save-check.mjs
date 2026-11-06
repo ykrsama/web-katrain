@@ -33,7 +33,9 @@ const installStorageControls = `(()=>{
 })()`;
 const storedItems = `new Promise((resolve,reject)=>{
   const open=librarySaveAudit.open('web-katrain-library');open.onerror=()=>reject(open.error);
-  open.onsuccess=()=>{const db=open.result,request=db.transaction('items','readonly').objectStore('items').getAll();
+  open.onsuccess=()=>{const db=open.result;
+    if(!db.objectStoreNames.contains('items')){db.close();resolve([]);return}
+    const request=db.transaction('items','readonly').objectStore('items').getAll();
     request.onsuccess=()=>{db.close();resolve(request.result)};
     request.onerror=()=>{db.close();reject(request.error)};
   };
@@ -100,7 +102,12 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
         if (mobile) await click('#mobile-tab-library');
         await wait(`document.querySelector('[data-library-storage-badge=true]')?.textContent==='IndexedDB'`);
       };
-      const boardSnapshot = () => evaluate(cdp, `({...document.querySelector('[data-board-snapshot=true]').dataset})`);
+      const boardSnapshot = (expected = {}) => wait(`(()=>{
+        const board=document.querySelector('[data-board-snapshot=true]');
+        if(!board)return false;
+        const snapshot={...board.dataset};
+        return Object.entries(${JSON.stringify(expected)}).every(([key,value])=>snapshot[key]===value)?snapshot:false;
+      })()`);
       const recovery = () => evaluate(cdp, `JSON.parse(localStorage.getItem(${JSON.stringify(recoveryKey)}))`);
       const play = async coordinate => {
         const before = await boardSnapshot();
@@ -114,7 +121,7 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
         await dispatch(p);
         // The phone board previews the first tap and confirms the second.
         if (mobile) { await sleep(100); await dispatch(p); }
-        await wait(`document.querySelector('[data-board-snapshot=true]').dataset.boardStones!==${JSON.stringify(before.boardStones)}`);
+        await wait(`(()=>{const board=document.querySelector('[data-board-snapshot=true]');return !!board&&board.dataset.boardStones!==${JSON.stringify(before.boardStones)}})()`);
         await wait(`!!localStorage.getItem(${JSON.stringify(recoveryKey)})`);
       };
       const beginSave = async () => {
@@ -171,8 +178,10 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
           await evaluate(cdp, `librarySaveAudit.mode='normal'`);
           await clickElement(`[...document.querySelectorAll('button')].find(e=>e.textContent==='Retry saving library')`);
           await wait(`document.querySelector('[data-library-storage-badge=true]')?.textContent==='IndexedDB'`);
-          // A failed IndexedDB read retains the guarded fallback for this save.
-          const saved = await evaluate(cdp, `JSON.parse(localStorage.getItem('web-katrain:library:v1'))`);
+          // Retry can write the fallback, then another library reader migrates
+          // it back to IndexedDB. Verify persisted records in either backend.
+          const saved = await evaluate(cdp, `JSON.parse(localStorage.getItem('web-katrain:library:v1'))`)
+            ?? await evaluate(cdp, storedItems);
           assert.ok(saved.some(item => item.type === 'file'), 'Initialization retry must persist its loaded samples');
           report.stages.push('Retry after rejected initial storage persisted the loaded library');
           assert.deepEqual(errors, []);
@@ -215,7 +224,7 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
           if (mobile) await click('button[aria-label="More actions for Saved study"]');
           else await dispatch(await point(`document.querySelector('[data-library-row-name="Saved study"]')`), true);
           await clickElement(`[...document.querySelectorAll('[role=menu][aria-label="Library actions"] [role=menuitem]')].find(e=>e.textContent.trim()==='Load')`);
-          await wait(`document.querySelector('[data-board-snapshot=true]').dataset.boardSize==='9'`);
+          await boardSnapshot({ boardSize: '9' });
         } else if (mobile) await click('#mobile-tab-board');
         await play(4);
         const firstRecovery = await recovery();
@@ -358,13 +367,38 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
           await click('button[aria-label="Update loaded library game"]');
           await saveFailure(latestRecovery);
           assert.deepEqual(await evaluate(cdp, storedItems), saved);
+          // Reproduce a cold CI load: recovery is a sibling of the lazy
+          // desktop workspace, so Restore can be clicked before a board exists.
+          const holdWorkspace = width === 1280 && action === 'save';
+          let workspaceRequest;
+          if (holdWorkspace) {
+            cdp.on(message => {
+              if (message.method === 'Fetch.requestPaused') workspaceRequest = message.params.requestId;
+            });
+            await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+            await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/src/components/dashboard/DesktopDashboard.tsx*' }] });
+          }
           await navigate(cdp, appUrl, 15000, { acceptBeforeUnload: true });
           await wait(`!!document.querySelector('${recoveryDialog}')`);
           assert.equal((await recovery())?.sgf, latestRecovery.sgf);
           await clickElement(`[...document.querySelectorAll('${recoveryDialog} button')].find(e=>e.textContent.trim()==='Restore Game')`);
           await wait(`!document.querySelector('${recoveryDialog}')`);
-          const restored = await boardSnapshot();
-          for (const key of ['boardSize', 'boardStones', 'boardMoveCount', 'boardCurrentPlayer']) {
+          const keys = ['boardSize', 'boardStones', 'boardMoveCount', 'boardCurrentPlayer'];
+          // Dismissing recovery can precede the lazy board's mount. Wait for
+          // the restored position, rather than reading a missing/initial board.
+          const expectedBoard = Object.fromEntries(keys.map(key => [key, latestBoard[key]]));
+          let restored;
+          if (holdWorkspace) {
+            assert.ok(workspaceRequest, 'The cold desktop workspace request must be intercepted');
+            assert.equal(await evaluate(cdp, `!!document.querySelector('[data-board-snapshot=true]')`), false,
+              'Recovery must remain usable while the desktop board is loading');
+            const pendingBoard = boardSnapshot(expectedBoard);
+            await cdp.send('Fetch.continueRequest', { requestId: workspaceRequest });
+            await cdp.send('Fetch.disable');
+            restored = await pendingBoard;
+            report.stages.push('Restore before the desktop workspace finished loading waited for the complete board');
+          } else restored = await boardSnapshot(expectedBoard);
+          for (const key of keys) {
             assert.equal(restored[key], latestBoard[key], `Recovery must restore ${key}`);
           }
           report.stages.push('A second rejected update survived reload and restored the complete board');

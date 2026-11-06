@@ -447,6 +447,9 @@
 .wk-dashboard .gs-fact { color: var(--muted); font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
 .wk-dashboard .gs-fact b { color: var(--ink); font-weight: 600; }
 .wk-dashboard .gs-result {
+  /* Ending a game must not grow the strip and shrink the board. Wider system
+     fonts wrap "Game ended" in the 1024px layout unless the chip keeps its width. */
+  white-space: nowrap; flex: none;
   font-weight: 700; color: var(--green); background: var(--green-bg);
   border: 1px solid color-mix(in srgb, var(--green) 35%, var(--panel)); padding: 2px 8px; border-radius: var(--r-sm); font-size: 11.5px;
 }

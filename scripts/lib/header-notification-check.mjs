@@ -48,6 +48,7 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
     const nextFits=cell<80&&(cell+1)*spanX<=container.width-0.5&&(cell+1)*spanY<=container.height-0.5;
     return {
       layout:[...document.querySelectorAll('.wk-dashboard>.header,.wk-dashboard>.body,.wk-dashboard .sidebar')].map(e=>({name:e.className,...box(e)})),
+      interior:[...document.querySelectorAll('.board-col,.gamestrip,.board-stage,.board-wrap,.goban-frame,.navbar,.gs-result,.gs-save,.status-bar-timer')].map(e=>({name:e.className,...box(e)})),
       board:box(board),
       boardState:{size:Number(board.dataset.boardSize),moves:Number(board.dataset.boardMoveCount),cell},
       // ResizeObserver can still be carrying the previous container's size.
@@ -70,7 +71,9 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
   const reports = [];
   const failures = [];
   try {
-    for (const [width, height] of [[1024, 768], [1280, 800], [1440, 900]]) {
+    // Font metrics differ across macOS and Linux. The wider-font fixture
+    // reproduces the result chip wrapping even on a developer's Mac.
+    for (const [width, height, wideFont] of [[1024, 768], [1024, 768, true], [1280, 800], [1440, 900]]) {
       const context = (await browser.send('Target.createBrowserContext')).result.browserContextId;
       const target = (await browser.send('Target.createTarget', { url: 'about:blank', browserContextId: context })).result.targetId;
       cdp = connectDevtools(`ws://127.0.0.1:${devtoolsPort}/devtools/page/${target}`);
@@ -82,10 +85,13 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
         await cdp.send('Runtime.enable');
         await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
         await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: preload });
-        const stem = `${width}x${height}-header-notification`;
+        const stem = `${width}x${height}-header-notification${wideFont ? '-wide-font' : ''}`;
         await setViewport(cdp, { width, height, mobile: false });
         await navigate(cdp, appUrl);
         await wait('!!document.querySelector(".wk-dashboard button.pass-btn")');
+        if (wideFont) {
+          await evaluate(cdp, `document.documentElement.style.setProperty('--ui-font','Verdana, "DejaVu Sans", sans-serif')`);
+        }
         const importPath = path.join(runDir, `${stem}.sgf`);
         fs.writeFileSync(importPath, '(;GM[1]SZ[9]PL[W];W[])');
         const root = (await cdp.send('DOM.getDocument')).result.root;
@@ -110,7 +116,7 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
         await click('button[aria-label="Dismiss notification"]');
         await wait('!document.querySelector(".notification-toast-message")');
         const after = await settledSnapshot(2);
-        reports.push({ width, height, before, during, after });
+        reports.push({ width, height, wideFont: !!wideFont, before, during, after });
         try {
           assert.equal(during.message, 'Both players passed, so the game is over. Choose Score to count the territory.');
           assert.equal(during.live, 'status');
@@ -123,7 +129,7 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
             assert.deepEqual(state.inaccessibleHeaderControls, [], 'Header controls must remain reachable');
             for (const key of ['left', 'top', 'width', 'height']) {
               assert.ok(Math.abs(state.board[key] - before.board[key]) <= 1,
-                `Notification moved or resized the board (${key}, ${phase}): ${JSON.stringify({before:before.board,actual:state.board,layoutBefore:before.layout,layoutActual:state.layout})}`);
+                `Notification moved or resized the board (${key}, ${phase}): ${JSON.stringify({before:before.board,actual:state.board,layoutBefore:before.layout,layoutActual:state.layout,interiorBefore:before.interior,interiorActual:state.interior})}`);
             }
           }
         } catch (error) {
