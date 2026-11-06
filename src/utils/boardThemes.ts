@@ -160,7 +160,7 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
         shadowOffsetX: '0em',
         shadowOffsetY: '0.1em',
         shadowBlur: '0.2em',
-        size: '94%',
+        size: '95%',
       },
       white: {
         image: 'stone-white.png',
