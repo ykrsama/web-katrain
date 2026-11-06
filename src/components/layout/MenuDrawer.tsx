@@ -1,4 +1,5 @@
 import React from 'react';
+import { Icon } from '../dashboard/icons';
 import {
   FaTimes,
   FaPlay,
@@ -365,7 +366,7 @@ export const MenuDrawer: React.FC<MenuDrawerProps> = ({
                 </span>
               </button>
               {onFoxImport && <button type="button" className={menuAction} onClick={() => { onClose(); onFoxImport(actionReturnFocusRef.current); }}>
-                <span className="flex min-w-0 items-center gap-2"><FaSearch className="shrink-0" aria-hidden="true" /> {t('Fox records')}</span>
+                <span className="flex min-w-0 items-center gap-2"><span className="shrink-0" aria-hidden="true"><Icon name="fox" size={14} /></span> {t('Fox records')}</span>
               </button>}
             </div>
           </div>

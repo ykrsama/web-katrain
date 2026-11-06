@@ -77,11 +77,10 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
         const updated = addFoxSearchHistory(current, { query: searchQuery });
         saveFoxSearchHistory(updated); return updated;
       });
-      setPlayer(user); setUid(user.uid);
+      setPlayer(user); setUid(user.uid); setIdentity(user.nickname || searchQuery);
       const result = await request<Page>(`games?${new URLSearchParams({ uid: user.uid })}`);
       const unique = [...new Map(result.games.map(game => [game.chessid, game])).values()];
       setPages([{ ...result, games: unique }]); setPageIndex(0); setUid(result.uid);
-      setIdentity(user.nickname || searchQuery);
 
     } catch (cause) { report(cause); } finally { setBusy(false); }
   }
@@ -135,19 +134,17 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
           <FoxSearchField query={query} setQuery={setQuery} history={history} onHistoryChange={entries => { setHistory(entries); saveFoxSearchHistory(entries); }} onSelect={value => void search(value)} disabled={busy} inputRef={queryInput} />
           <button type="submit" disabled={busy}>{busy ? t('Requesting…') : t('Find records')}</button>
         </form>
-        {player && <FoxLiveRecords key={player.uid} player={player} onImport={onImport} onClose={close} />}
-        {player && <h3 className="fox-history-heading">{t('Fox historical records')}</h3>}
         {identity && <p className="fox-import-identity">{identity}</p>}
         {error && <div role="alert" className="fox-import-error">{t(error.key, error.vars)}</div>}
-        {page && <>
-          <div className="fox-import-table-wrap"><table><thead><tr><th>{t('Black / White')}</th><th>{t('Date / Moves')}</th><th>{t('Actions')}</th></tr></thead><tbody>
-            {page.games.map(game => <tr key={game.chessid} data-fox-chessid={game.chessid}>
+        {(player || page) && <div className="fox-import-table-wrap"><table><thead><tr><th>{t('Black / White')}</th><th>{t('Date / Moves')}</th><th>{t('Actions')}</th></tr></thead><tbody>
+            {player && <FoxLiveRecords key={player.uid} player={player} onImport={onImport} onClose={close} />}
+            {page?.games.map(game => <tr key={game.chessid} data-fox-chessid={game.chessid}>
               <td><strong>{game.black}</strong><br />{game.white}</td><td>{game.date}<br />{t('{count} moves', { count: game.moves })}</td>
               <td><button type="button" disabled={busy} onClick={() => void select(game.chessid)}>{t('Import')}</button></td>
             </tr>)}
-          </tbody></table></div>
-          <nav aria-label={t('Fox record pagination')}><button type="button" disabled={busy || pageIndex === 0} onClick={() => { setPageIndex(pageIndex - 1); setRecord(null); }}>{t('Previous page')}</button><span>{t('Page {page} · {count} records', { page: pageIndex + 1, count: page.games.length })}</span><button type="button" disabled={busy || !page.can_request_next} onClick={() => void next()}>{t('Next page')}</button></nav>
-        </>}
+          </tbody></table></div>}
+        {page && <nav aria-label={t('Fox record pagination')}><button type="button" disabled={busy || pageIndex === 0} onClick={() => { setPageIndex(pageIndex - 1); setRecord(null); }}>{t('Previous page')}</button><span>{t('Page {page} · {count} records', { page: pageIndex + 1, count: page.games.length + (player?.live?.length ?? 0) })}</span><button type="button" disabled={busy || !page.can_request_next} onClick={() => void next()}>{t('Next page')}</button></nav>
+        }
         {record && <section className="fox-import-detail">
           <h3>{t('{black} vs {white}', { black: record.info.black, white: record.info.white })}</h3>
           <FoxImportSettings value={options} onChange={setOptions} />

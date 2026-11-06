@@ -78,10 +78,7 @@
   .fox-import-detail { padding: 10px; }
   .fox-import-dialog th:nth-child(2) { width: 31%; }
 }
-.fox-live-records { margin-top: 18px; padding: 14px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 10px; }
-.fox-live-records > h3, .fox-history-heading { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
-.fox-history-heading { margin-top: 20px; }
-.fox-live-match { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.fox-live-match > div { display: flex; flex-direction: column; gap: 4px; }
-.fox-live-match span, .fox-record-empty { color: var(--ui-text-muted); font-size: 12px; }
-.fox-live-match button { color: var(--ui-accent); border-color: var(--ui-accent); background: var(--ui-accent-soft); }
+.fox-record-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.fox-live-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid var(--ui-accent); border-radius: 999px; color: var(--ui-accent); background: var(--ui-accent-soft); font-size: 10px; line-height: 1.5; white-space: nowrap; }
+.fox-live-tag::before { content: ''; width: 5px; height: 5px; flex: none; border-radius: 50%; background: currentColor; }
+.fox-live-feedback { color: var(--ui-text-muted); }
