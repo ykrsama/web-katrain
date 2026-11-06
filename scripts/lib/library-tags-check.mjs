@@ -136,7 +136,7 @@ export async function assertLibraryTags(devtoolsPort, appUrl, runDir, screenshot
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:library_open:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false}));
         ` });
         await setViewport(cdp, { width, height, mobile });
         await navigate(cdp, appUrl);

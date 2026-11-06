@@ -59,4 +59,40 @@ describe('Sabaki fuzzy placement', () => {
       }
     }
   });
+
+  it.each([0, 1, 2, 3])('fits full-size stones on the rectangular grid (rotation %i)', (rotation) => {
+    const size = 19;
+    const ratio = 24.22 / 23.33;
+    for (const diameter of [0.92, 0.98, 1.01, 1.0908]) {
+      const geometry = { stoneDiameter: diameter, cellHeightRatio: ratio };
+      const offsets = buildFuzzyStoneOffsets(size, true, rotation, geometry);
+      expect(buildFuzzyStoneOffsets(size, true, rotation, geometry)).toEqual(offsets);
+      expect(offsets.flat().some(offset => Math.abs(offset.dxFactor) + Math.abs(offset.dyFactor) > 0.001)).toBe(true);
+      const display = Array.from({ length: size }, () => Array<{ x: number; y: number }>(size));
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const [dx, dy] = rotation === 1 ? [size - 1 - y, x]
+            : rotation === 2 ? [size - 1 - x, size - 1 - y]
+            : rotation === 3 ? [y, size - 1 - x] : [x, y];
+          const offset = offsets[y]![x]!;
+          expect(Math.abs(offset.dxFactor)).toBeLessThanOrEqual(0.07000001);
+          expect(Math.abs(offset.dyFactor)).toBeLessThanOrEqual(0.07000001);
+          display[dy!]![dx!] = { x: dx! + offset.dxFactor, y: (dy! + offset.dyFactor) * ratio };
+        }
+      }
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const a = display[y]![x]!;
+          for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [-1, 1]]) {
+            const b = display[y + dy!]?.[x + dx!];
+            if (!b) continue;
+            // Themes already wider than the pitch may touch without fuzz;
+            // preserve that baseline rather than reducing their diameter.
+            const minimum = Math.min(diameter, Math.hypot(dx!, dy! * ratio));
+            expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeGreaterThanOrEqual(minimum - 1e-8);
+          }
+        }
+      }
+    }
+  });
 });

@@ -175,7 +175,7 @@ async function main() {
       auditObserver.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
       const b = document.querySelector('[data-board-snapshot=true]'), r = b.getBoundingClientRect();
       const x = r.x + Number(b.dataset.boardOriginX) + 3 * Number(b.dataset.boardCellSize);
-      const y = r.y + Number(b.dataset.boardOriginY) + 3 * Number(b.dataset.boardCellSize);
+      const y = r.y + Number(b.dataset.boardOriginY) + 3 * Number(b.dataset.boardCellHeight);
       if (!b.contains(document.elementFromPoint(x, y))) throw new Error('Board point is obscured');
       return { x, y };
     })()`);
@@ -207,7 +207,7 @@ async function main() {
     const nextPoint = await evaluate(cdp, `(() => {
       const b = document.querySelector('[data-board-snapshot=true]'), r = b.getBoundingClientRect();
       return { x: r.x + Number(b.dataset.boardOriginX) + 15 * Number(b.dataset.boardCellSize),
-        y: r.y + Number(b.dataset.boardOriginY) + 15 * Number(b.dataset.boardCellSize) };
+        y: r.y + Number(b.dataset.boardOriginY) + 15 * Number(b.dataset.boardCellHeight) };
     })()`);
     const nextMoveAt = await evaluate(cdp, 'performance.now()');
     await clickAt(nextPoint);

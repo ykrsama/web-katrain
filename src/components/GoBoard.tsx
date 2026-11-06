@@ -71,6 +71,8 @@ const STONE_COLORS = {
 const OWNERSHIP_GAMMA = 1.33;
 const EVAL_DOT_MIN_SIZE = 0.25;
 const EVAL_DOT_MAX_SIZE = 0.5;
+// Physical grid spacing: 23.33 mm horizontally, 24.22 mm vertically.
+const CELL_HEIGHT_RATIO = 24.22 / 23.33;
 const STONE_SIZE = 0.505; // KaTrain Theme.STONE_SIZE
 
 /**
@@ -646,18 +648,17 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
   const evalThresholds: readonly number[] = settings.trainerEvalThresholds?.length ? settings.trainerEvalThresholds : DEFAULT_EVAL_THRESHOLDS;
   const boardTheme = useMemo(() => getBoardTheme(settings.boardTheme), [settings.boardTheme]);
-  const { fuzzyOffsets, fuzzyStoneScale } = useMemo(() => {
+  const fuzzyOffsets = useMemo(() => {
     // Sabaki's SVG includes a transparent margin (42px body in a 67px viewBox).
     const bodyRatio = boardTheme.id === 'sabaki' ? 42 / 67 : 1;
     const diameter = 2 * STONE_SIZE * bodyRatio * Math.max(
       parsePercent(boardTheme.stones.black.size, 1),
       parsePercent(boardTheme.stones.white.size, 1)
     );
-    return {
-      fuzzyOffsets: buildFuzzyStoneOffsets(boardSize, settings.fuzzyStonePlacement, boardRotation ?? 0),
-      // Shudan's .92-cell stone body leaves room for a one-sided .07 shift.
-      fuzzyStoneScale: settings.fuzzyStonePlacement ? Math.min(1, 0.92 / diameter) : 1,
-    };
+    return buildFuzzyStoneOffsets(boardSize, settings.fuzzyStonePlacement, boardRotation ?? 0, {
+      stoneDiameter: diameter,
+      cellHeightRatio: CELL_HEIGHT_RATIO,
+    });
   }, [boardRotation, boardSize, boardTheme, settings.fuzzyStonePlacement]);
   const evalColors = useMemo(() => getKaTrainEvalColors(settings.trainerTheme), [settings.trainerTheme]);
   const showEvalDotsForPlayer = useMemo(() => {
@@ -779,15 +780,17 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const fallbackHeight = typeof window !== 'undefined' ? Math.max(260, window.innerHeight - 160) : 640;
     const w = containerSize.width > 0 ? containerSize.width : fallbackWidth;
     const h = containerSize.height > 0 ? containerSize.height : fallbackHeight;
-    const grid = Math.floor(Math.min(w / xGridSpaces, h / yGridSpaces) + 0.1);
+    const grid = Math.floor(Math.min(w / xGridSpaces, h / (yGridSpaces * CELL_HEIGHT_RATIO)) + 0.1);
     return Math.max(10, Math.min(80, grid));
   }, [containerSize.height, containerSize.width, xGridSpaces, yGridSpaces]);
 
+  // Keep stones and glyphs round; only grid spacing uses the taller pitch.
+  const cellHeight = cellSize * CELL_HEIGHT_RATIO;
   const boardWidth = cellSize * xGridSpaces;
-  const boardHeight = cellSize * yGridSpaces;
+  const boardHeight = cellHeight * yGridSpaces;
   const compactAnalysisHints = usesCompactAnalysisHints(cellSize);
   const originX = Math.floor(cellSize * gridSpacesMarginX.left + 0.5);
-  const originY = Math.floor(cellSize * gridSpacesMarginY.top + 0.5);
+  const originY = Math.floor(cellHeight * gridSpacesMarginY.top + 0.5);
   // Coordinates sit just clear of the edge stones rather than centred in the
   // margin: centred, a two-digit row number reached 0.2 of a cell past the
   // stone's edge -- "13" under the stone on A13 at every board size -- and the
@@ -1074,7 +1077,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const startX = originX;
     const startY = originY;
     const endX = originX + cellSize * (boardSize - 1);
-    const endY = originY + cellSize * (boardSize - 1);
+    const endY = originY + cellHeight * (boardSize - 1);
     ctx.lineWidth = 1;
     ctx.strokeStyle = lineColor;
     ctx.beginPath();
@@ -1082,7 +1085,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const x = originX + i * cellSize + 0.5;
       ctx.moveTo(x, startY);
       ctx.lineTo(x, endY);
-      const y = originY + i * cellSize + 0.5;
+      const y = originY + i * cellHeight + 0.5;
       ctx.moveTo(startX, y);
       ctx.lineTo(endX, y);
     }
@@ -1093,12 +1096,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     for (const [hx, hy] of hoshiPoints) {
       const d = toDisplay(hx, hy);
       const cx = originX + d.x * cellSize;
-      const cy = originY + d.y * cellSize;
+      const cy = originY + d.y * cellHeight;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [boardSize, cellSize, hoshiPoints, lineColor, originX, originY, setupOverlayCanvas, toDisplay]);
+  }, [boardSize, cellSize, cellHeight, hoshiPoints, lineColor, originX, originY, setupOverlayCanvas, toDisplay]);
 
   useEffect(() => {
     const canvas = stonesCanvasRef.current;
@@ -1117,7 +1120,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     // a parseFloat -- 361 times a redraw, which profiled as the largest single
     // cost of navigating a move.
     const stoneStyleFor = (config: typeof boardTheme.stones.black) => {
-      const diameter = stoneDiameter * parsePercent(config.size, 1) * fuzzyStoneScale;
+      const diameter = stoneDiameter * parsePercent(config.size, 1);
       return {
         diameter,
         radius: diameter / 2,
@@ -1189,7 +1192,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const d = toDisplay(x, y);
         const fuzzy = fuzzyOffsets[y]![x]!;
         const cx = originX + d.x * cellSize + fuzzy.dxFactor * cellSize + style.offsetX;
-        const cy = originY + d.y * cellSize + fuzzy.dyFactor * cellSize + style.offsetY;
+        const cy = originY + d.y * cellHeight + fuzzy.dyFactor * cellHeight + style.offsetY;
         ctx.save();
         ctx.globalAlpha = scoringMode && deadStones?.has(`${x},${y}`) ? 0.45 : 1;
         ctx.drawImage(shadow.sprite, cx - style.radius - shadow.padding, cy - style.radius - shadow.padding, shadow.size, shadow.size);
@@ -1203,12 +1206,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         if (!cell) continue;
         const d = toDisplay(x, y);
         const cx = originX + d.x * cellSize;
-        const cy = originY + d.y * cellSize;
+        const cy = originY + d.y * cellHeight;
         const style = cell === 'black' ? blackStyle : whiteStyle;
         const radius = style.radius;
         const fuzzy = fuzzyOffsets[y]![x]!;
         const stoneCx = cx + fuzzy.dxFactor * cellSize;
-        const stoneCy = cy + fuzzy.dyFactor * cellSize;
+        const stoneCy = cy + fuzzy.dyFactor * cellHeight;
         const left = stoneCx - radius + style.offsetX;
         const top = stoneCy - radius + style.offsetY;
 
@@ -1301,8 +1304,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     board,
     boardSize,
     boardTheme,
-    fuzzyStoneScale,
     cellSize,
+    cellHeight,
     deadStones,
     moveNumbers,
     originX,
@@ -1337,7 +1340,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         x,
         y,
         cx: originX + d.x * cellSize,
-        cy: originY + d.y * cellSize,
+        cy: originY + d.y * cellHeight,
         stone: board[y]?.[x] ?? null,
       };
     };
@@ -1499,7 +1502,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         drawing.points.forEach((p, i) => {
           const d = toDisplay(p.x, p.y);
           const px = originX + d.x * cellSize;
-          const py = originY + d.y * cellSize;
+          const py = originY + d.y * cellHeight;
           if (i === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         });
@@ -1534,9 +1537,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const a = toDisplay(activeRegion.xMin, activeRegion.yMin);
       const b = toDisplay(activeRegion.xMax, activeRegion.yMax);
       const left = originX + Math.min(a.x, b.x) * cellSize - cellSize * 0.45;
-      const top = originY + Math.min(a.y, b.y) * cellSize - cellSize * 0.45;
+      const top = originY + Math.min(a.y, b.y) * cellHeight - cellHeight * 0.45;
       const width = Math.abs(a.x - b.x) * cellSize + cellSize * 0.9;
-      const height = Math.abs(a.y - b.y) * cellSize + cellSize * 0.9;
+      const height = Math.abs(a.y - b.y) * cellHeight + cellHeight * 0.9;
       ctx.save();
       ctx.setLineDash([6, 4]);
       ctx.fillStyle = 'rgba(56, 189, 248, 0.10)';
@@ -1551,7 +1554,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     if (pendingSegment && isSegmentTool) {
       const d = toDisplay(pendingSegment.x, pendingSegment.y);
       const cx = originX + d.x * cellSize;
-      const cy = originY + d.y * cellSize;
+      const cy = originY + d.y * cellHeight;
       ctx.beginPath();
       ctx.arc(cx, cy, Math.max(4, radius * 0.55), 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(56,189,248,0.9)';
@@ -1564,6 +1567,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     board,
     boardSize,
     cellSize,
+    cellHeight,
     currentNode,
     originX,
     originY,
@@ -1595,12 +1599,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const d = toDisplay(x, y);
       const stoneConfig = player === 'black' ? boardTheme.stones.black : boardTheme.stones.white;
       const scale = parsePercent(stoneConfig.size, 1);
-      const diameter = stoneDiameter * scale * fuzzyStoneScale;
+      const diameter = stoneDiameter * scale;
       const radius = diameter / 2;
       const offsetX = parseEm(stoneConfig.imageOffsetX, stoneDiameter);
       const offsetY = parseEm(stoneConfig.imageOffsetY, stoneDiameter);
       const left = originX + d.x * cellSize - radius + offsetX;
-      const top = originY + d.y * cellSize - radius + offsetY;
+      const top = originY + d.y * cellHeight - radius + offsetY;
       ctx.save();
       ctx.globalAlpha = alpha;
       const imageList = player === 'black' ? blackImages : whiteImages;
@@ -1620,7 +1624,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const drawEditPreview = (x: number, y: number) => {
       const d = toDisplay(x, y);
       const cx = originX + d.x * cellSize;
-      const cy = originY + d.y * cellSize;
+      const cy = originY + d.y * cellHeight;
       const r = Math.max(8, cellSize * 0.25);
       const accent = 'rgba(34,197,94,0.92)';
       const halo = 'rgba(0,0,0,0.45)';
@@ -1713,6 +1717,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     drillAsking,
     board,
     cellSize,
+    cellHeight,
     cursorPt,
     currentPlayer,
     editTool,
@@ -1730,7 +1735,6 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     toDisplay,
     boardTheme,
     currentNode,
-    fuzzyStoneScale,
     activeBranchChildIds,
     settings.showNextMovePreview,
     scoringMode,
@@ -1750,7 +1754,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const d = toDisplay(lastMove.x, lastMove.y);
     const fuzzy = fuzzyOffsets[lastMove.y]![lastMove.x]!;
     const cx = originX + d.x * cellSize + fuzzy.dxFactor * cellSize;
-    const cy = originY + d.y * cellSize + fuzzy.dyFactor * cellSize;
+    const cy = originY + d.y * cellHeight + fuzzy.dyFactor * cellHeight;
     const stoneDiameter = 2 * (cellSize * STONE_SIZE);
     const innerImg = stoneImagesRef.current.inner;
     // While numbers are on, the ring gives way to the gold number on this
@@ -1791,7 +1795,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ctx.lineWidth = Math.max(1.5, cellSize * 0.05);
       ctx.stroke();
     }
-  }, [board, cellSize, currentNode, fuzzyOffsets, lastMove, originX, originY, setupOverlayCanvas, settings.showMoveNumbers, stoneTextureVersion, toDisplay, releaseOverlayCanvas]);
+  }, [board, cellSize, cellHeight, currentNode, fuzzyOffsets, lastMove, originX, originY, setupOverlayCanvas, settings.showMoveNumbers, stoneTextureVersion, toDisplay, releaseOverlayCanvas]);
 
   useEffect(() => {
     const canvas = ringsCanvasRef.current;
@@ -1812,7 +1816,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     for (const m of childMoveRings) {
       const d = toDisplay(m.x, m.y);
       const cx = originX + d.x * cellSize;
-      const cy = originY + d.y * cellSize;
+      const cy = originY + d.y * cellHeight;
       const isBest = !!bestHintMoveCoords && bestHintMoveCoords.x === m.x && bestHintMoveCoords.y === m.y;
       const showContrast = !isBest;
       const dashDeg = showContrast ? 18 : 10;
@@ -1841,6 +1845,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     releaseOverlayCanvas,
     bestHintMoveCoords,
     cellSize,
+    cellHeight,
     childMoveRings,
     hasAnalysisOverlay,
     originX,
@@ -1870,7 +1875,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
     // Use Math.round to find the nearest intersection
     const displayCol = Math.round((x - originX) / cellSize);
-    const displayRow = Math.round((y - originY) / cellSize);
+    const displayRow = Math.round((y - originY) / cellHeight);
 
     if (displayCol >= 0 && displayCol < boardSize && displayRow >= 0 && displayRow < boardSize) {
       const { x: col, y: row } = toInternal(displayCol, displayRow);
@@ -1887,7 +1892,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   ): { x: number; y: number } | null => {
     const rect = e.currentTarget.getBoundingClientRect();
     const displayX = (e.clientX - rect.left - originX) / cellSize;
-    const displayY = (e.clientY - rect.top - originY) / cellSize;
+    const displayY = (e.clientY - rect.top - originY) / cellHeight;
     if (displayX < -0.5 || displayY < -0.5 || displayX > boardSize - 0.5 || displayY > boardSize - 0.5) return null;
     return toInternal(displayX, displayY);
   };
@@ -2314,7 +2319,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
     const displayCol = Math.round((localX - originX) / cellSize);
-    const displayRow = Math.round((localY - originY) / cellSize);
+    const displayRow = Math.round((localY - originY) / cellHeight);
     let pt: { x: number; y: number } | null = null;
     if (displayCol >= 0 && displayCol < boardSize && displayRow >= 0 && displayRow < boardSize) {
       const internal = toInternal(displayCol, displayRow);
@@ -2373,7 +2378,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           const radius = cellSize * STONE_SIZE * scale;
           const d = toDisplay(move.x, move.y);
           const cx = originX + d.x * cellSize;
-          const cy = originY + d.y * cellSize;
+          const cy = originY + d.y * cellHeight;
           const dx = localX - cx;
           const dy = localY - cy;
           const inHint = dx * dx + dy * dy <= radius * radius;
@@ -2640,7 +2645,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const d = toDisplay(move.x, move.y);
         const fuzzy = fuzzyOffsets[move.y]![move.x]!;
         const cx = originX + (d.x + fuzzy.dxFactor) * cellSize;
-        const cy = originY + (d.y + fuzzy.dyFactor) * cellSize;
+        const cy = originY + (d.y + fuzzy.dyFactor) * cellHeight;
 
         ctx.beginPath();
         ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
@@ -2672,6 +2677,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     releaseOverlayCanvas,
     board,
     cellSize,
+    cellHeight,
     currentNode,
     evalColors,
     evalThresholds,
@@ -2757,7 +2763,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         });
         ctx.translate(
           originX + d.x * cellSize + fuzzy.dxFactor * cellSize,
-          originY + d.y * cellSize + fuzzy.dyFactor * cellSize
+          originY + d.y * cellHeight + fuzzy.dyFactor * cellHeight
         );
         ctx.scale(squeezeFor(text.length), 1);
         ctx.fillText(text, 0, 0);
@@ -2768,6 +2774,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     board,
     boardSize,
     cellSize,
+    cellHeight,
     deadStones,
     hasAnalysisOverlay,
     lastMove,
@@ -2869,7 +2876,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const coloredRadius = stoneRadius * HINT_SCALE * scale;
         const isBest = best > 0 && p === best;
         const cx = originX + d.x * cellSize;
-        const cy = originY + d.y * cellSize;
+        const cy = originY + d.y * cellHeight;
 
         if (showText) {
           ctx.beginPath();
@@ -2900,6 +2907,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     approxBoardColor,
     boardSize,
     cellSize,
+    cellHeight,
     evalColors,
     hasAnalysisOverlay,
     originX,
@@ -2934,7 +2942,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
     const d = toDisplay(follow.x, follow.y);
     const cx = originX + d.x * cellSize;
-    const cy = originY + d.y * cellSize;
+    const cy = originY + d.y * cellHeight;
     // Outside a top-move hint circle (HINT_SCALE 0.98), so on the point they
     // usually share the ring encircles the hint instead of crowding it.
     const radius = cellSize * STONE_SIZE * (HINT_SCALE + 0.34);
@@ -2955,7 +2963,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
-  }, [cellSize, currentNode.id, originX, originY, setupOverlayCanvas, tenukiAnalysis, toDisplay, releaseOverlayCanvas]);
+  }, [cellSize, cellHeight, currentNode.id, originX, originY, setupOverlayCanvas, tenukiAnalysis, toDisplay, releaseOverlayCanvas]);
 
   /**
    * The "trick move" marks from the on-demand scan: candidates that leave the
@@ -2987,7 +2995,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     for (const mark of marks) {
       const d = toDisplay(mark.x, mark.y);
       const cx = originX + d.x * cellSize;
-      const cy = originY + d.y * cellSize;
+      const cy = originY + d.y * cellHeight;
 
       // Dark backing first, for legibility over a stone of either colour.
       ctx.lineWidth = Math.max(3.5, cellSize * 0.15);
@@ -3019,7 +3027,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       ctx.fillText('!', bx, by + 0.5);
     }
     ctx.restore();
-  }, [cellSize, currentNode.id, originX, originY, releaseOverlayCanvas, trickMoves, setupOverlayCanvas, toDisplay]);
+  }, [cellSize, cellHeight, currentNode.id, originX, originY, releaseOverlayCanvas, trickMoves, setupOverlayCanvas, toDisplay]);
 
   useEffect(() => {
     const canvas = hintsCanvasRef.current;
@@ -3127,7 +3135,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       const evalSize = stoneRadius * scale;
       const size = 2 * evalSize;
       const cx = originX + d.x * cellSize;
-      const cy = originY + d.y * cellSize;
+      const cy = originY + d.y * cellHeight;
       const left = cx - evalSize;
       const top = cy - evalSize;
 
@@ -3203,6 +3211,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     analysisHintMoves,
     approxBoardColor,
     cellSize,
+    cellHeight,
     childMoveCoords,
     compactAnalysisHints,
     currentPlayer,
@@ -3265,10 +3274,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     for (const m of pvMoves) {
       const stoneConfig = m.player === 'black' ? boardTheme.stones.black : boardTheme.stones.white;
       const scale = parsePercent(stoneConfig.size, 1);
-      const diameter = baseStoneDiameter * scale * fuzzyStoneScale;
+      const diameter = baseStoneDiameter * scale;
       const radius = diameter / 2;
       const left = originX + m.x * cellSize - radius - 1;
-      const top = originY + m.y * cellSize - radius;
+      const top = originY + m.y * cellHeight - radius;
       const imageList = m.player === 'black' ? blackImages : whiteImages;
       const img = imageList[0];
       if (img && img.complete && img.naturalWidth > 0) {
@@ -3292,9 +3301,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }
   }, [
     boardTheme,
-    fuzzyStoneScale,
     releaseOverlayCanvas,
     cellSize,
+    cellHeight,
     pvOverlayEnabled,
     originX,
     originY,
@@ -3322,11 +3331,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const maxY = Math.max(a.y, b.y);
     return {
       left: originX + minX * cellSize - cellSize / 3,
-      top: originY + minY * cellSize - cellSize / 3,
+      top: originY + minY * cellHeight - cellHeight / 3,
       width: (maxX - minX) * cellSize + (2 / 3) * cellSize,
-      height: (maxY - minY) * cellSize + (2 / 3) * cellSize,
+      height: (maxY - minY) * cellHeight + (2 / 3) * cellHeight,
     };
-  }, [cellSize, originX, originY, regionOfInterest, roiDrag, toDisplay]);
+  }, [cellSize, cellHeight, originX, originY, regionOfInterest, roiDrag, toDisplay]);
 
   // Anchor for the region-inspection readout chip: centered above the
   // rectangle, clamped so it never leaves the board area.
@@ -3335,9 +3344,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const a = toDisplay(regionResult.rect.xMin, regionResult.rect.yMin);
     const b = toDisplay(regionResult.rect.xMax, regionResult.rect.yMax);
     const centerX = originX + ((Math.min(a.x, b.x) + Math.max(a.x, b.x)) / 2) * cellSize;
-    const top = Math.max(cellSize * 0.9, originY + Math.min(a.y, b.y) * cellSize - cellSize * 0.55);
+    const top = Math.max(cellHeight * 0.9, originY + Math.min(a.y, b.y) * cellHeight - cellHeight * 0.55);
     return { left: centerX, top, text: regionResult.text };
-  }, [cellSize, originX, originY, regionResult, toDisplay]);
+  }, [cellHeight, originX, originY, regionResult, toDisplay]);
 
   const passCircle = useMemo(() => {
     const m = lastMove;
@@ -3350,10 +3359,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     // is open on top of it.
     if (scoringMode) return null;
     const cx = originX + ((boardSize - 1) / 2) * cellSize;
-    const cy = originY + ((boardSize - 1) / 2) * cellSize;
+    const cy = originY + ((boardSize - 1) / 2) * cellHeight;
     const size = Math.min(boardWidth, boardHeight) * 0.227;
     return { cx, cy, size };
-  }, [boardHeight, boardWidth, boardSize, cellSize, lastMove, originX, originY, scoringMode]);
+  }, [boardHeight, boardWidth, boardSize, cellSize, cellHeight, lastMove, originX, originY, scoringMode]);
 
   const pendingTapMarker = useMemo(() => {
     if (!pendingTap) return null;
@@ -3363,10 +3372,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const size = Math.max(22, Math.min(34, cellSize * 0.72));
     return {
       left: originX + d.x * cellSize + cellSize * 0.18,
-      top: originY + d.y * cellSize - cellSize * 0.82,
+      top: originY + d.y * cellHeight - cellHeight * 0.82,
       size,
     };
-  }, [board, cellSize, currentPlayer, originX, originY, pendingTap, toDisplay]);
+  }, [board, cellSize, cellHeight, currentPlayer, originX, originY, pendingTap, toDisplay]);
 
   const keyboardCursorMarker = useMemo(() => {
     if (!isKeyboardCursorActive || !cursorPt) return null;
@@ -3374,10 +3383,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const size = Math.max(16, cellSize * 0.7);
     return {
       left: originX + d.x * cellSize - size / 2,
-      top: originY + d.y * cellSize - size / 2,
+      top: originY + d.y * cellHeight - size / 2,
       size,
     };
-  }, [cellSize, cursorPt, isKeyboardCursorActive, originX, originY, toDisplay]);
+  }, [cellSize, cellHeight, cursorPt, isKeyboardCursorActive, originX, originY, toDisplay]);
   const boardTouchAction = isEditMode || scoringMode || isSelectingRegionOfInterest ? 'none' : 'pan-x pan-y pinch-zoom';
   const boardQaString = useMemo(() => boardToQaString(board), [board]);
   const boardStoneCount = useMemo(() => countBoardStones(board), [board]);
@@ -3425,17 +3434,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           </div>
         </div>
       ) : null}
-      {/* `shrink-0` keeps the board square. `cellSize` rounds *up* (the `+ 0.1`
-          above), so the board can come out up to a tenth of a cell -- about 2px
-          on 19x19 -- wider than this flex container. As a shrinkable item the
-          width absorbed that overflow while `items-center` left the height
-          alone: measured at 1024x768, a board styled 465.75px square laid out
-          464 x 465.75, and the canvases, which keep their full styled width,
-          lost their right edge to the container's `overflow: hidden`. Held at
-          its own size the overflow is split by `justify-center` and falls in
-          the board's own 0.75-cell margin instead of on the grid. The mobile
-          edit/scoring overlays already pinned this element the same way in
-          index.css; this is the general case. */}
+      {/* Preserve the physical grid aspect ratio instead of flex-shrinking one axis. */}
       <div
         className={[
           'relative shadow-lg rounded-sm select-none shrink-0',
@@ -3446,6 +3445,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         data-board-theme={settings.boardTheme}
         data-board-size={boardSize}
         data-board-cell-size={cellSize}
+        data-board-cell-height={cellHeight}
         data-board-origin-x={originX}
         data-board-origin-y={originY}
         data-board-move-count={moveHistory.length}
@@ -3573,7 +3573,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 data-drill-mark={mark.tone}
                 style={{
                   left: originX + d.x * cellSize,
-                  top: originY + d.y * cellSize,
+                  top: originY + d.y * cellHeight,
                   width: cellSize * 0.92,
                   height: cellSize * 0.92,
                 }}
@@ -3691,7 +3691,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         {moveAnimation && (() => {
           const d = toDisplay(moveAnimation.x, moveAnimation.y);
           const cx = originX + d.x * cellSize;
-          const cy = originY + d.y * cellSize;
+          const cy = originY + d.y * cellHeight;
           return (
             <div key={moveAnimation.nodeId} className="move-anim" style={{ left: cx, top: cy - cellSize * 0.7 }} data-move-anim={moveAnimation.spec.kind}>
               {moveAnimation.spec.kind === 'score-loss' ? (
@@ -3722,7 +3722,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 className="absolute font-bold tracking-tight"
                 style={{
                   left: originX + i * cellSize,
-                  top: originY + (boardSize - 1) * cellSize + coordGap,
+                  top: originY + (boardSize - 1) * cellHeight + coordGap,
                   transform: 'translate(-50%, 0)',
                   lineHeight: 1,
                   fontSize: coordFontSize,
@@ -3746,7 +3746,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
                 className="absolute font-bold tracking-tight"
                 style={{
                   left: originX - coordGap,
-                  top: originY + i * cellSize,
+                  top: originY + i * cellHeight,
                   transform: 'translate(-100%, -50%)',
                   lineHeight: 1,
                   fontSize: coordFontSize,
@@ -3784,9 +3784,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
             className="absolute pointer-events-none"
             style={{
               left: originX - cellSize * 1.5,
-              top: originY - cellSize * 1.5,
+              top: originY - cellHeight * 1.5,
               width: cellSize * (boardSize + 2),
-              height: cellSize * (boardSize + 2),
+              height: cellHeight * (boardSize + 2),
               zIndex: 3,
             }}
           />
@@ -4011,7 +4011,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
             const d = toDisplay(cursorPt.x, cursorPt.y);
             const placement = getBoardTooltipPlacement({
               anchorX: originX + d.x * cellSize,
-              anchorY: originY + d.y * cellSize,
+              anchorY: originY + d.y * cellHeight,
               boardWidth,
               boardHeight,
               cellSize,
@@ -4050,7 +4050,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       </div>
       {hasAnalysisOverlay && hoverFromHoveringPointer && hoveredMove && hoveredMove.x >= 0 && hoveredMove.y >= 0 && (() => {
         const point = toDisplay(hoveredMove.x, hoveredMove.y);
-        return <CandidateMoveTooltip boardRef={boardSnapshotRef} anchorX={originX + point.x * cellSize} anchorY={originY + point.y * cellSize} cellSize={cellSize} boardSize={boardSize} move={hoveredMove} pvScrollHint={pvScrollHint} />;
+        return <CandidateMoveTooltip boardRef={boardSnapshotRef} anchorX={originX + point.x * cellSize} anchorY={originY + point.y * cellHeight} cellSize={cellSize} boardSize={boardSize} move={hoveredMove} pvScrollHint={pvScrollHint} />;
       })()}
     </div>
   );

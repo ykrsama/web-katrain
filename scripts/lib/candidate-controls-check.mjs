@@ -48,7 +48,7 @@ export async function assertCandidateControls(devtoolsPort, appUrl, screenshotDi
           performance.setResourceTimingBufferSize(5000);
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro'}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro'}));
         ` });
         await setViewport(cdp, { width, height, mobile });
         await navigate(cdp, appUrl);

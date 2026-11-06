@@ -33,7 +33,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
           performance.setResourceTimingBufferSize(5000);
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro',analysisShowHints:true,animPvTimeSeconds:0}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro',analysisShowHints:true,animPvTimeSeconds:0}));
         ` });
         await setViewport(cdp, viewport);
         await navigate(cdp, appUrl);
@@ -52,7 +52,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
         for (const [x, y, label] of [[9, 9, 'K10'], [18, 18, 'T1'], [0, 0, 'A19']]) {
           const point = await wait(`(()=>{
             const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect(),cell=Number(b.dataset.boardCellSize);
-            const x=r.x+Number(b.dataset.boardOriginX)+${x}*cell,y=r.y+Number(b.dataset.boardOriginY)+${y}*cell;
+            const x=r.x+Number(b.dataset.boardOriginX)+${x}*cell,y=r.y+Number(b.dataset.boardOriginY)+${y}*Number(b.dataset.boardCellHeight);
             return b.contains(document.elementFromPoint(x,y))?{x,y}:false;
           })()`);
           // Mouse input on touch-sized viewports represents an attached mouse
@@ -101,7 +101,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
         assert.equal(await evaluate(cdp, `(()=>{const t=document.querySelector('[data-candidate-tooltip]'),b=document.querySelector('[data-board-snapshot=true]').closest('[data-board-tooltip-boundary]'),r=t.getBoundingClientRect(),v=b.getBoundingClientRect();return r.top>=v.top-1&&r.bottom<=v.bottom+1&&r.left>=v.left-1&&r.right<=v.right+1})()`), true, 'Rotated tooltip leaves its boundary');
         if (width === 1280 && height === 800) assert.equal(await evaluate(cdp, `document.querySelector('[data-candidate-tooltip]').getBoundingClientRect().left>=document.querySelector('[data-board-snapshot=true]').getBoundingClientRect().right`), true, 'Rotated preview did not follow its candidate to the other side');
         if (viewport.mobile) {
-          const point = await evaluate(cdp, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return {x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellSize)}})()`);
+          const point = await evaluate(cdp, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return {x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellHeight)}})()`);
           await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
           await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x + 1, y: point.y }] });
           await wait('!document.querySelector("[data-candidate-tooltip]")');

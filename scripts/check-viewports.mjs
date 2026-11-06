@@ -316,16 +316,11 @@ function assertViewport(result) {
   if (!result.board) failures.push('board missing');
   if (result.board && result.board.left < -1) failures.push('board overflows left edge');
   if (result.board && result.board.right > result.innerWidth + 1) failures.push('board overflows right edge');
-  // A Go board is square by construction: GoBoard styles width and height from
-  // the same `cellSize * gridSpaces`, and the x and y grid spans are equal under
-  // every setting. So a rect that is not square means layout overrode the style.
-  // It did: the board was a shrinkable flex item and `cellSize` rounds up, so at
-  // 1024x768 a board styled 465.75px square laid out 464 x 465.75 and the
-  // canvases lost their right edge. This run's own summary said `627x628` at
-  // 1440x900 and nothing read it.
-  if (result.board && Math.abs(result.board.width - result.board.height) > 0.5) {
+  // The physical grid is rectangular. Catch flex distortion against that
+  // ratio rather than requiring a square board.
+  if (result.board && Math.abs(result.board.height - result.board.width * 24.22 / 23.33) > 0.5) {
     failures.push(
-      `board is not square (${result.board.width.toFixed(2)}x${result.board.height.toFixed(2)})`
+      `board aspect ratio is distorted (${result.board.width.toFixed(2)}x${result.board.height.toFixed(2)})`
     );
   }
   if (result.desktop) {
@@ -753,6 +748,7 @@ async function assertPwaCardsClearTheBoard(cdp, appUrl) {
     if (!boardEl) return ['board missing'];
     const size = Number(boardEl.getAttribute('data-board-size'));
     const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+    const cellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
     const originX = Number(boardEl.getAttribute('data-board-origin-x'));
     const originY = Number(boardEl.getAttribute('data-board-origin-y'));
     const r = boardEl.getBoundingClientRect();
@@ -760,7 +756,7 @@ async function assertPwaCardsClearTheBoard(cdp, appUrl) {
     for (let y = 0; y < size; y += 1) {
       for (let x = 0; x < size; x += 1) {
         const px = r.left + originX + x * cellSize;
-        const py = r.top + originY + y * cellSize;
+        const py = r.top + originY + y * cellHeight;
         if (px < 0 || py < 0 || px > innerWidth || py > innerHeight) continue;
         const hit = document.elementFromPoint(px, py);
         if (!hit || hit === boardEl || boardEl.contains(hit) || hit.contains(boardEl)) continue;
@@ -1064,6 +1060,10 @@ async function main() {
     // the quiet window after that, not the churn of a first paint.
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
       source: `
+        // Browser fixtures must not depend on a server at localhost:8000.
+        const settingsKey = 'web-katrain:settings:v3';
+        const settings = JSON.parse(localStorage.getItem(settingsKey) || '{}');
+        localStorage.setItem(settingsKey, JSON.stringify({ ...settings, engineMode: 'local' }));
         performance.setResourceTimingBufferSize(5000);
         window.__shifts = [];
         try {
@@ -1636,15 +1636,16 @@ async function main() {
           if (!boardEl) return [];
           const size = Number(boardEl.getAttribute('data-board-size'));
           const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+          const cellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
           const originX = Number(boardEl.getAttribute('data-board-origin-x'));
           const originY = Number(boardEl.getAttribute('data-board-origin-y'));
-          if (!Number.isFinite(size) || !Number.isFinite(cellSize) || !Number.isFinite(originX) || !Number.isFinite(originY)) return [];
+          if (!Number.isFinite(size) || !Number.isFinite(cellSize) || !Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) return [];
           const r = boardEl.getBoundingClientRect();
           const blockers = new Map();
           for (let y = 0; y < size; y += 1) {
             for (let x = 0; x < size; x += 1) {
               const px = r.left + originX + x * cellSize;
-              const py = r.top + originY + y * cellSize;
+              const py = r.top + originY + y * cellHeight;
               if (px < 0 || py < 0 || px > innerWidth || py > innerHeight) continue;
               const hit = document.elementFromPoint(px, py);
               if (!hit) continue;
@@ -1665,13 +1666,14 @@ async function main() {
           if (!boardEl) return ['board interaction smoke: board missing'];
           const size = Number(boardEl.getAttribute('data-board-size'));
           const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+          const cellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
           const originX = Number(boardEl.getAttribute('data-board-origin-x'));
           const originY = Number(boardEl.getAttribute('data-board-origin-y'));
           const beforeStones = boardEl.getAttribute('data-board-stones') || '';
           const beforeMoveCount = Number(boardEl.getAttribute('data-board-move-count'));
           const beforePlayer = boardEl.getAttribute('data-board-current-player');
           if (!Number.isFinite(size) || size <= 0) failures.push('board size metadata missing');
-          if (!Number.isFinite(cellSize) || cellSize <= 0) failures.push('board cell metadata missing');
+          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(cellHeight) || cellHeight <= 0) failures.push('board cell metadata missing');
           if (!Number.isFinite(originX) || !Number.isFinite(originY)) failures.push('board origin metadata missing');
           if (!Number.isFinite(beforeMoveCount)) failures.push('board move-count metadata missing');
           if (beforePlayer !== 'black' && beforePlayer !== 'white') failures.push('board current-player metadata missing');
@@ -1684,7 +1686,7 @@ async function main() {
           const y = Math.floor(emptyIndex / size);
           const r = boardEl.getBoundingClientRect();
           const clientX = r.left + originX + x * cellSize;
-          const clientY = r.top + originY + y * cellSize;
+          const clientY = r.top + originY + y * cellHeight;
           boardEl.dispatchEvent(new PointerEvent('pointerdown', {
             bubbles: true,
             cancelable: true,
@@ -1811,6 +1813,7 @@ async function main() {
           if (!boardEl) return ['navigation smoke: board missing'];
           const size = Number(boardEl.getAttribute('data-board-size'));
           const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+          const cellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
           const originX = Number(boardEl.getAttribute('data-board-origin-x'));
           const originY = Number(boardEl.getAttribute('data-board-origin-y'));
           const initialStones = boardEl.getAttribute('data-board-stones') || '';
@@ -1818,7 +1821,7 @@ async function main() {
           if (!Number.isFinite(size) || size <= 0 || initialStones.length !== size * size) {
             return ['navigation smoke: board metadata invalid'];
           }
-          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) {
+          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) {
             return ['navigation smoke: board geometry metadata invalid'];
           }
           if (!Number.isFinite(initialMoveCount)) return ['navigation smoke: move-count metadata invalid'];
@@ -1831,7 +1834,7 @@ async function main() {
               bubbles: true,
               cancelable: true,
               clientX: r.left + originX + x * cellSize,
-              clientY: r.top + originY + y * cellSize,
+              clientY: r.top + originY + y * cellHeight,
             }));
             await waitForFrames(4);
           };
@@ -1901,10 +1904,11 @@ async function main() {
           if (!boardEl) return ['capture smoke: board missing'];
           const size = Number(boardEl.getAttribute('data-board-size'));
           const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+          const cellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
           const originX = Number(boardEl.getAttribute('data-board-origin-x'));
           const originY = Number(boardEl.getAttribute('data-board-origin-y'));
           if (!Number.isFinite(size) || size < 16) return ['capture smoke: board size too small'];
-          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) {
+          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) {
             return ['capture smoke: board geometry metadata invalid'];
           }
 
@@ -1921,7 +1925,7 @@ async function main() {
               bubbles: true,
               cancelable: true,
               clientX: r.left + originX + x * cellSize,
-              clientY: r.top + originY + y * cellSize,
+              clientY: r.top + originY + y * cellHeight,
             }));
             await waitForFrames(4);
           };
@@ -1955,26 +1959,28 @@ async function main() {
           if (!boardEl) return ['edit tool smoke: board missing'];
           const size = Number(boardEl.getAttribute('data-board-size'));
           const cellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+          const cellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
           const originX = Number(boardEl.getAttribute('data-board-origin-x'));
           const originY = Number(boardEl.getAttribute('data-board-origin-y'));
           const beforeStones = boardEl.getAttribute('data-board-stones') || '';
           if (!Number.isFinite(size) || size <= 0 || beforeStones.length !== size * size) {
             return ['edit tool smoke: board metadata invalid'];
           }
-          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) {
+          if (!Number.isFinite(cellSize) || cellSize <= 0 || !Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(originX) || !Number.isFinite(originY)) {
             return ['edit tool smoke: board geometry metadata invalid'];
           }
 
           const clickBoardPoint = async (x, y) => {
             const r = boardEl.getBoundingClientRect();
             const currentCellSize = Number(boardEl.getAttribute('data-board-cell-size'));
+            const currentCellHeight = Number(boardEl.getAttribute('data-board-cell-height'));
             const currentOriginX = Number(boardEl.getAttribute('data-board-origin-x'));
             const currentOriginY = Number(boardEl.getAttribute('data-board-origin-y'));
             boardEl.dispatchEvent(new MouseEvent('click', {
               bubbles: true,
               cancelable: true,
               clientX: r.left + currentOriginX + x * currentCellSize,
-              clientY: r.top + currentOriginY + y * currentCellSize,
+              clientY: r.top + currentOriginY + y * currentCellHeight,
             }));
             await waitForFrames(4);
           };

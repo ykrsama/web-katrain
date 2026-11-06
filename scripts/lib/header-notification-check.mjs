@@ -17,7 +17,7 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
     localStorage.setItem('web-katrain:library_open:v1', 'false');
     localStorage.setItem('web-katrain:sidebar_open:v1', 'true');
     localStorage.setItem('web-katrain:pwa-install-dismissed:v1', 'true');
-    localStorage.setItem('web-katrain:settings:v3', JSON.stringify({soundEnabled:false, loadSgfFastAnalysis:false}));
+    localStorage.setItem('web-katrain:settings:v3', JSON.stringify({engineMode:'local',soundEnabled:false, loadSgfFastAnalysis:false}));
   `;
   const wait = async expression => {
     for (let i = 0; i < 100; i++) {

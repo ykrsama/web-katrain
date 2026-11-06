@@ -47,7 +47,7 @@ export async function assertScoreQuizGuesses(devtoolsPort, appUrl, screenshotDir
         await command('Page.addScriptToEvaluateOnNewDocument', { source: `
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false}));
         ` });
         await setViewport(cdp, { width, height, mobile: width < 1000 });
         await navigate(cdp, appUrl);
@@ -141,22 +141,41 @@ async function checkScoreQuiz(moduleUrl) {
   const failures = [];
   const check = (condition, message) => { if (!condition) failures.push(message); };
   const settle = () => new Promise(resolve => setTimeout(resolve, 50));
+  const waitFor = async (predicate, label) => {
+    const deadline = Date.now() + 10_000;
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}`);
+      await settle();
+    }
+  };
   const dialog = () => host.querySelector('[role="dialog"]');
   const button = name => host.querySelector(`[aria-label="${name}"]`);
   const open = async () => {
     root.render(React.createElement(ScoreQuizModal, { onClose: () => root.render(null) }));
-    for (let i = 0; i < 100 && !dialog(); i++) await settle();
-    if (!dialog()) throw new Error('Score quiz did not mount');
-    await settle();
+    await waitFor(() => !!dialog() && !!button('Reveal score'), 'score quiz to mount');
+  };
+  const reveal = async () => {
+    const count = requests.length;
+    button('Reveal score').click();
+    await waitFor(() => requests.length === count + 1, 'stubbed evaluation request');
+    await waitFor(() => host.querySelector('input')?.disabled, 'submitted controls to lock');
+    return requests[count];
+  };
+  const randomPosition = async () => {
+    const previous = useGameStore.getState().currentNode.id;
+    button('Random position').click();
+    await waitFor(() => useGameStore.getState().currentNode.id !== previous
+      && !!button('Reveal score') && !button('Reveal score').disabled, 'new quiz position');
   };
   client.evaluate = () => new Promise((resolve, reject) => requests.push({ resolve, reject }));
   try {
+    // The fixture stubs the local client. Product defaults may select remote.
+    useGameStore.setState({ settings: { ...originalState.settings, engineMode: 'local' } });
     originalState.loadGame(parseSgf('(;GM[1]FF[4]SZ[19];B[dd];W[pp])'));
     const game = useGameStore.getState().rootNode;
     useGameStore.setState({ currentNode: game.children[0].children[0] });
     await open();
-    button('Reveal score').click();
-    await settle();
+    const first = await reveal();
     const input = host.querySelector('input');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await settle();
@@ -165,36 +184,29 @@ async function checkScoreQuiz(moduleUrl) {
     check([...host.querySelectorAll('[aria-label="Predicted leader"] button')].every(b => b.disabled),
       'The submitted leader remains editable');
 
-    button('Random position').click();
-    await settle();
-    requests[0].resolve({ rootScoreLead: 12, rootWinRate: 0.7 });
+    await randomPosition();
+    first.resolve({ rootScoreLead: 12, rootWinRate: 0.7 });
     await settle();
     check(!!button('Reveal score') && !dialog().textContent.includes('Rounds:'),
       'A score from the previous position was counted');
 
-    button('Reveal score').click();
-    await settle();
-    const rejected = requests.at(-1);
-    button('Random position').click();
-    await settle();
+    const rejected = await reveal();
+    await randomPosition();
     rejected.reject(new Error('obsolete evaluation error'));
     await settle();
     check(!dialog().textContent.includes('obsolete evaluation error'), 'An obsolete error reached the new round');
 
-    button('Reveal score').click();
-    await settle();
-    requests.at(-1).resolve({ rootScoreLead: 5, rootWinRate: 0.6 });
-    await settle();
+    const completed = await reveal();
+    completed.resolve({ rootScoreLead: 5, rootWinRate: 0.6 });
+    await waitFor(() => dialog()?.textContent.includes('Rounds: 1'), 'completed round to render');
     check(dialog().textContent.includes('Rounds: 1'), 'A completed round was not counted exactly once');
     check(dialog().textContent.includes('Perfect read'), 'The completed round was graded incorrectly');
 
     [...host.querySelectorAll('button')].find(b => b.textContent === 'Guess again').click();
-    await settle();
-    button('Reveal score').click();
-    await settle();
-    const abandoned = requests.at(-1);
+    await waitFor(() => !!button('Reveal score'), 'practice round to open');
+    const abandoned = await reveal();
     button('Close quiz').click();
-    await settle();
+    await waitFor(() => !dialog(), 'score quiz to close');
     await open();
     abandoned.resolve({ rootScoreLead: -20, rootWinRate: 0.1 });
     await settle();

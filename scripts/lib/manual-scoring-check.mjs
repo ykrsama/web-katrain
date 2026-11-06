@@ -41,7 +41,7 @@ export async function assertManualScoring(cdp, appUrl, runDir, screenshotDir) {
     localStorage.setItem('web-katrain:mobile_home_dismissed:v1', 'true');
     localStorage.setItem('web-katrain:library_open:v1', 'false');
     localStorage.setItem('web-katrain:pwa-install-dismissed:v1', 'true');
-    localStorage.setItem('web-katrain:settings:v3', JSON.stringify({soundEnabled:false, loadSgfFastAnalysis:false}));
+    localStorage.setItem('web-katrain:settings:v3', JSON.stringify({engineMode:'local',soundEnabled:false, loadSgfFastAnalysis:false}));
   ` });
   const errors = [];
   const downloads = [];
@@ -205,7 +205,7 @@ export async function assertManualScoring(cdp, appUrl, runDir, screenshotDir) {
           if (fixture.id === 'stone-scoring') {
             const point = await wait(`(()=>{
               const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();
-              const c=Number(b.dataset.boardCellSize),x=r.x+Number(b.dataset.boardOriginX)+4*c,y=r.y+Number(b.dataset.boardOriginY)+4*c;
+              const c=Number(b.dataset.boardCellSize),x=r.x+Number(b.dataset.boardOriginX)+4*c,y=r.y+Number(b.dataset.boardOriginY)+4*Number(b.dataset.boardCellHeight);
               return b.contains(document.elementFromPoint(x,y))?{x,y}:false;
             })()`);
             await press(point);

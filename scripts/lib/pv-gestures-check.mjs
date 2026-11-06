@@ -38,7 +38,7 @@ export async function assertPvGestures(devtoolsPort, appUrl, screenshotDir) {
           performance.setResourceTimingBufferSize(5000);
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro',animPvTimeSeconds:0.1}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro',animPvTimeSeconds:0.1}));
         ` });
         await setViewport(cdp, { width, height, mobile: width < 1000 });
         await navigate(cdp, appUrl);
@@ -54,7 +54,7 @@ export async function assertPvGestures(devtoolsPort, appUrl, screenshotDir) {
         })()`);
         await wait('Number(document.querySelector("[data-board-snapshot=true]").dataset.analysisHintCount)===1');
         await evaluate(cdp, 'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(r,250))))');
-        point = await evaluate(cdp, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return {x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellSize)}})()`);
+        point = await evaluate(cdp, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return {x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellHeight)}})()`);
         // An attached mouse on a phone-sized screen uses the same gestures.
         await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
         await wait(`${count}===8`);

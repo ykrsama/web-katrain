@@ -48,7 +48,7 @@ export async function assertGameInfoReplacement(devtoolsPort, appUrl, runDir, sc
             performance.setResourceTimingBufferSize(5000);
             localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
             localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-            localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false}));
+            localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false}));
           ` });
           await setViewport(cdp, { width, height, mobile: width < 1000 });
           await navigate(cdp, appUrl);

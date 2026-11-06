@@ -125,6 +125,7 @@ async function main() {
       const el = document.querySelector('[data-board-snapshot="true"]');
       const size = Number(el.getAttribute('data-board-size'));
       const cell = Number(el.getAttribute('data-board-cell-size'));
+      const cellHeight = Number(el.getAttribute('data-board-cell-height'));
       const ox = Number(el.getAttribute('data-board-origin-x'));
       const oy = Number(el.getAttribute('data-board-origin-y'));
       const times = [];
@@ -134,7 +135,7 @@ async function main() {
         if (idx < 0) break;
         const r = el.getBoundingClientRect();
         const clientX = r.left + ox + (idx % size) * cell;
-        const clientY = r.top + oy + Math.floor(idx / size) * cell;
+        const clientY = r.top + oy + Math.floor(idx / size) * cellHeight;
         const o = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', clientX, clientY, isPrimary: true };
         const t = performance.now();
         el.dispatchEvent(new PointerEvent('pointerdown', o));

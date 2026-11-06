@@ -52,7 +52,7 @@ export async function assertPracticeBoardSizes(devtoolsPort, appUrl, runDir, scr
           performance.setResourceTimingBufferSize(5000);
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          if(!localStorage.getItem('web-katrain:settings:v3')) localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false,katagoBackend:'wasm',katagoVisits:16,katagoMaxTimeMs:5000}));
+          if(!localStorage.getItem('web-katrain:settings:v3')) localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false,katagoBackend:'wasm',katagoVisits:16,katagoMaxTimeMs:5000}));
         ` });
         await setViewport(cdp, { width, height, mobile });
         await navigate(cdp, appUrl);
@@ -70,10 +70,10 @@ export async function assertPracticeBoardSizes(devtoolsPort, appUrl, runDir, scr
           // Wait for layout and its ResizeObserver-driven grid to agree before
           // aiming, and measure again for confirmation instead of reusing pixels.
           const corner = () => wait(`(async()=>{
-            const sample=()=>{const b=document.querySelector('[data-board-snapshot=true]');if(!b||Number(b.dataset.boardSize)!==${size})return null;const r=b.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,c:Number(b.dataset.boardCellSize),ox:Number(b.dataset.boardOriginX),oy:Number(b.dataset.boardOriginY)}};
+            const sample=()=>{const b=document.querySelector('[data-board-snapshot=true]');if(!b||Number(b.dataset.boardSize)!==${size})return null;const r=b.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,c:Number(b.dataset.boardCellSize),ch:Number(b.dataset.boardCellHeight),ox:Number(b.dataset.boardOriginX),oy:Number(b.dataset.boardOriginY)}};
             let r=sample();if(!r)return false;
             for(let i=0;i<3;i++){await new Promise(requestAnimationFrame);const next=sample();if(JSON.stringify(next)!==JSON.stringify(r))return false;r=next;}
-            const b=document.querySelector('[data-board-snapshot=true]'),x=r.x+r.ox+${size - 1}*r.c,y=r.y+r.oy+${size - 1}*r.c;
+            const b=document.querySelector('[data-board-snapshot=true]'),x=r.x+r.ox+${size - 1}*r.c,y=r.y+r.oy+${size - 1}*r.ch;
             return b.contains(document.elementFromPoint(x,y))?{x,y}:false;
           })()`);
           await press(await corner());

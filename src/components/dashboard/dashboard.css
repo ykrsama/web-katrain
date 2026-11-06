@@ -514,7 +514,7 @@
   padding-bottom: calc(var(--stage-pad) + var(--commandbar-reserve) + var(--pwa-stage-reserve));
 }
 .wk-dashboard .board-wrap {
-  position: relative; aspect-ratio: 1;
+  position: relative; aspect-ratio: 23.33 / 24.22;
   height: 100%; width: auto;
   max-height: 100%; max-width: 100%;
   min-height: 0; min-width: 0;

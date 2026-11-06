@@ -45,18 +45,73 @@ function stableHash(boardSize: number, x: number, y: number): number {
   return hash >>> 0;
 }
 
-/** A whole-board map, including empty points, as in Shudan's Goban.js. */
-export function buildFuzzyStoneOffsets(boardSize: number, enabled: boolean, rotation = 0): FuzzyStoneOffset[][] {
+type FuzzyStoneGeometry = {
+  /** Visible stone diameter in horizontal grid-cell units. */
+  stoneDiameter: number;
+  cellHeightRatio: number;
+};
+
+/** Nearest offsets whose adjacent centers retain the required axis spacing. */
+function fitOffsets(values: number[], clearance: number): number[] {
+  // Isotonic regression of offset[i] + i * clearance. Pooling a violating
+  // block spreads the correction across its stones instead of shrinking them.
+  const blocks: Array<{ sum: number; count: number }> = [];
+  values.forEach((value, index) => {
+    blocks.push({ sum: value + index * clearance, count: 1 });
+    while (blocks.length > 1) {
+      const right = blocks[blocks.length - 1]!;
+      const left = blocks[blocks.length - 2]!;
+      if (left.sum / left.count <= right.sum / right.count) break;
+      blocks.splice(-2, 2, { sum: left.sum + right.sum, count: left.count + right.count });
+    }
+  });
+  return blocks.flatMap(({ sum, count }) => Array<number>(count).fill(sum / count))
+    .map((value, index) => value - index * clearance);
+}
+
+function fitStoneSpacing(offsets: FuzzyStoneOffset[][], geometry: FuzzyStoneGeometry, rotation: number): void {
+  const size = offsets.length;
+  const { stoneDiameter: diameter, cellHeightRatio: ratio } = geometry;
+  const display = Array.from({ length: size }, () => Array<FuzzyStoneOffset>(size));
+  const diagonal = Math.hypot(1, ratio);
+  // Bound diagonal approach as well as horizontal/vertical neighbors. Already
+  // touching theme stones keep their original spacing; fuzz adds no overlap.
+  const amplitude = Math.min(0.07, Math.max(0, (1 - diameter / diagonal) / 2));
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const offset = offsets[y]![x]!;
+      offset.dxFactor *= amplitude / 0.07;
+      offset.dyFactor *= amplitude / 0.07;
+      const [dx, dy] = rotation === 1 ? [size - 1 - y, x]
+        : rotation === 2 ? [size - 1 - x, size - 1 - y]
+        : rotation === 3 ? [y, size - 1 - x] : [x, y];
+      display[dy!]![dx!] = offset;
+    }
+  }
+  for (const row of display) {
+    const fitted = fitOffsets(row.map(offset => offset.dxFactor), Math.max(0, 1 - diameter));
+    row.forEach((offset, x) => { offset.dxFactor = fitted[x]!; });
+  }
+  for (let x = 0; x < size; x++) {
+    const fitted = fitOffsets(display.map(row => row[x]!.dyFactor), Math.max(0, 1 - diameter / ratio));
+    display.forEach((row, y) => { row[x]!.dyFactor = fitted[y]!; });
+  }
+}
+
+/** A stable whole-board map, so playing a stone never moves its neighbors. */
+export function buildFuzzyStoneOffsets(boardSize: number, enabled: boolean, rotation = 0, geometry?: FuzzyStoneGeometry): FuzzyStoneOffset[][] {
   const shifts = readjustShifts(Array.from({ length: boardSize }, (_, y) =>
     Array.from({ length: boardSize }, (_, x) => enabled ? stableHash(boardSize, x, y) % 9 : 0)
   ));
-  return shifts.map((row) => row.map((direction) => {
+  const offsets = shifts.map((row) => row.map((direction) => {
     const offset = FUZZY_OFFSETS[direction]!;
-    if (direction === 0) return offset;
+    if (direction === 0) return { ...offset };
     const { dxFactor: dx, dyFactor: dy } = offset;
     if (rotation === 1) return { dxFactor: -dy, dyFactor: dx };
     if (rotation === 2) return { dxFactor: -dx, dyFactor: -dy };
     if (rotation === 3) return { dxFactor: dy, dyFactor: -dx };
-    return offset;
+    return { ...offset };
   }));
+  if (enabled && geometry) fitStoneSpacing(offsets, geometry, rotation);
+  return offsets;
 }

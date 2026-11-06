@@ -15,7 +15,7 @@ export async function assertLibraryImportFailures(cdp, appUrl, runDir, screensho
     localStorage.removeItem('web-katrain:auto_saved_game:v1');
     localStorage.setItem('web-katrain:mobile_home_dismissed:v1', 'true');
     localStorage.setItem('web-katrain:library_open:v1', 'true');
-    localStorage.setItem('web-katrain:settings:v3', JSON.stringify({soundEnabled:false, loadSgfFastAnalysis:false}));
+    localStorage.setItem('web-katrain:settings:v3', JSON.stringify({engineMode:'local',soundEnabled:false, loadSgfFastAnalysis:false}));
   ` });
   const errors = [];
   const unsubscribe = cdp.on((message) => {

@@ -108,7 +108,7 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
         Object.assign(p, await evaluate(cdp, `(()=>{
           const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();
           return {x:r.x+Number(b.dataset.boardOriginX)+${coordinate}*Number(b.dataset.boardCellSize),
-            y:r.y+Number(b.dataset.boardOriginY)+${coordinate}*Number(b.dataset.boardCellSize)};
+            y:r.y+Number(b.dataset.boardOriginY)+${coordinate}*Number(b.dataset.boardCellHeight)};
         })()`));
         assert.ok(await evaluate(cdp, `document.querySelector('[data-board-snapshot=true]').contains(document.elementFromPoint(${p.x},${p.y}))`));
         await dispatch(p);
@@ -156,7 +156,7 @@ export async function assertLibrarySaveRecovery(devtoolsPort, appUrl, runDir, sc
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:library_open:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false}));
         ` });
         if (action === 'initialize') await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
           source: `${installStorageControls};librarySaveAudit.mode='fail';`,

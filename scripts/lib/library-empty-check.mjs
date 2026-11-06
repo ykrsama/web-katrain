@@ -89,7 +89,7 @@ export async function assertEmptyLibraryPersists(devtoolsPort, appUrl, runDir, s
             localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
             localStorage.setItem('web-katrain:library_open:v1','true');
             localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-            localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false}));
+            localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false}));
             ${storage === 'localStorage' ? "Object.defineProperty(window,'indexedDB',{configurable:true,value:undefined});" : ''}
           ` });
           await setViewport(cdp, { width, height, mobile });

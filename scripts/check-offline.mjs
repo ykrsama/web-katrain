@@ -288,7 +288,7 @@ async function main({ coldStart }) {
     const before = await evaluate(cdp, 'document.querySelector("[data-board-snapshot]").dataset.boardStones');
     const point = await evaluate(cdp, `(()=>{
       const e=document.querySelector('[data-board-snapshot]'),r=e.getBoundingClientRect();
-      return {x:r.x+Number(e.dataset.boardOriginX)+3*Number(e.dataset.boardCellSize),y:r.y+Number(e.dataset.boardOriginY)+3*Number(e.dataset.boardCellSize)};
+      return {x:r.x+Number(e.dataset.boardOriginX)+3*Number(e.dataset.boardCellSize),y:r.y+Number(e.dataset.boardOriginY)+3*Number(e.dataset.boardCellHeight)};
     })()`);
     assert.ok(await evaluate(cdp, `document.querySelector('[data-board-snapshot]').contains(document.elementFromPoint(${point.x},${point.y}))`));
     await command(cdp, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });

@@ -60,7 +60,7 @@ export async function assertDepthDismissal(devtoolsPort, appUrl, screenshotDir) 
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
           localStorage.setItem('web-katrain:ui_state:v1',JSON.stringify({mode:'analyze'}));
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,defaultBoardSize:9,katagoVisits:16,katagoMaxTimeMs:500}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,defaultBoardSize:9,katagoVisits:16,katagoMaxTimeMs:500}));
         ` });
         await setViewport(cdp, { width, height, mobile: true });
         await navigate(cdp, appUrl);

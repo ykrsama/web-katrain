@@ -29,7 +29,7 @@ export async function assertLiveCandidatePreviews(devtoolsPort, appUrl, screensh
       const key = async (key, code, modifiers = 0) => {
         for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers });
       };
-      const boardPoint = `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return r.width?{x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellSize)}:false})()`;
+      const boardPoint = `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return r.width?{x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellHeight)}:false})()`;
       const hoverBoard = async () => {
         // Toolbars and the empty-game strip resize the board through a
         // ResizeObserver; use the settled geometry for trusted pointer input.
@@ -47,7 +47,7 @@ export async function assertLiveCandidatePreviews(devtoolsPort, appUrl, screensh
           performance.setResourceTimingBufferSize(5000);
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
           localStorage.setItem('web-katrain:pwa-install-dismissed:v1','true');
-          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro',animPvTimeSeconds:0.1}));
+          localStorage.setItem('web-katrain:settings:v3',JSON.stringify({engineMode:'local',soundEnabled:false,loadSgfFastAnalysis:false,analysisExperience:'pro',animPvTimeSeconds:0.1}));
           window.addEventListener('pointermove',e=>{window.livePointerEvent={x:e.clientX,y:e.clientY,type:e.pointerType,target:e.target.tagName,ply:e.target.closest('[data-board-snapshot=true]')?.dataset.boardMoveCount,at:performance.now()};});
         ` });
         await setViewport(cdp, { width, height, mobile: width < 1000 });
