@@ -18,7 +18,7 @@ const buffers = new Map<string, AudioBuffer>();
 const pendingBuffers = new Map<string, Promise<AudioBuffer>>();
 let audioContext: AudioContext | null = null;
 let fallbackAudio: HTMLAudioElement | null = null;
-type NavigationSound = 'stone' | 'pass';
+type NavigationSound = 'stone' | 'capture' | 'pass';
 type NavigationClip = { started: boolean };
 const NAVIGATION_ACTIVITY_MS = 120;
 const heldKeys = new Set<string>();
@@ -109,7 +109,9 @@ export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
     }
     const clip: NavigationClip = { started: false };
     navigationClip = clip;
-    const fileName = kind === 'pass' ? 'pass.mp3' : `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`;
+    const fileName = kind === 'pass' ? 'pass.mp3'
+        : kind === 'capture' ? `capture${Math.floor(Math.random() * CAPTURE_SOUND_COUNT)}.mp3`
+        : `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`;
     const canStart = () => navigationClip === clip && getSoundNow() - lastNavigationAt <= MAX_SOUND_DELAY_MS;
     const finish = () => {
         if (navigationClip !== clip) return;

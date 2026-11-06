@@ -2475,7 +2475,14 @@ export const useGameStore = create<GameStore>((commit, get) => {
       if (!skip && node.move && node.gameState.moveHistory.length > state.moveHistory.length) {
         // Keep e85ded9's latency guarantee: schedule cached audio BEFORE the
         // store write can trigger subscriptions, analysis or React rendering.
-        playNavigationSound(node.move.x < 0 || node.move.y < 0 ? 'pass' : 'stone');
+        // Compare with this move's own parent: jumping past an earlier capture
+        // must not make an ordinary destination move sound like a capture.
+        const before = node.parent?.gameState;
+        const captured = before && (
+          node.gameState.capturedBlack > before.capturedBlack
+          || node.gameState.capturedWhite > before.capturedWhite
+        );
+        playNavigationSound(node.move.x < 0 || node.move.y < 0 ? 'pass' : captured ? 'capture' : 'stone');
       } else {
         stopNavigationSounds();
       }

@@ -49,6 +49,21 @@ describe('forward navigation sounds from the game store', () => {
     expect(sounds.stopNavigationSounds).toHaveBeenCalled();
   });
 
+  it.each([
+    '(;SZ[9]AB[ab][ba][cb]AW[bb]PL[B];B[bc];W[hh])',
+    '(;SZ[9]AW[ab][ba][cb]AB[bb]PL[W];W[bc];B[hh])',
+  ])('plays capture audio when advancing onto a capturing move: %s', (sgf) => {
+    useGameStore.getState().loadGame(parseSgf(sgf));
+    useGameStore.getState().navigateStart();
+    vi.clearAllMocks();
+    useGameStore.getState().navigateForward();
+    expect(sounds.playNavigationSound).toHaveBeenCalledExactlyOnceWith('capture');
+    useGameStore.getState().navigateBack();
+    expect(sounds.playNavigationSound).toHaveBeenCalledTimes(1);
+    useGameStore.getState().navigateEnd();
+    expect(sounds.playNavigationSound).toHaveBeenLastCalledWith('stone');
+  });
+
   it('sounds a mouse selection of a later tree node once, regardless of skipped moves', () => {
     const third = useGameStore.getState().rootNode.children[0].children[0].children[0];
     useGameStore.getState().jumpToNode(third);

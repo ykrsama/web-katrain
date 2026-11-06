@@ -268,6 +268,18 @@ describe('AI sound activation and recovery', () => {
 });
 
 describe('serial forward-navigation sounds', () => {
+  it('plays capture files for captures, including the latest held-key continuation', () => {
+    const audio = mockFallback();
+    vi.stubGlobal('window', Object.assign(new EventTarget(), { Audio: audio.Audio }));
+    cleanups.push(installSoundUnlockHandlers());
+    window.dispatchEvent(Object.assign(new Event('keydown'), { key: 'ArrowRight', code: 'ArrowRight' }));
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    playNavigationSound('stone');
+    playNavigationSound('capture');
+    audio.instances[0].onended?.();
+    expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/capture0.mp3']);
+  });
+
   it('finishes each clip before starting the next, with no queue per move', async () => {
     const audio = mockWebAudio();
     cleanups.push(installSoundUnlockHandlers());
