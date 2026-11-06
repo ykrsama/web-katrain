@@ -1,3 +1,4 @@
+import { translate, type TranslationVars } from '../i18n/translate';
 import type { AnalysisResult, CandidateMove, Player } from '../types';
 
 /**
@@ -75,10 +76,13 @@ export function opponentFollowUp(afterPass: AnalysisResult | null | undefined): 
  * "gote": the swing measures size, and whether a move keeps the initiative is a
  * separate question this number does not answer.
  */
-export function describeTenukiValue(value: TenukiValue | null): string {
-  if (!value) return 'Play elsewhere value is unavailable.';
-  if (value.negligible) return 'Playing here first is worth less than a point.';
-  return `Playing here first is worth about ${value.points.toFixed(1)} points.`;
+export function describeTenukiValue(
+  value: TenukiValue | null,
+  t: (text: string, vars?: TranslationVars) => string = translate.bind(null, 'en'),
+): string {
+  if (!value) return t('Play elsewhere value is unavailable.');
+  if (value.negligible) return t('Playing here first is worth less than a point.');
+  return t('Playing here first is worth about {points} points.', { points: value.points.toFixed(1) });
 }
 
 /**
@@ -121,15 +125,16 @@ export function summarizeTenukiRow(args: {
   hasAnalysis: boolean;
   /** Renders a board point as the app labels it, e.g. `Q16`. */
   formatPoint: (x: number, y: number) => string;
+  t?: (text: string, vars?: TranslationVars) => string;
 }): TenukiRowState {
-  const { tenuki, hasAnalysis, formatPoint } = args;
-  const unavailable = 'Analyze the position first, so there is something to compare a pass against.';
+  const { tenuki, hasAnalysis, formatPoint, t = translate.bind(null, 'en') } = args;
+  const unavailable = t('Analyze the position first, so there is something to compare a pass against.');
 
   if (!tenuki) {
     return {
       status: 'idle',
-      buttonLabel: 'Play elsewhere?',
-      summary: hasAnalysis ? 'Price the point at this position.' : 'Analyze the position first.',
+      buttonLabel: t('Play elsewhere?'),
+      summary: hasAnalysis ? t('Price the point at this position.') : t('Analyze the position first.'),
       disabled: !hasAnalysis,
       disabledReason: hasAnalysis ? undefined : unavailable,
     };
@@ -138,8 +143,8 @@ export function summarizeTenukiRow(args: {
   if (tenuki.status === 'running') {
     return {
       status: 'running',
-      buttonLabel: 'Checking\u2026',
-      summary: 'Evaluating the position after a pass\u2026',
+      buttonLabel: t('Checking…'),
+      summary: t('Evaluating the position after a pass…'),
       disabled: true,
     };
   }
@@ -147,8 +152,8 @@ export function summarizeTenukiRow(args: {
   if (tenuki.status === 'error') {
     return {
       status: 'error',
-      buttonLabel: 'Play elsewhere?',
-      summary: tenuki.error ?? 'Could not evaluate.',
+      buttonLabel: t('Play elsewhere?'),
+      summary: t(tenuki.error ?? 'Could not evaluate.'),
       disabled: !hasAnalysis,
       disabledReason: hasAnalysis ? undefined : unavailable,
     };
@@ -156,11 +161,13 @@ export function summarizeTenukiRow(args: {
 
   const follow = tenuki.followUp;
   const followLabel =
-    follow && follow.x >= 0 && follow.y >= 0 ? ` Opponent takes ${formatPoint(follow.x, follow.y)}.` : '';
+    follow && follow.x >= 0 && follow.y >= 0
+      ? t(' Opponent takes {point}.', { point: formatPoint(follow.x, follow.y) })
+      : '';
   return {
     status: 'ready',
-    buttonLabel: 'Play elsewhere?',
-    summary: `${describeTenukiValue(tenuki.value)}${followLabel}`,
+    buttonLabel: t('Play elsewhere?'),
+    summary: `${describeTenukiValue(tenuki.value, t)}${followLabel}`,
     disabled: false,
   };
 }

@@ -1,3 +1,4 @@
+import { translate, type TranslationVars } from '../i18n/translate';
 import type { Player } from '../types';
 
 /**
@@ -123,29 +124,36 @@ export function summarizeTrickRow(args: {
   marks: readonly TrickMoveMark[] | null;
   /** Renders a board point as the app labels it, e.g. `Q16`. */
   formatPoint: (x: number, y: number) => string;
+  t?: (text: string, vars?: TranslationVars) => string;
 }): TrickRowState {
-  const buttonLabel = 'Trick moves';
+  const t = args.t ?? translate.bind(null, 'en');
+  const buttonLabel = t('Trick moves');
   if (args.running) {
     return {
       status: 'running',
-      buttonLabel: 'Stop',
-      summary: args.total > 0 ? `Finding trick moves… ${args.done}/${args.total}` : 'Finding trick moves…',
+      buttonLabel: t('Stop'),
+      summary: args.total > 0
+        ? t('Finding trick moves… {done}/{total}', { done: args.done, total: args.total })
+        : t('Finding trick moves…'),
     };
   }
   if (!args.marks) {
     return {
       status: 'idle',
       buttonLabel,
-      summary: 'Mark moves that leave the opponent one good reply and a second choice worse than now.',
+      summary: t('Mark moves that leave the opponent one good reply and a second choice worse than now.'),
     };
   }
   if (args.marks.length === 0) {
-    return { status: 'ready', buttonLabel, summary: 'No trick moves here.' };
+    return { status: 'ready', buttonLabel, summary: t('No trick moves here.') };
   }
   const points = args.marks.map((mark) => args.formatPoint(mark.x, mark.y)).join(', ');
   return {
     status: 'ready',
     buttonLabel,
-    summary: `${args.marks.length} trick ${args.marks.length === 1 ? 'move' : 'moves'}: ${points}`,
+    summary: t(args.marks.length === 1 ? '{count} trick move: {points}' : '{count} trick moves: {points}', {
+      count: args.marks.length,
+      points,
+    }),
   };
 }

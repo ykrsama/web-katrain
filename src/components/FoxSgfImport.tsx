@@ -132,7 +132,7 @@ export function FoxSgfImport({ open, onClose, returnFocus, onImport }: { open: b
         <header><div><h2 id="fox-import-title">{t('Fox records')}</h2><p>{t('Live observation and historical records')}</p></div><button type="button" aria-label={t('Close Fox records')} onClick={close}>{t('Close')}</button></header>
         <form className="fox-import-search" onSubmit={event => { event.preventDefault(); if (!busy) void search(); }}>
           <FoxSearchField query={query} setQuery={setQuery} history={history} onHistoryChange={entries => { setHistory(entries); saveFoxSearchHistory(entries); }} onSelect={value => void search(value)} disabled={busy} inputRef={queryInput} />
-          <button type="submit" disabled={busy}>{busy ? t('Requesting…') : t('Find records')}</button>
+          <button type="submit" disabled={busy}>{busy ? t('Finding…') : t('Find records')}</button>
         </form>
         {identity && <p className="fox-import-identity">{identity}</p>}
         {error && <div role="alert" className="fox-import-error">{t(error.key, error.vars)}</div>}

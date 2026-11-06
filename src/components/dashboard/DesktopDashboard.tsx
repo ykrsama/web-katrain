@@ -1,3 +1,4 @@
+import { usePositionScroll } from '../../hooks/usePositionScroll';
 import type { InsertProgress } from '../../utils/insertMode';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './dashboard.css';
@@ -294,6 +295,15 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     candidates: true,
     notes: true,
   });
+  const gameRootId = useMemo(() => {
+    let node = currentNode;
+    while (node.parent) node = node.parent;
+    return node.id;
+  }, [currentNode]);
+  const { scrollRef: reviewScrollRef, contentRef: reviewContentRef } = usePositionScroll(
+    currentNode.id,
+    `${gameRootId}:${mode}:${Object.values(sections).join()}`,
+  );
   // Top game-info strip and bottom metrics bar collapse like the side panels so
   // the board can take the full column; reopen handles mirror the edge toggles.
   const [gamestripOpen, setGamestripOpen] = useState(() => {
@@ -1082,7 +1092,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
             <button type="button" className={`mode-tab${mode === 'analyze' ? ' active' : ''}`} aria-pressed={mode === 'analyze'} onClick={() => setMode('analyze')}>{t('Review')}</button>
             <button type="button" className="iconbtn drawer-close" title={t('Close')} style={{ margin: '6px 6px 6px 0' }} onClick={() => setSidebarOpen(false)}><Icon name="x" size={14} /></button>
           </div>
-          <div className="sidebar-scroll">
+          <div className="sidebar-scroll" ref={reviewScrollRef} style={{ overflowAnchor: 'none' }}>
+            <div ref={reviewContentRef}>
             {/* The gamestrip above the board is not the whole of this, which is
                 what the sidebar used to say it was: it shows the title, size,
                 rules, players, komi, captures, handicap, result and save state,
@@ -1347,6 +1358,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
               </div>
             </div>
 
+            </div>
           </div>
         </aside>
 

@@ -173,7 +173,41 @@ export async function assertCandidateControls(devtoolsPort, appUrl, screenshotDi
             }
           }
         }
-        reports.push({ width, height, separateControls: true, variationKeyboard: true, columns, stickyHeader: true, coachPlay: true, contrastCombinations, playConfirmation: mobile ? 'First tap preview, second tap play' : 'Tab/Enter and mouse play' });
+        // A move clears candidates until its analysis arrives. The shorter
+        // document used to clamp Review's scroll offset, often back to zero.
+        await evaluate(cdp, `(()=>{
+          candidateAuditStore.getState().navigateStart();
+          const s=candidateAuditStore.getState(),first=s.currentNode.analysis.moves[0];
+          window.scrollFixture={...s.currentNode.analysis,moves:Array.from({length:10},(_,i)=>({...first,x:i,y:3,order:i}))};
+          s.currentNode.analysis=scrollFixture;
+          candidateAuditStore.setState({treeVersion:s.treeVersion+1});
+        })()`);
+        await wait('document.querySelectorAll(".candidate-row").length>=5');
+        await evaluate(cdp, `(()=>{
+          const panel=document.querySelector('.sidebar-scroll')||document.querySelector('[data-layout-panel="side"] > .overflow-y-auto');
+          panel.querySelectorAll('.section-head-toggle[aria-expanded="false"]').forEach(b=>b.click());
+        })()`);
+        await evaluate(cdp, 'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+        const readingOffset = await evaluate(cdp, `(()=>{
+          window.readingScroller=document.querySelector('.sidebar-scroll')||document.querySelector('[data-layout-panel="side"] > .overflow-y-auto');
+          readingScroller.scrollTop=readingScroller.scrollHeight;
+          return readingScroller.scrollTop;
+        })()`);
+        assert.ok(readingOffset>0, 'Review regression needs a scrollable panel');
+        await evaluate(cdp, 'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+        await evaluate(cdp, 'candidateAuditStore.getState().playMove(9,9)');
+        await wait('candidateAuditStore.getState().moveHistory.length===1&&!document.querySelector(".candidate-row")');
+        assert.ok(Math.abs(await evaluate(cdp, 'readingScroller.scrollTop')-readingOffset)<=1, 'Moving reset the Review scroll position while candidates were pending');
+        await evaluate(cdp, `(()=>{
+          const s=candidateAuditStore.getState();
+          s.currentNode.analysis={...scrollFixture,moves:scrollFixture.moves.slice(0,1)};
+          candidateAuditStore.setState({treeVersion:s.treeVersion+1});
+        })()`);
+        await wait('document.querySelectorAll(".candidate-row").length===1');
+        assert.ok(Math.abs(await evaluate(cdp, 'readingScroller.scrollTop')-readingOffset)<=1, 'Incoming analysis moved the Review reading position');
+        await evaluate(cdp, 'readingScroller.scrollTop=0');
+        await wait('readingScroller.firstElementChild.style.minHeight===""');
+        reports.push({ width, height, separateControls: true, variationKeyboard: true, columns, stickyHeader: true, coachPlay: true, reviewScrollPreserved: true, contrastCombinations, playConfirmation: mobile ? 'First tap preview, second tap play' : 'Tab/Enter and mouse play' });
       } catch (error) {
         const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(screenshotDir, `${width}x${height}-candidate-controls-failed.png`), Buffer.from(screenshot.result.data, 'base64'));

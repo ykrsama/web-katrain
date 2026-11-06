@@ -1,3 +1,4 @@
+import { usePositionScroll } from '../../hooks/usePositionScroll';
 import React from 'react';
 import {
   FaFastBackward,
@@ -218,6 +219,11 @@ export const RightPanel: React.FC<RightPanelProps> = ({
   const showAnalysis = !isMobile || activeMobileTab === 'info';
   const showNotes = !isMobile || activeMobileTab === 'info';
   const showGameInfo = !isMobile || activeMobileTab === 'info';
+
+  const { scrollRef: reviewScrollRef, contentRef: reviewContentRef } = usePositionScroll(
+    currentNode.id,
+    `${rootNode.id}:${mode}:${activeMobileTab}:${Object.values(modePanels).join()}`,
+  );
 
   const modeTabClass = (active: boolean) => ['panel-tab', active ? 'active' : ''].join(' ');
   const treeViewTabClass = (active: boolean) => ['panel-icon-button', active ? 'active' : ''].join(' ');
@@ -565,8 +571,8 @@ export const RightPanel: React.FC<RightPanelProps> = ({
           )}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-3">
-          <div className={['flex flex-col min-h-0', isMobile && activeMobileTab === 'tree' ? 'h-full' : ''].join(' ')}>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-3" ref={reviewScrollRef} style={{ overflowAnchor: 'none' }}>
+          <div ref={reviewContentRef} className={['flex flex-col min-h-0', isMobile && activeMobileTab === 'tree' ? 'h-full' : ''].join(' ')}>
             {/* Desktop keeps the familiar document order. Mobile Review is an
                 action workspace, so its lower-frequency metadata follows the
                 analysis and notes in both visual and accessibility order. */}

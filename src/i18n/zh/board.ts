@@ -191,6 +191,23 @@ export default {
   'Clear continuation preview': '清除后续变化预览',
 
   // TenukiRow
+  'Play elsewhere?': '脱先？',
+  'Play elsewhere value is unavailable.': '暂时无法评估脱先的代价。',
+  'Playing here first is worth less than a point.': '抢先落子价值不足一目。',
+  'Playing here first is worth about {points} points.': '抢先落子价值约 {points} 目。',
+  'Analyze the position first, so there is something to compare a pass against.': '请先分析当前局面，再比较脱先的代价。',
+  'Price the point at this position.': '评估当前局面脱先的代价。',
+  'Analyze the position first.': '请先分析当前局面。',
+  'Checking…': '计算中…',
+  'Evaluating the position after a pass…': '正在评估停手后的局面…',
+  'Could not evaluate.': '评估失败。',
+  ' Opponent takes {point}.': ' 对手抢占 {point}。',
+  'Finding trick moves… {done}/{total}': '正在寻找骗着… {done}/{total}',
+  'Finding trick moves…': '正在寻找骗着…',
+  'Mark moves that leave the opponent one good reply and a second choice worse than now.': '标出仅有一种正确应对、且次佳应对比当前局面更差的骗着。',
+  'No trick moves here.': '未找到骗着。',
+  '{count} trick move: {points}': '{count} 个骗着：{points}',
+  '{count} trick moves: {points}': '{count} 个骗着：{points}',
   'Evaluate the position again after a pass, to price the point here': '停手后重新评估局面，以衡量此处的价值',
   'Ask what playing elsewhere would cost': '询问脱先会付出多大代价',
 } as Record<string, string>;

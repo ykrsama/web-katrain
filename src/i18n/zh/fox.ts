@@ -17,7 +17,7 @@ export default {
   'Live observation and historical records': '实时观战与历史棋谱',
   'Close Fox records': '关闭野狐棋谱',
   'Find records': '查询棋谱',
-  'Requesting…': '请求中…',
+  'Finding…': '查询中…',
   'Fox request failed ({status}). Please retry later.': '野狐请求失败（{status}），请稍后重试。',
   'Request cancelled or timed out. You can retry.': '请求已取消或超时，可以重试。',
   'Could not load the Fox record.': '无法加载野狐棋谱。',

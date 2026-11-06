@@ -41,11 +41,13 @@ export const TenukiRow: React.FC<{ className?: string }> = ({ className }) => {
   void treeVersion;
 
   const row = summarizeTenukiRow({
+    t,
     tenuki: tenukiAnalysis?.nodeId === currentNode.id ? tenukiAnalysis : null,
     hasAnalysis: !!currentNode.analysis && Number.isFinite(currentNode.analysis.rootScoreLead),
     formatPoint: (x, y) => formatMoveLabel(x, y, currentNode.gameState.board.length),
   });
   const trickRow = summarizeTrickRow({
+    t,
     running: isTrickScanRunning,
     done: trickScanDone,
     total: trickScanTotal,
