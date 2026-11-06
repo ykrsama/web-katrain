@@ -85,7 +85,10 @@ function mockWebAudio() {
     key: (type: 'keydown' | 'keyup') => target.dispatchEvent(Object.assign(new Event(type), { key: 'ArrowRight', code: 'ArrowRight' })),
     endClip: () => contexts.flatMap((context) => context.sources).filter((source) => source.buffer === buffer).at(-1)?.onended?.(),
     allowResume: (allowed: boolean) => { canResume = allowed; },
-    advance: (ms = 100) => { now += ms; },
+    advance: (ms = 100) => {
+      now += ms;
+      if (vi.isFakeTimers()) vi.advanceTimersByTime(ms);
+    },
     audibleStarts: () => contexts.flatMap((context) => context.sources)
       .filter((source) => source.buffer === buffer && source.start.mock.calls.length > 0).length,
   };
@@ -269,8 +272,8 @@ describe('AI sound activation and recovery', () => {
   });
 });
 
-describe('serial forward-navigation sounds', () => {
-  it('plays a stone then a capture for the latest held-key continuation in the HTML fallback', () => {
+describe('forward-navigation sound cadence', () => {
+  it('lets HTML audio tails overlap on the 160ms beat and keeps capture 100ms after its stone', () => {
     vi.useFakeTimers();
     const audio = mockFallback();
     vi.stubGlobal('window', Object.assign(new EventTarget(), { Audio: audio.Audio }));
@@ -279,19 +282,22 @@ describe('serial forward-navigation sounds', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     playNavigationSound('stone');
     playNavigationSound('capture');
-    audio.instances[0].onended?.();
+    vi.advanceTimersByTime(159);
+    expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3']);
+    vi.advanceTimersByTime(1);
     expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/0.mp3']);
+    expect(audio.instances).toHaveLength(2); // First tail was never interrupted.
     window.dispatchEvent(Object.assign(new Event('keyup'), { key: 'ArrowRight', code: 'ArrowRight' }));
     vi.advanceTimersByTime(99);
     expect(audio.srcs).toHaveLength(2);
     vi.advanceTimersByTime(1);
     expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/0.mp3', '/themes/sabaki/capture0.mp3']);
-    audio.instances[0].onended?.();
-    audio.instances[1].onended?.();
+    vi.advanceTimersByTime(500);
     expect(audio.srcs).toHaveLength(3);
   });
 
-  it('schedules both capture sounds 100ms apart and waits for both before continuing', async () => {
+  it('schedules capture 100ms after placement without delaying the next beat', async () => {
+    vi.useFakeTimers();
     const audio = mockWebAudio();
     cleanups.push(installSoundUnlockHandlers());
     audio.key('keydown');
@@ -301,51 +307,104 @@ describe('serial forward-navigation sounds', () => {
     expect(parts).toHaveLength(2);
     expect(parts[0].start).toHaveBeenCalledWith();
     expect(parts[1].start).toHaveBeenCalledWith(10.1);
+    audio.advance(30);
     playNavigationSound('stone');
-    parts[0].onended?.();
-    expect(audio.audibleStarts()).toBe(2);
-    parts[1].onended?.();
+    audio.advance(130);
+    // Neither original part has ended, but the next placement starts anyway.
+    expect(audio.audibleStarts()).toBe(3);
+    parts.forEach(part => part.onended?.());
     expect(audio.audibleStarts()).toBe(3);
   });
 
-  it('finishes each clip before starting the next, with no queue per move', async () => {
+  it.each([100, 160])('uses the same 160ms onset interval with a %ims sample', async duration => {
+    vi.useFakeTimers();
     const audio = mockWebAudio();
     cleanups.push(installSoundUnlockHandlers());
     audio.key('keydown');
     await flushAudio();
     playNavigationSound();
-    for (let i = 0; i < 20; i++) { audio.advance(30); playNavigationSound(); }
+    const first = audio.contexts[0].sources.at(-1)!;
+    Object.defineProperty(first.buffer, 'duration', { value: duration / 1000 });
+    audio.advance(30);
+    playNavigationSound();
+    audio.advance(70);
+    if (duration === 100) first.onended?.();
     expect(audio.audibleStarts()).toBe(1);
-    audio.endClip();
+    audio.advance(59);
+    expect(audio.audibleStarts()).toBe(1);
+    audio.advance(1);
     expect(audio.audibleStarts()).toBe(2);
-    // No further movement: the other 19 moves do not become queued clips.
-    audio.endClip();
+    audio.advance(30);
+    playNavigationSound();
+    audio.advance(130);
+    expect(audio.audibleStarts()).toBe(3);
+    // Sample duration and playback rate are left intact.
+    expect(first.buffer?.duration).toBe(duration / 1000);
+    audio.advance(500);
+    expect(audio.audibleStarts()).toBe(3);
+  });
+
+  it('keeps only the latest move kind at each beat instead of queuing every move', async () => {
+    vi.useFakeTimers();
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    audio.advance(30);
+    playNavigationSound('capture');
+    audio.advance(30);
+    playNavigationSound('pass');
+    audio.advance(100);
+    expect(audio.audibleStarts()).toBe(2); // Latest pass; no stale capture pair.
+    audio.advance(600);
     expect(audio.audibleStarts()).toBe(2);
   });
 
-  it('does not start another clip after key release even if many moves were coalesced', async () => {
-    const audio = mockWebAudio();
-    cleanups.push(installSoundUnlockHandlers());
-    audio.target.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Shift', code: 'ShiftLeft' }));
-    audio.key('keydown');
-    await flushAudio();
-    playNavigationSound();
-    audio.advance(30); playNavigationSound();
-    audio.key('keyup');
-    audio.endClip();
-    expect(audio.audibleStarts()).toBe(1);
-  });
-
-  it('stops continuing when movement stops even if the key is still down', async () => {
+  it.each(['keyup', 'stop', 'blur'])('drops the pending beat on %s without cutting the current tail', async action => {
+    vi.useFakeTimers();
     const audio = mockWebAudio();
     cleanups.push(installSoundUnlockHandlers());
     audio.key('keydown');
     await flushAudio();
     playNavigationSound();
-    audio.advance(30); playNavigationSound();
+    audio.advance(30);
+    playNavigationSound();
+    if (action === 'keyup') audio.key('keyup');
+    else if (action === 'stop') stopNavigationSounds();
+    else audio.gesture('blur');
     audio.advance(500);
     audio.endClip();
     expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('discards stale movement when a delayed beat finally runs', async () => {
+    vi.useFakeTimers();
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    audio.advance(30);
+    playNavigationSound();
+    audio.advance(500);
+    expect(audio.audibleStarts()).toBe(1);
+  });
+
+  it('sounds a new key press immediately while the preceding press still has a tail', async () => {
+    vi.useFakeTimers();
+    const audio = mockWebAudio();
+    cleanups.push(installSoundUnlockHandlers());
+    audio.key('keydown');
+    await flushAudio();
+    playNavigationSound();
+    audio.key('keyup');
+    audio.advance(30);
+    audio.key('keydown');
+    playNavigationSound();
+    expect(audio.audibleStarts()).toBe(2);
+    audio.advance(500);
+    expect(audio.audibleStarts()).toBe(2);
   });
 
   it('does not overlap or leave queued audio after rapid mouse clicks', async () => {
@@ -359,19 +418,6 @@ describe('serial forward-navigation sounds', () => {
     expect(audio.audibleStarts()).toBe(1);
     playNavigationSound();
     expect(audio.audibleStarts()).toBe(2);
-  });
-
-  it.each(['stop', 'blur'])('drops continuation on %s while letting the current clip finish', async (action) => {
-    const audio = mockWebAudio();
-    cleanups.push(installSoundUnlockHandlers());
-    audio.key('keydown');
-    await flushAudio();
-    playNavigationSound();
-    audio.advance(30); playNavigationSound();
-    if (action === 'stop') stopNavigationSounds();
-    else audio.gesture('blur');
-    audio.endClip();
-    expect(audio.audibleStarts()).toBe(1);
   });
 
   it('does not play late-decoded navigation sounds after the key was released', async () => {
@@ -391,7 +437,7 @@ describe('serial forward-navigation sounds', () => {
     expect(audio.audibleStarts()).toBe(0);
   });
 
-  it('serializes the HTML audio fallback as well', () => {
+  it('serializes mouse navigation in the HTML fallback and reuses finished elements', () => {
     vi.spyOn(Math, 'random').mockReturnValueOnce(0.9).mockReturnValueOnce(0.3);
     const audio = mockFallback();
     for (let i = 0; i < 10; i++) playNavigationSound();
@@ -402,6 +448,15 @@ describe('serial forward-navigation sounds', () => {
     expect(audio.play).toHaveBeenCalledTimes(2);
     expect(audio.srcs).toEqual(['/themes/sabaki/4.mp3', '/themes/sabaki/1.mp3']);
     expect(audio.Audio).toHaveBeenCalledTimes(1);
+  });
+
+  it('tolerates the delayed capture fallback failing to create an audio element', () => {
+    vi.useFakeTimers();
+    const audio = mockFallback();
+    audio.Audio.mockImplementationOnce(audio.Audio.getMockImplementation()!);
+    audio.Audio.mockImplementationOnce(function () { throw new Error('Audio unavailable'); });
+    playNavigationSound('capture');
+    expect(() => vi.advanceTimersByTime(100)).not.toThrow();
   });
 });
 

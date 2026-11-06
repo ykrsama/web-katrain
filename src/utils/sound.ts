@@ -19,14 +19,17 @@ const pendingBuffers = new Map<string, Promise<AudioBuffer>>();
 let audioContext: AudioContext | null = null;
 let fallbackAudio: HTMLAudioElement | null = null;
 type NavigationSound = 'stone' | 'capture' | 'pass';
-type NavigationClip = { started: boolean; captureTimer?: ReturnType<typeof setTimeout> };
-const NAVIGATION_ACTIVITY_MS = 120;
+type NavigationClip = { started: boolean; finished: boolean; captureTimer?: ReturnType<typeof setTimeout> };
+const NAVIGATION_INTERVAL_MS = 160;
+const NAVIGATION_ACTIVITY_MS = 160;
 const heldKeys = new Set<string>();
+const navigationClips = new Set<NavigationClip>();
+const activeNavigationAudio = new Set<HTMLAudioElement>();
+const idleNavigationAudio: HTMLAudioElement[] = [];
 let navigationClip: NavigationClip | null = null;
+let navigationBeatTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingNavigationSound: NavigationSound | null = null;
 let lastNavigationAt = -Infinity;
-let navigationAudio: HTMLAudioElement | null = null;
-let navigationCaptureAudio: HTMLAudioElement | null = null;
 
 const getSoundNow = (): number => (
     typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -96,35 +99,50 @@ export const warmAudioContext = (): void => {
 export const stopNavigationSounds = (): void => {
     pendingNavigationSound = null;
     lastNavigationAt = -Infinity;
-    if (navigationClip && !navigationClip.started) navigationClip = null;
+    if (navigationBeatTimer !== null) clearTimeout(navigationBeatTimer);
+    navigationBeatTimer = null;
+    if (navigationClip && (!navigationClip.started || navigationClip.finished)) navigationClip = null;
 };
 
-/** One playing clip and, while a key is held, only the latest movement intent. */
+/** Held-key onsets follow a fixed beat; original sample tails may overlap. */
 export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
     if (typeof window === 'undefined') return;
     lastNavigationAt = getSoundNow();
-    if (navigationClip) {
+    if (navigationClip && !(heldKeys.size > 0 && navigationClip.started && navigationBeatTimer === null)) {
         // Mouse clicks that arrive during playback are simply coalesced. They
         // must not leave a sound waiting after the user has stopped clicking.
         pendingNavigationSound = heldKeys.size > 0 ? kind : null;
         return;
     }
-    const clip: NavigationClip = { started: false };
+    const clip: NavigationClip = { started: false, finished: false };
     navigationClip = clip;
+    navigationClips.add(clip);
     const fileNames = [kind === 'pass' ? 'pass.mp3' : `${Math.floor(Math.random() * STONE_SOUND_COUNT)}.mp3`];
     if (kind === 'capture') fileNames.push(`capture${Math.floor(Math.random() * CAPTURE_SOUND_COUNT)}.mp3`);
     const canStart = () => navigationClip === clip && getSoundNow() - lastNavigationAt <= MAX_SOUND_DELAY_MS;
     const finish = () => {
+        clip.finished = true;
+        navigationClips.delete(clip);
         if (navigationClip !== clip) return;
+        // Short samples must not advance the beat; long samples must not hold it.
+        if (navigationBeatTimer !== null) return;
         navigationClip = null;
-        const next = pendingNavigationSound;
-        pendingNavigationSound = null;
-        if (next && heldKeys.size > 0 && getSoundNow() - lastNavigationAt <= NAVIGATION_ACTIVITY_MS) {
-            playNavigationSound(next);
-        }
     };
-    // A capturing move is one navigation intent with two sounds. Finish both
-    // before starting another intent, even if the stone clip ends first.
+    const startBeat = () => {
+        if (heldKeys.size === 0) return;
+        navigationBeatTimer = setTimeout(() => {
+            navigationBeatTimer = null;
+            if (navigationClip !== clip) return;
+            navigationClip = null;
+            const next = pendingNavigationSound;
+            pendingNavigationSound = null;
+            if (next && heldKeys.size > 0 && getSoundNow() - lastNavigationAt <= NAVIGATION_ACTIVITY_MS) {
+                playNavigationSound(next);
+            }
+        }, NAVIGATION_INTERVAL_MS);
+    };
+    // Both parts belong to the started move, even after key release. Their
+    // completion only gates mouse navigation; neither part gates the key beat.
     const ended = new Set<number>();
     const partEnded = (index: number) => {
         ended.add(index);
@@ -134,21 +152,33 @@ export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
         if (!canStart()) { finish(); return; }
         try {
             if (!window.Audio) { finish(); return; }
-            navigationAudio ??= new window.Audio();
-            const playPart = (audio: HTMLAudioElement, index: number) => {
-                audio.src = publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileNames[index]!}`);
-                audio.onended = () => partEnded(index);
-                audio.onerror = () => partEnded(index);
-                try { void audio.play()?.catch(() => partEnded(index)); }
-                catch { partEnded(index); }
+            const playPart = (index: number) => {
+                let audio: HTMLAudioElement;
+                try { audio = idleNavigationAudio.pop() ?? new window.Audio(); }
+                catch { partEnded(index); return; }
+                activeNavigationAudio.add(audio);
+                let released = false;
+                const release = () => {
+                    if (released) return;
+                    released = true;
+                    audio.onended = audio.onerror = null;
+                    activeNavigationAudio.delete(audio);
+                    idleNavigationAudio.push(audio);
+                    partEnded(index);
+                };
+                try {
+                    audio.src = publicUrl(`${SABAKI_SOUND_BASE_PATH}${fileNames[index]!}`);
+                    audio.onended = audio.onerror = release;
+                    void audio.play()?.catch(release);
+                }
+                catch { release(); }
             };
             clip.started = true;
-            playPart(navigationAudio, 0);
+            startBeat();
+            playPart(0);
             if (fileNames.length > 1) {
-                navigationCaptureAudio ??= new window.Audio();
-                const captureAudio = navigationCaptureAudio;
                 clip.captureTimer = setTimeout(() => {
-                    if (navigationClip === clip) playPart(captureAudio, 1);
+                    playPart(1);
                 }, 100);
             }
         } catch { finish(); }
@@ -158,6 +188,7 @@ export const playNavigationSound = (kind: NavigationSound = 'stone'): void => {
     const start = (clipBuffers: AudioBuffer[]) => {
         if (!canStart() || audioContext !== context || context.state !== 'running') { finish(); return; }
         clip.started = true;
+        startBeat();
         clipBuffers.forEach((buffer, index) => startSound(context, buffer, () => partEnded(index), index * 0.1));
     };
     try {
@@ -281,15 +312,21 @@ export const playPassSound = (): void => playAudioFile('pass', 'pass.mp3');
 export const playNewGameSound = (): void => playAudioFile('new-game', 'newgame.mp3');
 
 export const resetAudioContextForTests = (): void => {
-    if (navigationClip?.captureTimer) clearTimeout(navigationClip.captureTimer);
+    stopNavigationSounds();
+    for (const clip of navigationClips) {
+        if (clip.captureTimer !== undefined) clearTimeout(clip.captureTimer);
+    }
+    navigationClips.clear();
     navigationClip = null;
     pendingNavigationSound = null;
     lastNavigationAt = -Infinity;
     heldKeys.clear();
-    navigationAudio?.pause();
-    navigationAudio = null;
-    navigationCaptureAudio?.pause();
-    navigationCaptureAudio = null;
+    for (const audio of [...activeNavigationAudio, ...idleNavigationAudio]) {
+        audio.onended = audio.onerror = null;
+        audio.pause();
+    }
+    activeNavigationAudio.clear();
+    idleNavigationAudio.length = 0;
     if (audioContext) void audioContext.close().catch(() => undefined);
     audioContext = null;
     fallbackAudio = null;
