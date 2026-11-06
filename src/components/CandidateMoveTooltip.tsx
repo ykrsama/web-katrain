@@ -96,6 +96,8 @@ export function CandidateMoveTooltip({ boardRef, anchorX, anchorY, cellSize, boa
   }, [boardRef, placement?.target]);
 
   if (!placement) return null;
+  // Keep the hidden card measurable for resizing, but never cover the PV
+  // with a tooltip when the side margins cannot accommodate it.
   return createPortal(
     <div
       ref={cardRef}
@@ -105,7 +107,8 @@ export function CandidateMoveTooltip({ boardRef, anchorX, anchorY, cellSize, boa
       data-tooltip-compact={placement.compact}
       data-tooltip-columns={placement.columns}
       className={`pointer-events-none absolute z-20 rounded-lg border border-[var(--ui-border-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-xl ${placement.compact ? 'p-1.5 text-[0.6875rem] leading-[0.875rem]' : 'p-2 text-xs leading-4'}`}
-      style={{ left: placement.left, top: placement.top, width: placement.width, visibility: placement.ready ? 'visible' : 'hidden' }}
+      aria-hidden={!placement.ready || !placement.outside}
+      style={{ left: placement.left, top: placement.top, width: placement.width, visibility: placement.ready && placement.outside ? 'visible' : 'hidden' }}
     >
       <div className="mb-1 flex items-center justify-between gap-1 whitespace-nowrap font-bold" role={pvScrollHint ? 'status' : undefined} data-pv-scroll-hint={pvScrollHint ? 'true' : undefined}>
         <span>{formatBoardMoveLabel(move, boardSize)}</span>

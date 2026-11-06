@@ -75,11 +75,14 @@ export async function assertPvGestures(devtoolsPort, appUrl, screenshotDir) {
         await evaluate(cdp, '(()=>{const s=pvGestureStore.getState();s.currentNode.analysis=pvGestureFullAnalysis;pvGestureStore.setState({analysisData:pvGestureFullAnalysis,treeVersion:s.treeVersion+1});return true})()');
         await wait(`${count}===7`);
         await wait('document.querySelector("[data-pv-scroll-hint]")?.textContent.includes("7 / 8")');
-        await wait('getComputedStyle(document.querySelector("[data-candidate-tooltip]")).visibility==="visible"');
-        const hint = await evaluate(cdp, `(()=>{const e=document.querySelector('[data-candidate-tooltip]'),r=e.getBoundingClientRect(),b=e.closest('[data-board-tooltip-boundary]').getBoundingClientRect();return {inside:r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1,overflow:e.scrollWidth-e.clientWidth,pointerEvents:getComputedStyle(e).pointerEvents}})()`);
-        assert.equal(hint.inside, true, 'Variation readout leaves its available space');
-        assert.ok(hint.overflow <= 1, 'Variation readout clips its text');
-        assert.equal(hint.pointerEvents, 'none', 'Variation readout captures board input');
+        await wait('(()=>{const e=document.querySelector("[data-candidate-tooltip]");return e&&(getComputedStyle(e).visibility==="visible"||e.dataset.tooltipOutsideBoard==="false")})()');
+        const hint = await evaluate(cdp, `(()=>{const e=document.querySelector('[data-candidate-tooltip]'),r=e.getBoundingClientRect(),b=e.closest('[data-board-tooltip-boundary]').getBoundingClientRect();return {suppressed:e.dataset.tooltipOutsideBoard==='false',visibility:getComputedStyle(e).visibility,inside:r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1,overflow:e.scrollWidth-e.clientWidth,pointerEvents:getComputedStyle(e).pointerEvents}})()`);
+        if (hint.suppressed) assert.equal(hint.visibility, 'hidden', 'Constrained readout covers the variation');
+        else {
+          assert.equal(hint.inside, true, 'Variation readout leaves its available space');
+          assert.ok(hint.overflow <= 1, 'Variation readout clips its text');
+          assert.equal(hint.pointerEvents, 'none', 'Variation readout captures board input');
+        }
         assert.equal(await evaluate(cdp, 'document.querySelectorAll("[data-candidate-tooltip] dt").length'), 10, 'Manual stepping hid candidate metrics');
         const steppedScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(screenshotDir, `${caseName}-pv-stepped.png`), Buffer.from(steppedScreenshot.result.data, 'base64'));

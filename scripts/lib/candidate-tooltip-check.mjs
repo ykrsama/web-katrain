@@ -58,7 +58,14 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
           // Mouse input on touch-sized viewports represents an attached mouse
           // or pen; the finger path is checked separately below.
           await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
-          await wait(`(()=>{const t=document.querySelector('[data-candidate-tooltip="${label}"]');return t&&getComputedStyle(t).visibility==='visible'})()`);
+          await wait(`(()=>{const t=document.querySelector('[data-candidate-tooltip="${label}"]');return t&&(getComputedStyle(t).visibility==='visible'||t.dataset.tooltipOutsideBoard==='false')})()`);
+          const suppressed = await evaluate(cdp, `(()=>{const t=document.querySelector('[data-candidate-tooltip="${label}"]');return t.dataset.tooltipOutsideBoard==='false'})()`);
+          if (suppressed) {
+            assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector('[data-candidate-tooltip="${label}"]')).visibility`), 'hidden', 'Constrained tooltip covers the variation');
+            await wait('Number(document.querySelector("[data-board-snapshot=true]").dataset.pvCount)>0');
+            cards.push({ label, suppressed: true, variationVisible: true });
+            continue;
+          }
           const card = await evaluate(cdp, `(()=>{
             const t=document.querySelector('[data-candidate-tooltip="${label}"]'),b=document.querySelector('[data-board-snapshot=true]'),p=b.closest('[data-board-tooltip-boundary]');
             const r=t.getBoundingClientRect(),br=b.getBoundingClientRect(),v=p.getBoundingClientRect(),ps=getComputedStyle(p);
@@ -98,7 +105,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
         const rotatedPoint = await evaluate(cdp, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return {x:r.x+Number(b.dataset.boardOriginX)+18*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)}})()`);
         await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...rotatedPoint });
         await wait('document.querySelector("[data-candidate-tooltip]")?.dataset.candidateTooltip==="A19"');
-        assert.equal(await evaluate(cdp, `(()=>{const t=document.querySelector('[data-candidate-tooltip]'),b=document.querySelector('[data-board-snapshot=true]').closest('[data-board-tooltip-boundary]'),r=t.getBoundingClientRect(),v=b.getBoundingClientRect();return r.top>=v.top-1&&r.bottom<=v.bottom+1&&r.left>=v.left-1&&r.right<=v.right+1})()`), true, 'Rotated tooltip leaves its boundary');
+        assert.equal(await evaluate(cdp, `(()=>{const t=document.querySelector('[data-candidate-tooltip]');if(t.dataset.tooltipOutsideBoard==='false')return getComputedStyle(t).visibility==='hidden';const b=document.querySelector('[data-board-snapshot=true]').closest('[data-board-tooltip-boundary]'),r=t.getBoundingClientRect(),v=b.getBoundingClientRect();return r.top>=v.top-1&&r.bottom<=v.bottom+1&&r.left>=v.left-1&&r.right<=v.right+1})()`), true, 'Rotated tooltip leaves its boundary or covers the board');
         if (width === 1280 && height === 800) assert.equal(await evaluate(cdp, `document.querySelector('[data-candidate-tooltip]').getBoundingClientRect().left>=document.querySelector('[data-board-snapshot=true]').getBoundingClientRect().right`), true, 'Rotated preview did not follow its candidate to the other side');
         if (viewport.mobile) {
           const point = await evaluate(cdp, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect();return {x:r.x+Number(b.dataset.boardOriginX)+9*Number(b.dataset.boardCellSize),y:r.y+Number(b.dataset.boardOriginY)+9*Number(b.dataset.boardCellHeight)}})()`);
@@ -119,7 +126,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
       }
     }
     fs.writeFileSync(path.join(screenshotDir, 'candidate-tooltips.json'), JSON.stringify(reports, null, 2));
-    console.log('Candidate tooltips: side margins, constrained previews, complete metrics and touch ownership passed across desktop and phone layouts.');
+    console.log('Candidate tooltips: side margins, suppression without side space, preserved variations, complete metrics and touch ownership passed across desktop and phone layouts.');
   } finally {
     browser.close();
   }
