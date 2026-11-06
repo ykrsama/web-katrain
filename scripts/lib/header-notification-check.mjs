@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, navigate, setViewport, sleep } from './browser.mjs';
+import { connectDevtools, evaluate, navigate, setViewport, sleep, waitForStableSnapshot } from './browser.mjs';
 
 // A long status toast can expand the dashboard's implicit grid column even
 // while the document reports zero overflow. Check the actual panel bounds
@@ -40,9 +40,19 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
   const snapshot = () => evaluate(cdp, `(()=>{
     const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,width:r.width,height:r.height}};
     const message=document.querySelector('.notification-toast-message');
+    const board=document.querySelector('[data-board-snapshot=true]');
+    const container=board.parentElement.getBoundingClientRect();
+    const cell=Number(board.dataset.boardCellSize);
+    const styledWidth=parseFloat(board.style.width),styledHeight=parseFloat(board.style.height);
+    const spanX=styledWidth/cell,spanY=styledHeight/cell;
+    const nextFits=cell<80&&(cell+1)*spanX<=container.width-0.5&&(cell+1)*spanY<=container.height-0.5;
     return {
       layout:[...document.querySelectorAll('.wk-dashboard>.header,.wk-dashboard>.body,.wk-dashboard .sidebar')].map(e=>({name:e.className,...box(e)})),
-      board:box(document.querySelector('[data-board-snapshot=true]')),
+      board:box(board),
+      boardState:{size:Number(board.dataset.boardSize),moves:Number(board.dataset.boardMoveCount),cell},
+      // ResizeObserver can still be carrying the previous container's size.
+      // Wait until the rendered grid both fits and fills its current box.
+      layoutReady:document.fonts.status==='loaded'&&styledWidth<=container.width+0.5&&styledHeight<=container.height+0.5&&!nextFits,
       inaccessibleHeaderControls:[...document.querySelectorAll('.wk-dashboard>.header button')].filter(e=>{
         const r=e.getBoundingClientRect();if(!r.width||!r.height)return false;
         return r.left<0||r.right>innerWidth+1||!e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));
@@ -51,6 +61,12 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
       live:document.querySelector('[data-notification=true]')?.getAttribute('role'),
     };
   })()`);
+  const settledSnapshot = async moves => {
+    await evaluate(cdp, 'document.fonts.ready.then(()=>true)');
+    return waitForStableSnapshot(snapshot, {
+      ready:state=>state.layoutReady&&state.boardState.size===9&&state.boardState.moves===moves,
+    });
+  };
   const reports = [];
   const failures = [];
   try {
@@ -60,6 +76,9 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
       cdp = connectDevtools(`ws://127.0.0.1:${devtoolsPort}/devtools/page/${target}`);
       await cdp.ready;
       try {
+        if (process.env.VIEWPORT_CPU_THROTTLE) {
+          await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.VIEWPORT_CPU_THROTTLE) });
+        }
         await cdp.send('Runtime.enable');
         await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
         await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: preload });
@@ -78,25 +97,24 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
         assert.ok(!imported.error, JSON.stringify(imported.error));
         await wait(`document.querySelector('.notification-toast-message')?.title.includes(${JSON.stringify(stem)})`);
         await click('button[aria-label="Dismiss notification"]');
+        await wait('!document.querySelector(".notification-toast-message")');
         for (const type of ['keyDown', 'keyUp']) {
           await cdp.send('Input.dispatchKeyEvent', { type, key: 'End', windowsVirtualKeyCode: 35 });
         }
-        await sleep(250);
-        const before = await snapshot();
+        const before = await settledSnapshot(1);
         await click('button.pass-btn');
         await wait('document.querySelector(".notification-toast-message")?.title.startsWith("Both players passed")');
-        await sleep(250);
-        const during = await snapshot();
+        const during = await settledSnapshot(2);
         const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(screenshotDir, `${stem}.png`), Buffer.from(screenshot.result.data, 'base64'));
         await click('button[aria-label="Dismiss notification"]');
-        await sleep(250);
-        const after = await snapshot();
+        await wait('!document.querySelector(".notification-toast-message")');
+        const after = await settledSnapshot(2);
         reports.push({ width, height, before, during, after });
         try {
           assert.equal(during.message, 'Both players passed, so the game is over. Choose Score to count the territory.');
           assert.equal(during.live, 'status');
-          for (const state of [before, during, after]) {
+          for (const [phase, state] of [['before', before], ['during', during], ['after', after]]) {
             assert.equal(state.layout.length, 3, 'Header, body and sidebar must be present');
             for (const panel of state.layout) {
               assert.ok(panel.width > 0 && panel.left >= -1 && panel.right <= width + 1,
@@ -104,7 +122,8 @@ export async function assertHeaderNotificationsFit(devtoolsPort, appUrl, runDir,
             }
             assert.deepEqual(state.inaccessibleHeaderControls, [], 'Header controls must remain reachable');
             for (const key of ['left', 'top', 'width', 'height']) {
-              assert.ok(Math.abs(state.board[key] - before.board[key]) <= 1, `Notification moved or resized the board (${key})`);
+              assert.ok(Math.abs(state.board[key] - before.board[key]) <= 1,
+                `Notification moved or resized the board (${key}, ${phase}): ${JSON.stringify({before:before.board,actual:state.board,layoutBefore:before.layout,layoutActual:state.layout})}`);
             }
           }
         } catch (error) {

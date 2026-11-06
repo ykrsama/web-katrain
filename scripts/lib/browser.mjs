@@ -27,6 +27,26 @@ export const textEditingCommands = (type, key, modifiers) => {
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Wait for committed geometry, rather than assuming a fixed sleep was enough. */
+export async function waitForStableSnapshot(read, {
+  ready = () => true, quietMs = 250, intervalMs = 50, timeoutMs = 10_000,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let signature = null;
+  let stableSince = Date.now();
+  let last;
+  while (Date.now() <= deadline) {
+    last = await read();
+    const next = ready(last) ? JSON.stringify(last) : null;
+    if (next === null || next !== signature) {
+      signature = next;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= quietMs) return last;
+    await sleep(intervalMs);
+  }
+  throw new Error(`Layout did not settle after ${timeoutMs}ms: ${JSON.stringify(last)}`);
+}
+
 /** A GUID file may exist before its download has finished writing. */
 export function trackBrowserDownloads(browser) {
   const completed = [];
