@@ -780,8 +780,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const fallbackHeight = typeof window !== 'undefined' ? Math.max(260, window.innerHeight - 160) : 640;
     const w = containerSize.width > 0 ? containerSize.width : fallbackWidth;
     const h = containerSize.height > 0 ? containerSize.height : fallbackHeight;
-    const grid = Math.floor(Math.min(w / xGridSpaces, h / (yGridSpaces * CELL_HEIGHT_RATIO)) + 0.1);
-    return Math.max(10, Math.min(80, grid));
+    const grid = Math.floor(Math.min(w / xGridSpaces, h / (yGridSpaces * CELL_HEIGHT_RATIO)));
+    // A minimum of 10px clips the top/bottom intersections on short phones
+    // once analysis controls take space. Fit the available box on both axes.
+    return Math.max(1, Math.min(80, grid));
   }, [containerSize.height, containerSize.width, xGridSpaces, yGridSpaces]);
 
   // Keep stones and glyphs round; only grid spacing uses the taller pitch.

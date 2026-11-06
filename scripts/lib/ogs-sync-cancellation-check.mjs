@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 // Intercept every OGS request. The real modal, fetch queue and cancellation run
 // unchanged; no third-party service or real account is used by these fixtures.
@@ -23,7 +23,7 @@ export async function assertOgsSyncCancellation(devtoolsPort, appUrl, screenshot
         return reply.result;
       };
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
+        for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
       };
       const click = async expression => {
         const point = await wait(`(async()=>{const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));if(!e.isConnected)return false;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return !e.disabled&&e.contains(document.elementFromPoint(x,y))?{x,y}:false})()`);
@@ -37,7 +37,7 @@ export async function assertOgsSyncCancellation(devtoolsPort, appUrl, screenshot
         await click(`document.querySelector('button[aria-label="More library actions"]')`);
         await click(`[...document.querySelectorAll('[role=menuitem]')].find(e=>e.textContent.trim()==='Sync from OGS')`);
         await click('document.querySelector("#ogs-sync-username")');
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         await command('Input.insertText', { text: username });
       };
       const records = () => evaluate(cdp, 'localStorage.getItem("web-katrain:library:v1")');

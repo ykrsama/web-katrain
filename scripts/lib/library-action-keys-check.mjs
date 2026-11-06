@@ -98,6 +98,20 @@ export async function assertLibraryActionKeys(devtoolsPort, appUrl, screenshotDi
           await checkUnchanged();
           reports.push({ width, height, action: `Select and deselect ${name}` });
 
+          // Desktop exposes direct actions; touch layouts expose the More
+          // menu. A hidden desktop menu button cannot be reached with Tab.
+          const hasMore = await evaluate(cdp, `${button(`More actions for ${name}`)}.getBoundingClientRect().width>0`);
+          if (!hasMore) {
+            await focusControl(name, `Rename ${name}`);
+            await key('Enter', 13);
+            await wait('!!document.activeElement.closest("[role=dialog]")&&document.activeElement.tagName==="INPUT"');
+            await key('Escape', 27);
+            await wait(`${button(`Rename ${name}`)}===document.activeElement`);
+            await checkUnchanged();
+            reports.push({ width, height, action: `${name} direct Rename owns focus and Cancel returns to opener` });
+            continue;
+          }
+
           await focusControl(name, `More actions for ${name}`);
           await key('Enter', 13);
           await closeMenu(`More actions for ${name}`);
@@ -142,8 +156,13 @@ export async function assertLibraryActionKeys(devtoolsPort, appUrl, screenshotDi
         await key('Escape', 27);
         await wait('!document.querySelector(".library-context-menu")');
         await wait(`${row('Sample game')}===document.activeElement`);
-        await focusControl('Sample game', 'More actions for Sample game');
-        await key('Enter', 13);
+        if (await evaluate(cdp, `${button('More actions for Sample game')}.getBoundingClientRect().width>0`)) {
+          await focusControl('Sample game', 'More actions for Sample game');
+          await key('Enter', 13);
+        } else {
+          await focusRow('Sample game');
+          await key('F10', 121, 8);
+        }
         await wait('document.querySelector(".library-context-menu")?.contains(document.activeElement)');
         const searchPoint = await wait(`(async()=>{
           const e=document.querySelector('[data-library-search]');e.scrollIntoView({block:'nearest'});

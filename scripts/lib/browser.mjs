@@ -13,7 +13,44 @@ import path from 'node:path';
  * -- every hard-won comment below records one of those.
  */
 
+// Native text editing uses Command on macOS and Control on CI's Linux runner.
+export const TEXT_SELECTION_MODIFIER = process.platform === 'darwin' ? 4 : 2;
+
+// Headless macOS does not always translate virtual keys into Cocoa editing
+// actions. Send Chromium's editing command with the real key event as well.
+export const textEditingCommands = (type, key, modifiers) => {
+  if (type !== 'keyDown') return [];
+  if (key === 'a' && (modifiers & TEXT_SELECTION_MODIFIER)) return ['selectAll'];
+  if (key === 'Backspace' && !modifiers) return ['deleteBackward'];
+  return [];
+};
+
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A GUID file may exist before its download has finished writing. */
+export function trackBrowserDownloads(browser) {
+  const completed = [];
+  let canceled = null;
+  const dispose = browser.on(message => {
+    if (message.method !== 'Browser.downloadProgress') return;
+    const { guid, state } = message.params;
+    if (state === 'completed' && !completed.includes(guid)) completed.push(guid);
+    if (state === 'canceled') canceled = guid;
+  });
+  return {
+    completed,
+    dispose,
+    async waitForCount(count, timeoutMs = 15_000) {
+      const deadline = Date.now() + timeoutMs;
+      while (completed.length < count) {
+        if (canceled) throw new Error(`Browser canceled download ${canceled}`);
+        if (Date.now() >= deadline) throw new Error(`Download did not complete: ${completed.length} of ${count}`);
+        await sleep(50);
+      }
+      return completed.slice(0, count);
+    },
+  };
+}
 
 /**
  * Where Chrome is.
@@ -389,34 +426,11 @@ export function loadedModuleUrl(pathSuffix, allowFirstImport = false) {
   return resource.name;
 }
 
-/**
- * Polls a page expression until it returns something truthy.
- *
- * The library checks each carried their own copy of this loop, with the ceiling
- * and the message written out three times. This is that loop, once.
- *
- * The ceiling was raised from 15s to 45s on the theory that a cold CI runner
- * needed longer. **That theory was wrong**: the library-tags check then timed
- * out at 45s on the same viewport, so the budget was never what it was short
- * of. It is left at 45s because a wait that is going to succeed is unaffected
- * -- polling is 100ms either way -- but do not read the number as evidence
- * that anything was measured to need it.
- *
- * What is real, and still unexplained: `library-tags-check` fails
- * intermittently at **1280x800 only** (the desktop branch, and the first of
- * its three viewports) on CI, never locally, waiting for an imported SGF to
- * reach IndexedDB. The two narrow viewports pass in the same run, and a re-run
- * passes. Ruled out so far: the wait budget, and a race between the import and
- * first-run seeding of the bundled games -- every library operation goes
- * through `createSerialTaskQueue`, so those cannot interleave.
- *
- * The message names the budget it spent, which is what showed the first theory
- * to be wrong; keep it that way.
- */
+/** Poll readiness instead of sleeping. Slow operations can set their own budget. */
 export async function waitForExpression(
   cdp,
   expression,
-  { label = 'Wait', timeoutMs = 45_000, intervalMs = 100, diagnose } = {},
+  { label = 'Wait', timeoutMs = 15_000, intervalMs = 100, diagnose } = {},
 ) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {

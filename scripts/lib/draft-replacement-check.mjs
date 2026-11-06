@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { trackBrowserDownloads, textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, screenshotDir) {
   const version = await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/version`)).json();
@@ -19,11 +19,12 @@ export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, scree
       const target = (await browser.send('Target.createTarget', { url: 'about:blank', browserContextId: context })).result.targetId;
       const cdp = connectDevtools(`ws://127.0.0.1:${devtoolsPort}/devtools/page/${target}`);
       await cdp.ready;
+      const downloadTracker = trackBrowserDownloads(browser);
       const downloads = path.join(filesDir, String(width));
       fs.mkdirSync(downloads);
       const wait = expression => waitForExpression(cdp, expression, { label: 'Draft replacement', timeoutMs: 15_000 });
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers });
+        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers });
       };
       const click = async expression => {
         const point = await wait(`(async()=>{const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));if(!e.isConnected)return false;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return !e.disabled&&r.width&&r.height&&e.contains(document.elementFromPoint(x,y))?{x,y}:false})()`);
@@ -62,7 +63,7 @@ export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, scree
         }
         await wait(`${editor}===document.activeElement`);
         if (text !== undefined) {
-          await key('a', 65, 2);
+          await key('a', 65, TEXT_SELECTION_MODIFIER);
           if (text) await cdp.send('Input.insertText', { text });
           else await key('Backspace', 8);
           await wait(`${editor}.value===${JSON.stringify(text)}`);
@@ -78,7 +79,7 @@ export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, scree
       try {
         await cdp.send('Page.enable');
         await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-        await browser.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloads, browserContextId: context });
+        await browser.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloads, browserContextId: context, eventsEnabled: true });
         await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
           performance.setResourceTimingBufferSize(5000);
           localStorage.setItem('web-katrain:mobile_home_dismissed:v1','true');
@@ -102,7 +103,7 @@ export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, scree
             const preserved = await state();
             assert.equal(preserved[kind === 'note' ? 'note' : 'black'], latest);
             assert.equal(preserved.undo, 1);
-            const previousDownloads = fs.readdirSync(downloads).filter(name => !name.endsWith('.crdownload'));
+            const previousDownloads = [...downloadTracker.completed];
             await choose(choice);
             if (choice === 'Cancel') {
               await wait('!document.querySelector("#unsaved-changes-title")');
@@ -117,18 +118,13 @@ export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, scree
             await checkIncoming();
             await wait(`!(${recovery})`);
             if (choice === 'Save SGF') {
-              let names = [];
-              const deadline = Date.now() + 15_000;
-              while (Date.now() < deadline) {
-                names = fs.readdirSync(downloads).filter(name => !name.endsWith('.crdownload') && !previousDownloads.includes(name));
-                if (names.length) break;
-                await new Promise(resolve => setTimeout(resolve, 50));
-              }
+              const completed = await downloadTracker.waitForCount(previousDownloads.length + 1);
+              const names = completed.filter(guid => !previousDownloads.includes(guid));
               assert.equal(names.length, 1, 'Save did not retain the outgoing game');
               const sgf = fs.readFileSync(path.join(downloads, names[0]), 'utf8');
               const saved = await evaluate(cdp, `(()=>{const p=replacementParse(${JSON.stringify(sgf)}).tree.props;return {note:replacementExtract(p.C),black:p.PB?.[0],size:p.SZ?.[0]}})()`);
               assert.deepEqual(saved, { note: kind === 'note' ? latest : 'Original note', black: kind === 'Black' ? latest : 'Original Black', size: '9' });
-            } else assert.deepEqual(fs.readdirSync(downloads).filter(name => !name.endsWith('.crdownload')), previousDownloads, 'Cancel or Discard downloaded a game');
+            } else assert.deepEqual(downloadTracker.completed, previousDownloads, 'Cancel or Discard downloaded a game');
             reports.push({ width, height, kind, choice, originalDraftProtected: true, incomingGameUnchanged: true });
           }
         }
@@ -149,6 +145,7 @@ export async function assertDraftReplacement(devtoolsPort, appUrl, runDir, scree
         fs.writeFileSync(path.join(screenshotDir, `${width}x${height}-draft-replacement-failed.png`), Buffer.from(screenshot.result.data, 'base64'));
         throw error;
       } finally {
+        downloadTracker.dispose();
         cdp.close();
         await browser.send('Target.disposeBrowserContext', { browserContextId: context });
       }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 // Native key events exercise focus, scrolling, and React's blur ordering. IME
 // events are synthetic: this checks ownership of the keys, not an OS keyboard.
@@ -20,7 +20,7 @@ export async function assertKeyboardWorkflows(devtoolsPort, appUrl, screenshotDi
       const wait = expression => waitForExpression(cdp, expression, { label: 'Keyboard workflow', timeoutMs: 15_000 });
       const key = async (key, code, modifiers = 0) => {
         for (const type of ['keyDown', 'keyUp']) {
-          const reply = await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers });
+          const reply = await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers });
           assert.ok(!reply.error, JSON.stringify(reply.error));
         }
       };
@@ -39,7 +39,7 @@ export async function assertKeyboardWorkflows(devtoolsPort, appUrl, screenshotDi
       const field = label => `[...document.querySelectorAll('[data-game-info-edit-form] label')].find(e=>e.textContent.trim()===${JSON.stringify(label)})?.querySelector('input')`;
       const replaceField = async (label, text) => {
         await click(field(label));
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         if (text) await cdp.send('Input.insertText', { text });
         else await key('Backspace', 8);
         await wait(`${field(label)}.value===${JSON.stringify(text)}`);

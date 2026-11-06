@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 export async function assertGameInfoReplacement(devtoolsPort, appUrl, runDir, screenshotDir) {
   const version = await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/version`)).json();
@@ -20,7 +20,7 @@ export async function assertGameInfoReplacement(devtoolsPort, appUrl, runDir, sc
         await cdp.ready;
         const wait = expression => waitForExpression(cdp, expression, { label: 'Game info replacement', timeoutMs: 15_000 });
         const key = async (key, code, modifiers = 0) => {
-          for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers });
+          for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers });
         };
         const click = async expression => {
           const point = await wait(`(()=>{const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return r.width&&r.height&&e.contains(document.elementFromPoint(x,y))?{x,y}:false})()`);
@@ -29,7 +29,7 @@ export async function assertGameInfoReplacement(devtoolsPort, appUrl, runDir, sc
         const field = `[...document.querySelectorAll('[data-game-info-edit-form] label')].find(e=>e.textContent.trim()===${JSON.stringify(label)})?.querySelector('input')`;
         const replace = async text => {
           await click(field);
-          await key('a', 65, 2);
+          await key('a', 65, TEXT_SELECTION_MODIFIER);
           await cdp.send('Input.insertText', { text });
           await wait(`${field}.value===${JSON.stringify(text)}`);
         };

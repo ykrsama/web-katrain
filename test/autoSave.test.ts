@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AUTO_SAVE_MAX_BYTES,
   AUTO_SAVED_GAME_KEY,
@@ -48,10 +48,24 @@ describe('auto-save helpers', () => {
     expect(writeAutoSavedGame('(;GM[1]SZ[19];B[pd])', storage, 123)).toBe('saved');
     expect(storage.getItem(AUTO_SAVED_GAME_KEY)).not.toBeNull();
 
-    const oversizedSgf = `(;GM[1]SZ[19]C[${'x'.repeat(AUTO_SAVE_MAX_BYTES)}])`;
+    // Exercise the measured-byte limit without allocating/stringifying a
+    // 500 MB SGF and another 500 MB encoded buffer on a shared CI runner.
+    const encoder = vi.spyOn(TextEncoder.prototype, 'encode')
+      .mockReturnValueOnce({ byteLength: AUTO_SAVE_MAX_BYTES + 1 } as ReturnType<TextEncoder['encode']>);
+    try {
+      expect(writeAutoSavedGame('(;GM[1]SZ[19]C[Oversized snapshot])', storage, 124)).toBe('too-large');
+      expect(storage.getItem(AUTO_SAVED_GAME_KEY)).toBeNull();
+    } finally { encoder.mockRestore(); }
+  });
 
-    expect(writeAutoSavedGame(oversizedSgf, storage, 124)).toBe('too-large');
-    expect(storage.getItem(AUTO_SAVED_GAME_KEY)).toBeNull();
+  it.each([AUTO_SAVE_MAX_BYTES - 1, AUTO_SAVE_MAX_BYTES])('accepts a snapshot measuring %i bytes', bytes => {
+    const storage = makeStorage();
+    const encoder = vi.spyOn(TextEncoder.prototype, 'encode')
+      .mockReturnValueOnce({ byteLength: bytes } as ReturnType<TextEncoder['encode']>);
+    try {
+      expect(writeAutoSavedGame('(;GM[1]SZ[19])', storage, 123)).toBe('saved');
+      expect(readAutoSavedGame(storage)?.sgf).toBe('(;GM[1]SZ[19])');
+    } finally { encoder.mockRestore(); }
   });
 
   it('clears snapshots', () => {

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createServer } from 'vite';
+import { viewportGameFixtures } from './lib/viewport-game-fixtures.mjs';
 import { assertScoreQuizGuesses, assertScoreQuizRequests } from './lib/score-quiz-check.mjs';
 import { assertStaticBoardScroll } from './lib/static-board-scroll-check.mjs';
 import { assertLibraryImportFailures } from './lib/library-import-check.mjs';
@@ -987,6 +988,9 @@ async function main() {
   fs.rmSync(screenshotDir, { recursive: true, force: true });
   fs.mkdirSync(screenshotDir, { recursive: true });
 
+  const selectedChecks = process.env.VIEWPORT_CHECKS
+    ? new Set(process.env.VIEWPORT_CHECKS.split(',').map(name => name.trim()).filter(Boolean)) : null;
+  const runLayout = !selectedChecks || selectedChecks.has('layout');
   const appPort = await freePort();
   const devtoolsPort = await freePort();
   // A warm developer cache hid first-use worker dependency reloads in CI.
@@ -997,8 +1001,12 @@ async function main() {
   let chrome;
   try {
     server = await createServer({
+      plugins: [viewportGameFixtures(process.cwd())],
       cacheDir: path.join(runDir, 'vite'),
-      server: { host: '127.0.0.1', port: appPort, strictPort: true },
+      server: {
+        host: '127.0.0.1', port: appPort, strictPort: true,
+        watch: { ignored: ['**/scripts/**', '**/test/**', '**/.github/**'] },
+      },
     });
     await server.listen();
 
@@ -1016,6 +1024,9 @@ async function main() {
     chrome = spawn(chromePath, [
       '--headless=new',
       '--disable-gpu',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
       '--no-first-run',
       '--no-default-browser-check',
       `--user-data-dir=${path.join(runDir, 'chrome')}`,
@@ -1116,7 +1127,9 @@ async function main() {
 
     const results = [];
     const viewportFailures = [];
-    for (const viewport of VIEWPORTS) {
+    for (const viewport of runLayout ? VIEWPORTS : []) {
+      const viewportStarted = performance.now();
+      console.log(`[viewport] layout ${viewport.width}x${viewport.height}: starting`);
       const appUrl = `http://127.0.0.1:${appPort}/`;
       pageErrors = [];
       await setViewport(cdp, viewport);
@@ -4061,6 +4074,7 @@ async function main() {
         assertViewport(result);
       } catch (error) {
         viewportFailures.push(error.message);
+        console.error(`[viewport] layout ${viewport.width}x${viewport.height}: FAILED: ${error.message}`);
       }
       const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       fs.writeFileSync(
@@ -4068,47 +4082,68 @@ async function main() {
         Buffer.from(screenshot.result.data, 'base64')
       );
       results.push(result);
+      console.log(`[viewport] layout ${viewport.width}x${viewport.height}: checked in ${((performance.now() - viewportStarted) / 1000).toFixed(1)}s`);
     }
-    if (viewportFailures.length > 0) {
-      cdp.close();
-      throw new Error(
-        `${viewportFailures.length} viewport(s) failed:\n  - ${viewportFailures.join('\n  - ')}`,
-      );
+    // Selected reruns still need the shared page used by a few checks.
+    if (!runLayout) {
+      await setViewport(cdp, { width: 1280, height: 800, mobile: false });
+      await navigate(cdp, `http://127.0.0.1:${appPort}/`);
+      await waitForBoard(cdp);
     }
-    await assertShellVariantApplies(cdp);
-    await assertDialogsFitShortViewports(cdp);
-    await assertLongMetadataStaysRecoverable(cdp);
-    await assertPwaCardsClearTheBoard(cdp, `http://127.0.0.1:${appPort}/`);
-    await assertAutoSaveRecoveryFits(cdp, `http://127.0.0.1:${appPort}/`);
-    await assertScoreQuizRequests(cdp);
-    await assertScoreQuizGuesses(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertStaticBoardScroll(cdp);
-    await assertLibraryImportFailures(cdp, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertLibraryTags(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertEmptyLibraryPersists(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertLibrarySaveRecovery(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertManualScoring(cdp, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertHeaderNotificationsFit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertKeyboardWorkflows(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertNoteDraftRetention(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertNotePageExit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertLibraryNavigation(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertLibraryActionKeys(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertOgsSyncCancellation(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertPracticeBoardSizes(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertCandidateControls(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertPassCandidates(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertReportPrinting(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertCandidateTooltips(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir, VIEWPORTS);
-    await assertLiveCandidatePreviews(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertPvGestures(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertGameInfoReplacement(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertGameInfoPageExit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertDraftSaveSnapshots(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertDraftReplacement(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir);
-    await assertDepthDismissal(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
-    await assertSearchPasteLimits(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir);
+    const checks = [
+      ['ShellVariantApplies', () => assertShellVariantApplies(cdp)],
+      ['DialogsFitShortViewports', () => assertDialogsFitShortViewports(cdp)],
+      ['LongMetadataStaysRecoverable', () => assertLongMetadataStaysRecoverable(cdp)],
+      ['PwaCardsClearTheBoard', () => assertPwaCardsClearTheBoard(cdp, `http://127.0.0.1:${appPort}/`)],
+      ['AutoSaveRecoveryFits', () => assertAutoSaveRecoveryFits(cdp, `http://127.0.0.1:${appPort}/`)],
+      ['ScoreQuizRequests', () => assertScoreQuizRequests(cdp)],
+      ['ScoreQuizGuesses', () => assertScoreQuizGuesses(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['StaticBoardScroll', () => assertStaticBoardScroll(cdp)],
+      ['LibraryImportFailures', () => assertLibraryImportFailures(cdp, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['LibraryTags', () => assertLibraryTags(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['EmptyLibraryPersists', () => assertEmptyLibraryPersists(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['LibrarySaveRecovery', () => assertLibrarySaveRecovery(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['ManualScoring', () => assertManualScoring(cdp, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['HeaderNotificationsFit', () => assertHeaderNotificationsFit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['KeyboardWorkflows', () => assertKeyboardWorkflows(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['NoteDraftRetention', () => assertNoteDraftRetention(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['NotePageExit', () => assertNotePageExit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['LibraryNavigation', () => assertLibraryNavigation(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['LibraryActionKeys', () => assertLibraryActionKeys(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['OgsSyncCancellation', () => assertOgsSyncCancellation(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['PracticeBoardSizes', () => assertPracticeBoardSizes(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['CandidateControls', () => assertCandidateControls(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['PassCandidates', () => assertPassCandidates(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['ReportPrinting', () => assertReportPrinting(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['CandidateTooltips', () => assertCandidateTooltips(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir, VIEWPORTS)],
+      ['LiveCandidatePreviews', () => assertLiveCandidatePreviews(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['PvGestures', () => assertPvGestures(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['GameInfoReplacement', () => assertGameInfoReplacement(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['GameInfoPageExit', () => assertGameInfoPageExit(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['DraftSaveSnapshots', () => assertDraftSaveSnapshots(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['DraftReplacement', () => assertDraftReplacement(devtoolsPort, `http://127.0.0.1:${appPort}/`, runDir, screenshotDir)],
+      ['DepthDismissal', () => assertDepthDismissal(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+      ['SearchPasteLimits', () => assertSearchPasteLimits(devtoolsPort, `http://127.0.0.1:${appPort}/`, screenshotDir)],
+    ];
+    if (selectedChecks) {
+      const known = new Set(['layout', ...checks.map(([name]) => name)]);
+      for (const name of selectedChecks) if (!known.has(name)) throw new Error(`Unknown VIEWPORT_CHECKS entry: ${name}`);
+    }
+    const checkFailures = [...viewportFailures];
+    for (const [name, run] of checks) {
+      if (selectedChecks && !selectedChecks.has(name)) continue;
+      const started = performance.now();
+      console.log(`[viewport] ${name}: starting`);
+      try {
+        await run();
+        console.log(`[viewport] ${name}: passed in ${((performance.now() - started) / 1000).toFixed(1)}s`);
+      } catch (error) {
+        checkFailures.push(`${name}: ${error.message}`);
+        console.error(`[viewport] ${name}: FAILED after ${((performance.now() - started) / 1000).toFixed(1)}s: ${error.message}`);
+      }
+    }
     cdp.close();
+    if (checkFailures.length) throw new Error(`${checkFailures.length} viewport check(s) failed:\n  - ${checkFailures.join('\n  - ')}`);
     console.log(`Viewport checks passed. Screenshots: ${screenshotDir}`);
     for (const result of results) {
       const board = result.defaultBoard ?? result.board;

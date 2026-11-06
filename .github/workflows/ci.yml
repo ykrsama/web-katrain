@@ -63,17 +63,51 @@ jobs:
       - name: Verify
         run: npm run verify
 
-      # A fresh cache reproduces first-use worker dependency reloads; never
-      # depend on a developer's already-optimized Vite cache for this check.
+  viewport:
+    name: Viewport (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: layout
+            checks: layout,ShellVariantApplies,DialogsFitShortViewports,LongMetadataStaysRecoverable,PwaCardsClearTheBoard,AutoSaveRecoveryFits,HeaderNotificationsFit
+          - group: library
+            checks: LibraryImportFailures,LibraryTags,EmptyLibraryPersists,LibrarySaveRecovery,LibraryNavigation,LibraryActionKeys,DraftSaveSnapshots,DraftReplacement
+          - group: analysis
+            checks: ScoreQuizRequests,ScoreQuizGuesses,StaticBoardScroll,ManualScoring,PracticeBoardSizes,CandidateControls,PassCandidates,ReportPrinting,CandidateTooltips,LiveCandidatePreviews,PvGestures
+          - group: editing
+            checks: KeyboardWorkflows,NoteDraftRetention,NotePageExit,OgsSyncCancellation,GameInfoReplacement,GameInfoPageExit,DepthDismissal,SearchPasteLimits
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare browser engine assets
+        run: npm run copy:tfjs-wasm && npm run fetch:model
+
+      # Each shard starts a cold Vite/Chrome session. Together they cover every
+      # check; failures in one shard do not cancel the other reports.
       - name: Viewport and interaction checks
         id: viewport
+        env:
+          VIEWPORT_CHECKS: ${{ matrix.checks }}
         run: npm run test:viewport
 
       - name: Keep failed viewport screenshots
         if: failure() && steps.viewport.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
-          name: viewport-screenshots
+          name: viewport-${{ matrix.group }}-screenshots
           path: /tmp/web-katrain-viewport-check
           if-no-files-found: ignore
           retention-days: 7

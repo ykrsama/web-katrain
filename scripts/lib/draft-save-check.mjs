@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { trackBrowserDownloads, textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 export async function assertDraftSaveSnapshots(devtoolsPort, appUrl, runDir, screenshotDir) {
   const version = await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/version`)).json();
@@ -25,11 +25,12 @@ export async function assertDraftSaveSnapshots(devtoolsPort, appUrl, runDir, scr
       const target = (await browser.send('Target.createTarget', { url: 'about:blank', browserContextId: context })).result.targetId;
       const cdp = connectDevtools(`ws://127.0.0.1:${devtoolsPort}/devtools/page/${target}`);
       await cdp.ready;
+      const downloadTracker = trackBrowserDownloads(browser);
       const downloads = path.join(filesDir, `${width}-${action}`);
       fs.mkdirSync(downloads);
       const wait = expression => waitForExpression(cdp, expression, { label: `Draft save ${action}`, timeoutMs: 15_000 });
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
+        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
       };
       const click = async expression => {
         const point = await wait(`(async()=>{const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));if(!e.isConnected)return false;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return !e.disabled&&r.width&&r.height&&e.contains(document.elementFromPoint(x,y))?{x,y}:false})()`);
@@ -46,7 +47,7 @@ export async function assertDraftSaveSnapshots(devtoolsPort, appUrl, runDir, scr
         if (await evaluate(cdp, `${comment}?.getAttribute('aria-expanded')!=='true'`)) await click(comment);
         await click('document.querySelector("[data-note-preview]")');
         await wait('document.querySelector("[data-note-editor]")===document.activeElement');
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         if (text) await cdp.send('Input.insertText', { text });
         else await key('Backspace', 8);
         await wait(`document.querySelector('[data-note-editor]').value===${JSON.stringify(text)}`);
@@ -75,15 +76,8 @@ export async function assertDraftSaveSnapshots(devtoolsPort, appUrl, runDir, scr
       const inspectSgf = sgf => evaluate(cdp, `(()=>{const g=draftSaveParse(${JSON.stringify(sgf)});return {note:draftSaveExtractNote(g.tree.props.C),black:g.tree.props.PB?.[0],size:g.tree.props.SZ?.[0]}})()`);
       const assertSgf = async (sgf, expected) => assert.deepEqual(await inspectSgf(sgf), { note: expected, black: 'Original Black', size: '9' });
       const readDownload = async previousCount => {
-        let names = [];
-        const deadline = Date.now() + 15_000;
-        while (Date.now() < deadline) {
-          names = fs.readdirSync(downloads).filter(name => !name.endsWith('.crdownload'));
-          if (names.length > previousCount) break;
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-        assert.equal(names.length, previousCount + 1, 'Save did not download one SGF');
-        return fs.readFileSync(path.join(downloads, names.sort((a, b) => fs.statSync(path.join(downloads, b)).mtimeMs - fs.statSync(path.join(downloads, a)).mtimeMs)[0]), 'utf8');
+        const completed = await downloadTracker.waitForCount(previousCount + 1);
+        return fs.readFileSync(path.join(downloads, completed[previousCount]), 'utf8');
       };
       const recovery = 'JSON.parse(localStorage.getItem("web-katrain:auto_saved_game:v1")??"null")?.sgf';
       try {
@@ -91,7 +85,7 @@ export async function assertDraftSaveSnapshots(devtoolsPort, appUrl, runDir, scr
         await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
         // GUID names retain both downloads when the app suggests the same
         // filename for the edited game and its later comment deletion.
-        await browser.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloads, browserContextId: context });
+        await browser.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloads, browserContextId: context, eventsEnabled: true });
         await browser.send('Browser.grantPermissions', { origin: new URL(appUrl).origin, browserContextId: context, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
         await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `
           performance.setResourceTimingBufferSize(5000);
@@ -176,6 +170,7 @@ export async function assertDraftSaveSnapshots(devtoolsPort, appUrl, runDir, scr
         fs.writeFileSync(path.join(screenshotDir, `${width}x${height}-draft-save-${action}-failed.png`), Buffer.from(screenshot.result.data, 'base64'));
         throw error;
       } finally {
+        downloadTracker.dispose();
         cdp.close();
         await browser.send('Target.disposeBrowserContext', { browserContextId: context });
       }

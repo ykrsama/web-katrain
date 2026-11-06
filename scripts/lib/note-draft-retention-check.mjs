@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 export async function assertNoteDraftRetention(devtoolsPort, appUrl, screenshotDir) {
   const version = await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/version`)).json();
@@ -18,7 +18,7 @@ export async function assertNoteDraftRetention(devtoolsPort, appUrl, screenshotD
       const wait = expression => waitForExpression(cdp, expression, { label: 'Note draft retention', timeoutMs: 15_000 });
       const comment = `[...document.querySelectorAll('button')].find(e=>e.textContent.trim()==='Comment')`;
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers });
+        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers });
       };
       const click = async expression => {
         const point = await wait(`(async()=>{const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));if(!e.isConnected)return false;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return !e.disabled&&r.width&&r.height&&e.contains(document.elementFromPoint(x,y))?{x,y}:false})()`);
@@ -47,7 +47,7 @@ export async function assertNoteDraftRetention(devtoolsPort, appUrl, screenshotD
         await click('document.querySelector("[data-note-preview]")');
         await wait('document.querySelector("[data-note-editor]")===document.activeElement');
         if (text !== undefined) {
-          await key('a', 65, 2);
+          await key('a', 65, TEXT_SELECTION_MODIFIER);
           if (text) await cdp.send('Input.insertText', { text });
           else await key('Backspace', 8);
           await wait(`document.querySelector('[data-note-editor]').value===${JSON.stringify(text)}`);

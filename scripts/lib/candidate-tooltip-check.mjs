@@ -25,7 +25,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
       const target = (await browser.send('Target.createTarget', { url: 'about:blank', browserContextId: context })).result.targetId;
       const cdp = connectDevtools(`ws://127.0.0.1:${devtoolsPort}/devtools/page/${target}`);
       await cdp.ready;
-      const wait = expression => waitForExpression(cdp, expression, { label: 'Candidate tooltip', timeoutMs: 15_000 });
+      const wait = (expression, diagnose) => waitForExpression(cdp, expression, { label: 'Candidate tooltip', timeoutMs: 15_000, diagnose });
       try {
         await cdp.send('Page.enable');
         await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -54,7 +54,7 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
             const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect(),cell=Number(b.dataset.boardCellSize);
             const x=r.x+Number(b.dataset.boardOriginX)+${x}*cell,y=r.y+Number(b.dataset.boardOriginY)+${y}*Number(b.dataset.boardCellHeight);
             return b.contains(document.elementFromPoint(x,y))?{x,y}:false;
-          })()`);
+          })()`, `(()=>{const b=document.querySelector('[data-board-snapshot=true]'),r=b.getBoundingClientRect(),x=r.x+Number(b.dataset.boardOriginX)+${x}*Number(b.dataset.boardCellSize),y=r.y+Number(b.dataset.boardOriginY)+${y}*Number(b.dataset.boardCellHeight);return {viewport:[innerWidth,innerHeight],board:r.toJSON(),point:{x,y},hit:document.elementFromPoint(x,y)?.outerHTML.slice(0,800),boardPointerEvents:getComputedStyle(b).pointerEvents}})()`);
           // Mouse input on touch-sized viewports represents an attached mouse
           // or pen; the finger path is checked separately below.
           await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });

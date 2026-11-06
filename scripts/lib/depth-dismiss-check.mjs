@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 export async function assertDepthDismissal(devtoolsPort, appUrl, screenshotDir) {
   const version = await (await fetch(`http://127.0.0.1:${devtoolsPort}/json/version`)).json();
@@ -16,7 +16,7 @@ export async function assertDepthDismissal(devtoolsPort, appUrl, screenshotDir) 
       await cdp.ready;
       const wait = expression => waitForExpression(cdp, expression, { label: 'Depth dismissal', timeoutMs: 15_000 });
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
+        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
       };
       const click = async expression => {
         // Keep the full control inside the scrollport while the enlarged dock
@@ -33,7 +33,7 @@ export async function assertDepthDismissal(devtoolsPort, appUrl, screenshotDir) 
         await wait(`${close}===document.activeElement`);
         await click(input);
         await wait(`${input}===document.activeElement`);
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         if (text) await cdp.send('Input.insertText', { text });
         else await key('Backspace', 8);
         await wait(`${input}.value===${JSON.stringify(text)}`);
@@ -95,15 +95,16 @@ export async function assertDepthDismissal(devtoolsPort, appUrl, screenshotDir) 
         await closed();
         await check('close button', 101);
         await edit('137');
-        await click(`document.querySelector('[data-analysis-live-depth-option="250"]')`);
-        await check('preset overrides draft', 250);
+        const presetVisits = await wait(`(()=>{const value=[...document.querySelectorAll('[data-analysis-live-depth-option]')].map(e=>Number(e.dataset.analysisLiveDepthOption)).find(value=>value>137);return value||false})()`);
+        await click(`document.querySelector('[data-analysis-live-depth-option="${presetVisits}"]')`);
+        await check('preset overrides draft', presetVisits);
         await outside();
         await closed();
-        await check('outside retains preset', 250);
+        await check('outside retains preset', presetVisits);
         await edit('');
         await outside();
         await closed();
-        await check('empty retains current depth', 250);
+        await check('empty retains current depth', presetVisits);
 
         await click(trigger);
         await wait(`${close}===document.activeElement`);
@@ -111,7 +112,7 @@ export async function assertDepthDismissal(devtoolsPort, appUrl, screenshotDir) 
         await checkLayout();
         await click(input);
         await wait(`${input}===document.activeElement`);
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         await cdp.send('Input.insertText', { text: '251' });
         await wait(`${input}.value==='251'`);
         await outside();

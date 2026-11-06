@@ -33,7 +33,11 @@ export async function assertEmptyLibraryPersists(devtoolsPort, appUrl, runDir, s
         const mobile = width < 1000, stem = `${width}x${height}-empty-library-${storage}`;
         const report = { width, height, storage, stages: [] }, errors = [];
         const dialog = '[aria-labelledby="library-confirm-dialog-title"]';
-        const wait = expression => waitForExpression(cdp, expression, { label: 'Empty library check' });
+        const wait = expression => waitForExpression(cdp, `(()=>{
+          const badge=document.querySelector('[data-library-storage-badge]');
+          if(badge?.classList.contains('ui-danger-soft'))throw new Error(badge.title||'Library storage failed');
+          return (${expression});
+        })()`, { label: 'Empty library check', diagnose: `(()=>({storage:document.querySelector('[data-library-storage-badge]')?.title,rows:document.querySelectorAll('[data-library-row]').length}))()` });
         const clickElement = async expression => {
           const point = await wait(`(()=>{
             const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});

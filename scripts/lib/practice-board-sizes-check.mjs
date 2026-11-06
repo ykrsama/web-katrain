@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, sleep, waitForExpression } from './browser.mjs';
+import { trackBrowserDownloads, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 // Select sizes through the real control, then use trusted pointer/key input to
 // start, play (including phone tap confirmation), analyze, save and reopen them.
@@ -16,6 +16,7 @@ export async function assertPracticeBoardSizes(devtoolsPort, appUrl, runDir, scr
       const target = (await browser.send('Target.createTarget', { url: 'about:blank', browserContextId: context })).result.targetId;
       const cdp = connectDevtools(`ws://127.0.0.1:${devtoolsPort}/devtools/page/${target}`);
       await cdp.ready;
+      const downloadTracker = trackBrowserDownloads(browser);
       const mobile = width < 1000;
       const wait = expression => waitForExpression(cdp, expression, { label: 'Practice board size', timeoutMs: 30_000 });
       const key = async (key, code, modifiers = 0) => {
@@ -90,16 +91,15 @@ export async function assertPracticeBoardSizes(devtoolsPort, appUrl, runDir, scr
           assert.ok(analysis.moves.every(([x, y]) => x < size && y < size && x >= -1 && y >= -1));
           await palette('toggle-analysis');
           const downloadDir = fs.mkdtempSync(path.join(runDir, `${width}x${height}-board-${size}-`));
-          const enabled = await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadDir });
+          const enabled = await browser.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloadDir, browserContextId: context, eventsEnabled: true });
           assert.ok(!enabled.error, JSON.stringify(enabled.error));
+          const previousDownloads = downloadTracker.completed.length;
           await key('s', 83, 2);
-          let downloaded;
-          for (let i = 0; i < 100 && !downloaded; i++) {
-            downloaded = fs.readdirSync(downloadDir).find(file => file.endsWith('.sgf'));
-            if (!downloaded) await sleep(100);
-          }
-          assert.ok(downloaded, 'Native SGF download did not complete');
-          const filename = path.join(downloadDir, downloaded);
+          const completed = await downloadTracker.waitForCount(previousDownloads + 1);
+          // GUID download names have no extension; restore .sgf before using
+          // the native importer, which correctly rejects extensionless files.
+          const filename = path.join(downloadDir, `${completed[previousDownloads]}.sgf`);
+          fs.copyFileSync(path.join(downloadDir, completed[previousDownloads]), filename);
           const saved = fs.readFileSync(filename, 'utf8');
           assert.ok(saved.includes(`SZ[${size}]`));
           const root = (await cdp.send('DOM.getDocument')).result.root;
@@ -144,6 +144,7 @@ export async function assertPracticeBoardSizes(devtoolsPort, appUrl, runDir, scr
         fs.writeFileSync(path.join(screenshotDir, `${width}x${height}-board-${size}-failed.png`), Buffer.from(screenshot.result.data, 'base64'));
         throw error;
       } finally {
+        downloadTracker.dispose();
         cdp.close();
         await browser.send('Target.disposeBrowserContext', { browserContextId: context });
       }

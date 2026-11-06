@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 // Fixed model output isolates answer editing and submission. Inputs, keys and
 // buttons are native; these checks do not measure engine quality or strength.
@@ -23,7 +23,7 @@ export async function assertScoreQuizGuesses(devtoolsPort, appUrl, screenshotDir
         return reply.result;
       };
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
+        for (const type of ['keyDown', 'keyUp']) await command('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r' } : {}) });
       };
       const click = async expression => {
         const point = await wait(`(async()=>{const e=${expression};if(!e)return false;e.scrollIntoView({block:'nearest'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));if(!e.isConnected)return false;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return !e.disabled&&e.contains(document.elementFromPoint(x,y))?{x,y}:false})()`);
@@ -36,7 +36,7 @@ export async function assertScoreQuizGuesses(devtoolsPort, appUrl, screenshotDir
       const reveal = `document.querySelector('[aria-label="Reveal score"]')`;
       const replace = async text => {
         await click(input);
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         await key('Backspace', 8);
         if (text) await command('Input.insertText', { text });
       };
@@ -94,7 +94,7 @@ export async function assertScoreQuizGuesses(devtoolsPort, appUrl, screenshotDir
       } catch (error) {
         console.error('Score quiz guess state:', { width, height, layout: await evaluate(cdp, `(()=>{
           const r=document.querySelector('.score-quiz-response'),b=document.querySelector('.score-quiz-body');
-          return {response:r?.getBoundingClientRect().toJSON(),body:b?.getBoundingClientRect().toJSON(),scrollTop:b?.scrollTop,scrollHeight:b?.scrollHeight,text:r?.textContent};
+          return {input:document.querySelector('[aria-labelledby=score-quiz-title] input')?.value,active:document.activeElement?.outerHTML,response:r?.getBoundingClientRect().toJSON(),body:b?.getBoundingClientRect().toJSON(),scrollTop:b?.scrollTop,scrollHeight:b?.scrollHeight,text:r?.textContent};
         })()`).catch(String) });
         const screenshot = await command('Page.captureScreenshot', { format: 'png' });
         fs.writeFileSync(path.join(screenshotDir, `${width}x${height}-score-quiz-guesses-failed.png`), Buffer.from(screenshot.data, 'base64'));

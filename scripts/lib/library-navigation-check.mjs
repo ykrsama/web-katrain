@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
+import { textEditingCommands, TEXT_SELECTION_MODIFIER, connectDevtools, evaluate, loadedModuleUrl, navigate, setViewport, waitForExpression } from './browser.mjs';
 
 // A long path used to wrap into a 783px toolbar on a phone, pushing the games
 // below the viewport. Keep every ancestor reachable without growing the bar.
@@ -28,7 +28,7 @@ export async function assertLibraryNavigation(devtoolsPort, appUrl, screenshotDi
       const mobile = width < 1000;
       const wait = expression => waitForExpression(cdp, expression, { label: 'Library navigation', timeoutMs: 15_000 });
       const key = async (key, code, modifiers = 0) => {
-        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, windowsVirtualKeyCode: code, modifiers });
+        for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, commands: textEditingCommands(type, key, modifiers), windowsVirtualKeyCode: code, modifiers });
       };
       const click = async selector => {
         const point = await wait(`(async()=>{
@@ -90,7 +90,7 @@ export async function assertLibraryNavigation(devtoolsPort, appUrl, screenshotDi
         await wait('document.activeElement===document.querySelector("[data-library-search]")&&document.activeElement.value===""');
         await cdp.send('Input.insertText', { text: 'folder 40' });
         await wait(`!!document.querySelector('[data-library-row-name="Study folder 40"]')`);
-        await key('a', 65, 2);
+        await key('a', 65, TEXT_SELECTION_MODIFIER);
         await cdp.send('Input.insertText', { text: 'no matching folder here' });
         await wait('document.querySelector(".library-tree").textContent.includes("No matches")');
         assert.equal(await evaluate(cdp, 'document.querySelector(".library-tree").getAttribute("role")'), null, 'An empty result must not expose a tree with no treeitems');
