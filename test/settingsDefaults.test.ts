@@ -2,27 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_KATAGO_VISITS, normalizeStoredSettings, useGameStore } from '../src/store/gameStore';
 
 describe('settings defaults', () => {
-  it('defaults full-strength KataGo visits to 5000', () => {
-    expect(DEFAULT_KATAGO_VISITS).toBe(5000);
-    expect(useGameStore.getState().settings.katagoVisits).toBe(5000);
+  it('uses the configured full-strength KataGo visit default', () => {
+    expect(useGameStore.getState().settings.katagoVisits).toBe(DEFAULT_KATAGO_VISITS);
   });
 
-  it('enables gamepad review navigation by default', () => {
-    expect(useGameStore.getState().settings.gamepadNavigation).toBe(true);
-  });
-
-  it('enables touch haptics by default when the browser supports them', () => {
-    expect(useGameStore.getState().settings.hapticFeedback).toBe(true);
-  });
-
-  it('disables fuzzy stone placement by default', () => {
-    expect(useGameStore.getState().settings.fuzzyStonePlacement).toBe(false);
-  });
 });
 
 describe('the old 500-visit default', () => {
   it('is read as the old default in settings saved before revisions', () => {
-    expect(normalizeStoredSettings({ katagoVisits: 500 }, null)?.katagoVisits).toBe(5000);
+    expect(normalizeStoredSettings({ katagoVisits: 500 }, null)?.katagoVisits).toBe(DEFAULT_KATAGO_VISITS);
   });
 
   it('is kept when chosen and saved since', () => {

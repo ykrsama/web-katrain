@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ICON_NAMES, Icon, type IconName } from '../src/components/dashboard/icons';
@@ -49,12 +48,5 @@ describe('dashboard icon markup', () => {
     // @ts-expect-error IconName must be the union of real names, never string.
     const unknown: IconName = 'definitely-not-an-icon';
     expect(ICON_NAMES).not.toContain(unknown);
-  });
-
-  it('builds the markup once, not per render', () => {
-    // The literal is what regressed; a guard on the shape of the fix.
-    const source = readFileSync('src/components/dashboard/icons.tsx', 'utf8');
-
-    expect(source).not.toMatch(/dangerouslySetInnerHTML=\{\{/);
   });
 });

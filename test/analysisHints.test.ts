@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { DEFAULT_TOP_MOVES, type CandidateMove } from '../src/types';
 import {
   COMPACT_ANALYSIS_HINT_LIMIT,
+  COMPACT_ANALYSIS_CELL_SIZE,
   POLICY_HEATMAP_LABEL_GAP,
   hasAdjacentHintLabel,
   policyHeatmapFontSize,
@@ -24,30 +25,26 @@ const move = (order: number, visits = 100): CandidateMove => ({
 
 describe('analysis hint density', () => {
   it('uses compact hints only when board intersections are visually tight', () => {
-    expect(usesCompactAnalysisHints(18)).toBe(true);
-    expect(usesCompactAnalysisHints(23.99)).toBe(true);
-    expect(usesCompactAnalysisHints(24)).toBe(false);
-    expect(usesCompactAnalysisHints(36)).toBe(false);
+    expect(usesCompactAnalysisHints(COMPACT_ANALYSIS_CELL_SIZE / 2)).toBe(true);
+    expect(usesCompactAnalysisHints(COMPACT_ANALYSIS_CELL_SIZE - 0.01)).toBe(true);
+    expect(usesCompactAnalysisHints(COMPACT_ANALYSIS_CELL_SIZE)).toBe(false);
+    expect(usesCompactAnalysisHints(COMPACT_ANALYSIS_CELL_SIZE * 2)).toBe(false);
   });
 
-  it('keeps only the strongest five legal candidates in compact mode', () => {
+  it('keeps the configured number of strongest legal candidates in compact mode', () => {
+    const count = COMPACT_ANALYSIS_HINT_LIMIT + 3;
     const pass = { ...move(0), x: -1, y: -1 };
-    const moves = [move(7), move(2), pass, move(5), move(0), move(1), move(4), move(3), move(6)];
+    const moves = [...Array.from({ length: count }, (_, order) => move(order)).reverse(), pass];
 
-    expect(selectAnalysisHintMoves(moves, true).map((candidate) => candidate.order)).toEqual([0, 1, 2, 3, 4]);
-    expect(selectAnalysisHintMoves(moves, true)).toHaveLength(COMPACT_ANALYSIS_HINT_LIMIT);
-    // A tight board stays tight even when a spacious one is asked for more.
-    expect(selectAnalysisHintMoves(
-      Array.from({ length: 20 }, (_, order) => move(order)),
-      true,
-      20,
-    )).toHaveLength(COMPACT_ANALYSIS_HINT_LIMIT);
+    expect(selectAnalysisHintMoves(moves, true, count).map((candidate) => candidate.order))
+      .toEqual(Array.from({ length: COMPACT_ANALYSIS_HINT_LIMIT }, (_, order) => order));
+    expect(selectAnalysisHintMoves(moves, true, 1)).toHaveLength(1);
   });
 
   it('draws as many candidates as the Top Moves setting asks for on spacious boards', () => {
-    const pass = { ...move(20), x: -1, y: -1 };
-    const moves = [move(12), move(2), move(0), move(11), pass, move(9), move(8), move(7), move(6), move(5), move(4), move(3), move(10), move(1),
-      move(13), move(14), move(15), move(16), move(17), move(18), move(19)];
+    const count = Math.max(DEFAULT_TOP_MOVES, 3) + 3;
+    const pass = { ...move(count), x: -1, y: -1 };
+    const moves = [...Array.from({ length: count }, (_, order) => move(order)).reverse(), pass];
 
     // The board follows the setting instead of its own cap of ten: raising Top
     // Moves filled the candidate list but left the board behind.

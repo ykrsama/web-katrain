@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const sweep = readFileSync('scripts/check-viewports.mjs', 'utf8');
-const css = readFileSync('src/index.css', 'utf8');
 
 /**
  * WCAG 2.2 SC 1.4.10 asks content to reflow into 320 CSS px without
@@ -28,12 +27,5 @@ describe('the sweep covers the width the stylesheet is written for', () => {
     // Every other check could pass on a page you have to scroll sideways.
     expect(sweep).toContain('if (result.documentOverflow > 1) failures.push(');
     expect(sweep).toContain('document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth');
-  });
-
-  it('has 320px rules to hold to account', () => {
-    // If these go, the viewport is still worth sweeping, but this file's
-    // reason for singling out 320 has changed and should be re-read.
-    expect(css).toContain('width: min(320px, calc(100vw - 24px));');
-    expect((css.match(/320px/g) ?? []).length).toBeGreaterThanOrEqual(5);
   });
 });

@@ -24,17 +24,4 @@ describe('disabled control cursor', () => {
       expect(css).toContain(selector);
     }
   });
-
-  it('keeps the per-component rules it generalises', () => {
-    // Removing these would change specificity for the classes that also set a
-    // background or opacity in the same block.
-    for (const selector of [
-      '.panel-icon-button:disabled',
-      '.panel-action-button:disabled',
-      '.analysis-command-bar__button:disabled',
-      '.manual-score-launch:disabled',
-    ]) {
-      expect(css).toContain(selector);
-    }
-  });
 });

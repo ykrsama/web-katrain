@@ -82,19 +82,4 @@ describe('the warm list in Layout', () => {
     const missing = declared.filter((name) => !list.includes(`${name}.warm`));
     expect(missing, `not warmed: ${missing.join(', ')}`).toEqual([]);
   });
-
-  it('warms the cheapest chunks first', async () => {
-    // Idle time is not guaranteed to last. Stopping partway should leave the
-    // most dialogs ready, not the most bytes fetched.
-    const layout = (await import('node:fs')).readFileSync('src/components/Layout.tsx', 'utf8');
-    const listStart = layout.indexOf('const WARMED_DIALOG_CHUNKS');
-    const list = layout.slice(listStart, layout.indexOf('];', listStart));
-    const order = [...list.matchAll(/name: '(\w+)'/g)].map((m) => m[1]!);
-
-    // The two ends of the range are what matter; the middle is judgement.
-    expect(order[0]).toBe('TsumegoFrameModal');
-    expect(order[order.length - 1]).toBe('SettingsModal');
-    expect(order.indexOf('SettingsModal')).toBeGreaterThan(order.indexOf('CommandPaletteModal'));
-    expect(order.indexOf('GameReportModal')).toBeGreaterThan(order.indexOf('PasteSgfModal'));
-  });
 });

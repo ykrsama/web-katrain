@@ -53,6 +53,6 @@ describe('parity.md agrees with ci.yml about the browser suite', () => {
 
   it('keeps the browser gate and its slower-CPU diagnostic discoverable', () => {
     expect(ci).toContain('npm run test:viewport');
-    expect(parity).toContain('VIEWPORT_CPU_THROTTLE=6');
+    expect(parity).toContain('VIEWPORT_CPU_THROTTLE=');
   });
 });

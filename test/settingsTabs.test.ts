@@ -5,6 +5,7 @@ import {
   readSettingsActiveTab,
   saveSettingsActiveTab,
   SETTINGS_ACTIVE_TAB_STORAGE_KEY,
+  SETTINGS_TAB_IDS,
 } from '../src/utils/settingsTabs';
 
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
@@ -44,35 +45,36 @@ afterEach(() => {
 
 describe('settings tab storage', () => {
   it('validates known settings tabs', () => {
-    expect(isSettingsTabId('general')).toBe(true);
-    expect(isSettingsTabId('shortcuts')).toBe(true);
-    expect(isSettingsTabId('keyboard')).toBe(false);
+    for (const tab of SETTINGS_TAB_IDS) expect(isSettingsTabId(tab)).toBe(true);
+    expect(isSettingsTabId('__unknown-tab__')).toBe(false);
     expect(isSettingsTabId(null)).toBe(false);
   });
 
   it('wraps keyboard navigation through settings tabs', () => {
-    expect(getNextSettingsTabId('general', 'ArrowRight')).toBe('analysis');
-    expect(getNextSettingsTabId('shortcuts', 'ArrowRight')).toBe('general');
-    expect(getNextSettingsTabId('general', 'ArrowLeft')).toBe('shortcuts');
-    expect(getNextSettingsTabId('analysis', 'Home')).toBe('general');
-    expect(getNextSettingsTabId('analysis', 'End')).toBe('shortcuts');
-    expect(getNextSettingsTabId('analysis', 'Tab')).toBeNull();
+    SETTINGS_TAB_IDS.forEach((tab, index, tabs) => {
+      expect(getNextSettingsTabId(tab, 'ArrowRight')).toBe(tabs[(index + 1) % tabs.length]);
+      expect(getNextSettingsTabId(tab, 'ArrowLeft')).toBe(tabs[(index - 1 + tabs.length) % tabs.length]);
+      expect(getNextSettingsTabId(tab, 'Home')).toBe(tabs[0]);
+      expect(getNextSettingsTabId(tab, 'End')).toBe(tabs.at(-1));
+      expect(getNextSettingsTabId(tab, 'Tab')).toBeNull();
+    });
   });
 
   it('persists the requested settings tab through safe storage', () => {
     installMemoryStorage();
 
-    expect(readSettingsActiveTab()).toBe('general');
-    saveSettingsActiveTab('shortcuts');
+    const tab = SETTINGS_TAB_IDS.at(-1)!;
+    saveSettingsActiveTab(tab);
 
-    expect(localStorage.getItem(SETTINGS_ACTIVE_TAB_STORAGE_KEY)).toBe('shortcuts');
-    expect(readSettingsActiveTab()).toBe('shortcuts');
+    expect(localStorage.getItem(SETTINGS_ACTIVE_TAB_STORAGE_KEY)).toBe(tab);
+    expect(readSettingsActiveTab()).toBe(tab);
   });
 
   it('falls back when storage contains an unknown tab', () => {
     installMemoryStorage();
-    localStorage.setItem(SETTINGS_ACTIVE_TAB_STORAGE_KEY, 'keyboard');
+    localStorage.setItem(SETTINGS_ACTIVE_TAB_STORAGE_KEY, '__unknown-tab__');
 
-    expect(readSettingsActiveTab('analysis')).toBe('analysis');
+    const fallback = SETTINGS_TAB_IDS[0];
+    expect(readSettingsActiveTab(fallback)).toBe(fallback);
   });
 });

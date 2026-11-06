@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ENGINE_MAX_VISITS } from '../src/engine/katago/limits';
 import {
+  ANALYSIS_MIN_VISITS,
   ANALYSIS_VISIT_PRESETS,
   ANALYSIS_VISIT_SLIDER_MAX,
   ANALYSIS_VISIT_SLIDER_MIN,
@@ -19,37 +20,36 @@ import {
 
 describe('visit preset utilities', () => {
   it('clamps analysis visits to the browser engine range', () => {
-    expect(clampAnalysisVisits(1)).toBe(16);
+    expect(clampAnalysisVisits(1)).toBe(ANALYSIS_MIN_VISITS);
     expect(clampAnalysisVisits(ENGINE_MAX_VISITS + 1)).toBe(ENGINE_MAX_VISITS);
     expect(clampAnalysisVisits(999999)).toBe(Math.min(999999, ENGINE_MAX_VISITS));
     expect(clampAnalysisVisits(250.9)).toBe(250);
   });
 
   it('merges the current custom value into sorted presets', () => {
-    expect(mergeVisitPresets(ANALYSIS_VISIT_PRESETS, 750)).toEqual([500, 750, 5000, 50000, 300000]);
-    expect(mergeVisitPresets(ANALYSIS_VISIT_PRESETS, 5000)).toEqual([500, 5000, 50000, 300000]);
+    const presets = [500, 1000, 5000];
+    expect(mergeVisitPresets(presets, 750)).toEqual([500, 750, 1000, 5000]);
+    expect(mergeVisitPresets(presets, 1000)).toEqual(presets);
   });
 
   it('labels default and depth bands', () => {
     expect(visitPresetLabel(5000, 5000)).toBe('Default');
-    expect(visitPresetLabel(16, 5000)).toBe('Fast');
-    expect(visitPresetLabel(500)).toBe('Fast');
-    expect(visitPresetLabel(5000)).toBe('Balanced');
-    expect(visitPresetLabel(50000)).toBe('Deep');
-    expect(visitPresetLabel(300000)).toBe('Thorough');
+    expect(ANALYSIS_VISIT_PRESETS.map(visits => visitPresetLabel(visits)))
+      .toEqual(['Fast', 'Balanced', 'Deep', 'Thorough']);
   });
 
   it('describes preset depth tradeoffs for the live selector', () => {
-    expect(visitPresetDescription(500)).toMatch(/minimal waiting/i);
-    expect(visitPresetDescription(5000)).toMatch(/steady feedback/i);
-    expect(visitPresetDescription(50000)).toMatch(/deeper reading/i);
-    expect(visitPresetDescription(300000)).toMatch(/slower/i);
+    expect(visitPresetDescription(ANALYSIS_VISIT_PRESETS[0])).toMatch(/minimal waiting/i);
+    expect(visitPresetDescription(ANALYSIS_VISIT_PRESETS[1])).toMatch(/steady feedback/i);
+    expect(visitPresetDescription(ANALYSIS_VISIT_PRESETS[2])).toMatch(/deeper reading/i);
+    expect(visitPresetDescription(ANALYSIS_VISIT_PRESETS[3])).toMatch(/slower/i);
   });
 
   it('cycles to the next merged live preset', () => {
-    expect(nextVisitPreset(500)).toBe(5000);
-    expect(nextVisitPreset(750)).toBe(5000);
-    expect(nextVisitPreset(300000)).toBe(500);
+    const presets = [500, 1000, 5000];
+    expect(nextVisitPreset(500, presets)).toBe(1000);
+    expect(nextVisitPreset(750, presets)).toBe(1000);
+    expect(nextVisitPreset(5000, presets)).toBe(500);
     expect(nextVisitPreset(ENGINE_MAX_VISITS, [16, 250, 1000, 5000, ENGINE_MAX_VISITS])).toBe(16);
   });
 
@@ -66,10 +66,10 @@ describe('visit preset utilities', () => {
     expect(snapVisitCount(236)).toBe(240);
     expect(snapVisitCount(1260)).toBe(1300);
     expect(sliderValueToVisitCount(visitCountToSliderValue(250))).toBe(250);
-    expect(sliderValueToVisitCount(Number.NaN)).toBe(16);
-    expect(sliderValueToVisitCount(ANALYSIS_VISIT_SLIDER_MIN - 1)).toBe(16);
+    expect(sliderValueToVisitCount(Number.NaN)).toBe(ANALYSIS_MIN_VISITS);
+    expect(sliderValueToVisitCount(ANALYSIS_VISIT_SLIDER_MIN - 1)).toBe(ANALYSIS_MIN_VISITS);
     expect(sliderValueToVisitCount(ANALYSIS_VISIT_SLIDER_MAX + 1)).toBe(ENGINE_MAX_VISITS);
-    expect(visitSliderFillPercent(16)).toBeCloseTo(0);
+    expect(visitSliderFillPercent(ANALYSIS_MIN_VISITS)).toBeCloseTo(0);
     expect(visitSliderFillPercent(ENGINE_MAX_VISITS)).toBeCloseTo(100);
   });
 });

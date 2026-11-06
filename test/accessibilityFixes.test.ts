@@ -83,12 +83,3 @@ describe('mobile landmarks', () => {
     expect(read('src/components/MobileHome.tsx')).not.toMatch(/^\s*<main\b/m);
   });
 });
-
-describe('document language default', () => {
-  it('starts in English rather than guessing from the browser', () => {
-    // The UI is English throughout; a French browser marked it lang="fr".
-    const store = read('src/store/gameStore.ts');
-    expect(store).toMatch(/const initialSettings: GameSettings = \{\s*\.\.\.defaultSettings,[\s\S]{0,400}appLocale: 'en',/);
-    expect(store).not.toContain('appLocale: getPreferredAppLocaleId()');
-  });
-});

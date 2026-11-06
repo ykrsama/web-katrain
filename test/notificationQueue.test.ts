@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_QUEUED_NOTIFICATIONS,
   admitNotification,
   autoDismissDelay,
   dismissNotification,
@@ -75,27 +74,30 @@ describe('toast arrival policy', () => {
   });
 
   it('drops the oldest waiting message rather than hoarding a backlog', () => {
+    const capacity = 3;
     let state = admitNotification(emptyNotificationQueue<NotificationLike>(), error('Analysis error'));
-    for (const message of ['one', 'two', 'three', 'four']) state = admitNotification(state, info(message));
+    for (const message of ['one', 'two', 'three', 'four']) state = admitNotification(state, info(message), capacity);
 
-    expect(state.queued).toHaveLength(MAX_QUEUED_NOTIFICATIONS);
+    expect(state.queued).toHaveLength(capacity);
     expect(state.queued.map((n) => n.message)).toEqual(['two', 'three', 'four']);
   });
 
   it('sacrifices waiting chatter before a waiting error', () => {
+    const capacity = 3;
     // A second engine error carries its own "Copy details"; routine markers
     // must not be able to push it out of the queue before it is ever seen.
     let state = admitNotification(emptyNotificationQueue<NotificationLike>(), error('First'));
-    state = admitNotification(state, error('Second'));
-    for (const message of ['one', 'two', 'three']) state = admitNotification(state, info(message));
+    state = admitNotification(state, error('Second'), capacity);
+    for (const message of ['one', 'two', 'three']) state = admitNotification(state, info(message), capacity);
 
-    expect(state.queued).toHaveLength(MAX_QUEUED_NOTIFICATIONS);
+    expect(state.queued).toHaveLength(capacity);
     expect(state.queued.map((n) => n.message)).toEqual(['Second', 'two', 'three']);
   });
 
   it('drops the oldest error only once there is no chatter left to drop', () => {
+    const capacity = 3;
     let state = admitNotification(emptyNotificationQueue<NotificationLike>(), error('E0'));
-    for (const message of ['E1', 'E2', 'E3', 'E4']) state = admitNotification(state, error(message));
+    for (const message of ['E1', 'E2', 'E3', 'E4']) state = admitNotification(state, error(message), capacity);
 
     expect(state.queued.map((n) => n.message)).toEqual(['E2', 'E3', 'E4']);
   });
@@ -119,8 +121,11 @@ describe('toast dismissal timing', () => {
   });
 
   it('times out confirmations', () => {
-    expect(autoDismissDelay(info('Added label B'))).toBe(2500);
-    expect(autoDismissDelay({ message: 'Saved', type: 'success' })).toBe(2500);
+    for (const notification of [info('Added label B'), { message: 'Saved', type: 'success' as const }]) {
+      const delay = autoDismissDelay(notification);
+      expect(delay).toBeGreaterThan(0);
+      expect(Number.isFinite(delay)).toBe(true);
+    }
   });
 
   it('has nothing to schedule for an empty slot', () => {

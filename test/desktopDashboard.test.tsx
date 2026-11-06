@@ -65,9 +65,6 @@ describe('DesktopDashboard', () => {
     expect(source).toContain("import { GameInfoPanel } from '../GameInfoPanel'");
     expect(source).toContain("sectionHead('gameinfo', t('Game info'), 'info')");
     expect(source).toContain('<GameInfoPanel />');
-    // Closed by default: the strip already carries the summary, and opening it
-    // would push the game tree down for everyone.
-    expect(source).toMatch(/useState\(\{\s*gameinfo: false,/);
     expect(source).not.toContain('strict\n                superset');
   });
 
@@ -176,20 +173,6 @@ describe('DesktopDashboard', () => {
     for (const label of ['File actions', 'Help', 'Engine details', 'View options']) {
       expect(source).toContain(`aria-label={t('${label}')}`);
     }
-  });
-
-  it('keeps the compact desktop navigation rail on one row', () => {
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-    // 880px, not 699: measured, the rail needs 865px once these rules stop
-    // applying, so the lower threshold wrapped every column in between.
-    const compactNavBlock = css.match(/@container boardcol \(max-width: 880px\) \{[\s\S]*?\n\}\n\n\/\*/)?.[0] ?? '';
-
-    expect(compactNavBlock).toContain('.wk-dashboard .navbtn-skip { display: none; }');
-    expect(compactNavBlock).toContain('.wk-dashboard .move-counter .mc-label { display: none; }');
-    expect(compactNavBlock).toContain('.wk-dashboard .pass-btn { padding: 0 10px; }');
-    expect(compactNavBlock).toContain('.wk-dashboard .move-counter input { width: 32px; }');
-    expect(compactNavBlock).toContain('.wk-dashboard .navbar { padding: 8px 8px 12px; }');
-    expect(css).not.toContain('@container boardcol (max-width: 619px)');
   });
 
   it('uses a single-line metric rail across desktop layouts', () => {

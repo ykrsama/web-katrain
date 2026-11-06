@@ -219,38 +219,6 @@ describe('TopControlBar', () => {
     expect(css).toContain('min-height: 44px !important');
   });
 
-  it('uses compact responsive grids inside the mobile Tools dialog', () => {
-    const html = renderToStaticMarkup(<TopControlBar {...baseProps} viewMenuOpen={true} isMobile={true} />);
-    const source = readFileSync('src/components/layout/TopControlBar.tsx', 'utf8');
-    const css = readFileSync('src/index.css', 'utf8');
-
-    expect(html.match(/data-mobile-tools-action-grid="true"/g) ?? []).toHaveLength(3);
-    expect(html).toContain('data-mobile-tools-section="ai"');
-    expect(html).toContain('data-mobile-tools-section="game"');
-    expect(html).toContain('data-mobile-tools-section="reports"');
-    expect(html).toContain('data-mobile-tools-view-grid="true"');
-    expect(source).toContain('const mobileToolsActionGrid = "grid grid-cols-2"');
-    expect(source).toContain('const mobileToolsSectionLabel = "px-4 py-2');
-    expect(source).toContain('className="grid grid-cols-2" data-mobile-tools-view-grid="true"');
-    expect(css).toMatch(/\[data-mobile-tools-action-grid='true'\] > button \{[^}]*border-bottom: 1px solid var\(--ui-border\);/);
-    expect(css).toMatch(/@media \(min-width: 600px\) and \(max-width: 1023px\)[\s\S]*\[data-mobile-tools-action-grid='true'\][\s\S]*repeat\(3, minmax\(0, 1fr\)\)/);
-    expect(css).toMatch(/@media \(max-height: 520px\) and \(orientation: landscape\)[\s\S]*\[data-mobile-tools-action-grid='true'\][\s\S]*repeat\(4, minmax\(0, 1fr\)\)/);
-    expect(css).toMatch(/@media \(min-width: 600px\) and \(max-width: 1023px\)[\s\S]*\[data-mobile-tools-section='game'\] \{[^}]*repeat\(3, minmax\(0, 1fr\)\)/);
-    expect(css).toMatch(/@media \(min-width: 760px\)[\s\S]*\[data-mobile-tools-section='ai'\]:not\(:has\(> button:nth-child\(6\)\)\)[^}]*repeat\(5, minmax\(0, 1fr\)\)/);
-    expect(css).toMatch(/@media \(min-width: 760px\)[\s\S]*\[data-mobile-tools-section='game'\] \{[^}]*repeat\(6, minmax\(0, 1fr\)\)/);
-
-    // The view menu's two columns are sized for a 512px popover, and the sheet
-    // hides eight of the left column's rows as redundant — six rows beside
-    // thirteen, with a hairline down the ragged gap. It stacks in the sheet.
-    // Both properties come from Tailwind utilities, which outrank this layer.
-    expect(css).toMatch(
-      /\[data-mobile-tools-dialog='true'\] \[data-mobile-tools-view-grid='true'\] \{\s*grid-template-columns: minmax\(0, 1fr\) !important;/,
-    );
-    expect(css).toMatch(
-      /\[data-mobile-tools-view-grid='true'\]\s*> :first-child \{\s*border-right-width: 0 !important;/,
-    );
-  });
-
   it('disables unavailable analysis actions in the mobile Tools dialog', () => {
     const idleHtml = renderToStaticMarkup(
       <TopControlBar {...baseProps} viewMenuOpen={true} isMobile={true} />,

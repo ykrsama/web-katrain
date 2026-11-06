@@ -9,10 +9,6 @@ import {
 } from '../src/engine/katago/limits';
 
 describe('engine visit cap', () => {
-  it('defaults to 500000 visits', () => {
-    expect(DEFAULT_ENGINE_MAX_VISITS).toBe(500_000);
-  });
-
   it('wires the exported cap to the Vite env override', () => {
     expect(ENGINE_MAX_VISITS).toBe(parseEngineMaxVisits(import.meta.env.VITE_KATAGO_MAX_VISITS));
   });
@@ -31,10 +27,6 @@ describe('engine visit cap', () => {
 });
 
 describe('engine time cap', () => {
-  it('defaults to 10 minutes', () => {
-    expect(DEFAULT_ENGINE_MAX_TIME_MS).toBe(600_000);
-  });
-
   it('wires the exported cap to the Vite env override', () => {
     expect(ENGINE_MAX_TIME_MS).toBe(parseEngineMaxTimeMs(import.meta.env.VITE_KATAGO_MAX_TIME_MS));
   });

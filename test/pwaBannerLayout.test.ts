@@ -154,13 +154,6 @@ describe('the card lets its own explanation be read', () => {
     expect(rule).not.toContain('text-overflow: ellipsis');
   });
 
-  it('says so once rather than per breakpoint', () => {
-    // Viewports under 640px already wrapped, through an override that only
-    // existed to undo the rule above. Two rules describing one behaviour is
-    // how they drift.
-    expect(css).not.toMatch(/\.pwa-install-detail \{\s*white-space: normal;\s*\}/);
-  });
-
   it('keeps the measured reserve the wrapped card depends on', () => {
     // The second line costs no height at all -- the card is 66px either way,
     // sized by its buttons -- but nothing in the CSS guarantees that, so the

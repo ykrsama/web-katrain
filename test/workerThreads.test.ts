@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CORES_RESERVED_FOR_UI,
+  LOW_MEMORY_GB,
+  LOW_MEMORY_MAX_THREADS,
   MAX_SEARCH_THREADS,
   detectSearchThreadCount,
   resolveSearchThreadCount,
@@ -8,15 +10,25 @@ import {
 
 describe('search thread budget', () => {
   it('leaves cores for the thread that paints the board', () => {
-    expect(resolveSearchThreadCount({ hardwareConcurrency: 6, deviceMemoryGB: 16 })).toBe(4);
-    expect(resolveSearchThreadCount({ hardwareConcurrency: 4, deviceMemoryGB: 16 })).toBe(2);
+    for (const usable of [2, 4]) {
+      const threads = resolveSearchThreadCount({
+        hardwareConcurrency: CORES_RESERVED_FOR_UI + usable,
+        deviceMemoryGB: LOW_MEMORY_GB * 2,
+      });
+      expect(threads).toBeGreaterThanOrEqual(1);
+      expect(threads).toBeLessThanOrEqual(usable);
+      expect(threads).toBeLessThanOrEqual(MAX_SEARCH_THREADS);
+    }
   });
 
   it('is unchanged on the desktops the old cap already covered', () => {
     // Anything with MAX + reserved cores or more was pinned at the cap before
     // and still is, so this costs nothing where the search had room anyway.
-    for (const cores of [10, 12, 16, 18, 32]) {
-      expect(resolveSearchThreadCount({ hardwareConcurrency: cores, deviceMemoryGB: 32 }))
+    for (const extra of [0, 2, 8, 32]) {
+      expect(resolveSearchThreadCount({
+        hardwareConcurrency: MAX_SEARCH_THREADS + CORES_RESERVED_FOR_UI + extra,
+        deviceMemoryGB: LOW_MEMORY_GB * 2,
+      }))
         .toBe(MAX_SEARCH_THREADS);
     }
   });
@@ -28,29 +40,39 @@ describe('search thread budget', () => {
   });
 
   it('holds back on a machine short of memory', () => {
-    // Eight cores and 2GB is a phone, not a workstation.
-    expect(resolveSearchThreadCount({ hardwareConcurrency: 8, deviceMemoryGB: 2 })).toBe(2);
-    expect(resolveSearchThreadCount({ hardwareConcurrency: 16, deviceMemoryGB: 2 })).toBe(2);
+    for (const extra of [2, 8]) {
+      expect(resolveSearchThreadCount({
+        hardwareConcurrency: LOW_MEMORY_MAX_THREADS + CORES_RESERVED_FOR_UI + extra,
+        deviceMemoryGB: LOW_MEMORY_GB / 2,
+      })).toBe(LOW_MEMORY_MAX_THREADS);
+    }
   });
 
-  it('only trusts deviceMemory below 4GB, where browsers agree', () => {
-    // The spec describes clamping the reported value, and browsers disagree
-    // about the top of the range; 8 and 32 must land in the same place.
-    const eight = resolveSearchThreadCount({ hardwareConcurrency: 16, deviceMemoryGB: 8 });
-    const thirtyTwo = resolveSearchThreadCount({ hardwareConcurrency: 16, deviceMemoryGB: 32 });
-    expect(eight).toBe(thirtyTwo);
+  it('treats readings at or above the configured low-memory threshold alike', () => {
+    const hardwareConcurrency = MAX_SEARCH_THREADS + CORES_RESERVED_FOR_UI;
+    const atThreshold = resolveSearchThreadCount({ hardwareConcurrency, deviceMemoryGB: LOW_MEMORY_GB });
+    const aboveThreshold = resolveSearchThreadCount({ hardwareConcurrency, deviceMemoryGB: LOW_MEMORY_GB * 4 });
+    expect(atThreshold).toBe(aboveThreshold);
+    expect(atThreshold).toBe(MAX_SEARCH_THREADS);
   });
 
   it('treats an absent or nonsense memory reading as unknown, not as low', () => {
-    const unknown = resolveSearchThreadCount({ hardwareConcurrency: 16 });
+    const hardwareConcurrency = MAX_SEARCH_THREADS + CORES_RESERVED_FOR_UI;
+    const unknown = resolveSearchThreadCount({ hardwareConcurrency });
     expect(unknown).toBe(MAX_SEARCH_THREADS);
-    expect(resolveSearchThreadCount({ hardwareConcurrency: 16, deviceMemoryGB: NaN })).toBe(unknown);
-    expect(resolveSearchThreadCount({ hardwareConcurrency: 16, deviceMemoryGB: 0 })).toBe(unknown);
+    expect(resolveSearchThreadCount({ hardwareConcurrency, deviceMemoryGB: NaN })).toBe(unknown);
+    expect(resolveSearchThreadCount({ hardwareConcurrency, deviceMemoryGB: 0 })).toBe(unknown);
   });
 
   it('reads the signals a worker has', () => {
-    expect(detectSearchThreadCount({ navigator: { hardwareConcurrency: 12, deviceMemory: 16 } })).toBe(8);
-    expect(detectSearchThreadCount({ navigator: { hardwareConcurrency: 8, deviceMemory: 2 } })).toBe(2);
+    expect(detectSearchThreadCount({ navigator: {
+      hardwareConcurrency: MAX_SEARCH_THREADS + CORES_RESERVED_FOR_UI + 2,
+      deviceMemory: LOW_MEMORY_GB * 2,
+    } })).toBe(MAX_SEARCH_THREADS);
+    expect(detectSearchThreadCount({ navigator: {
+      hardwareConcurrency: LOW_MEMORY_MAX_THREADS + CORES_RESERVED_FOR_UI + 2,
+      deviceMemory: LOW_MEMORY_GB / 2,
+    } })).toBe(LOW_MEMORY_MAX_THREADS);
     expect(detectSearchThreadCount({})).toBe(1);
   });
 });

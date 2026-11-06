@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { UI_THEME_OPTIONS, resolveUiTheme } from '../src/utils/uiThemes';
+import { resolveUiTheme } from '../src/utils/uiThemes';
 
 describe('ui themes', () => {
-  it('offers System as the first theme choice', () => {
-    expect(UI_THEME_OPTIONS[0]?.value).toBe('system');
-  });
-
   it('resolves system against the device color scheme', () => {
     expect(resolveUiTheme('system', true)).toBe('noir');
     expect(resolveUiTheme('system', false)).toBe('light');

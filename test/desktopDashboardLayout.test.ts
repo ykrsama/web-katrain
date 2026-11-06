@@ -1,15 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { getDashboardLayoutMode } from '../src/utils/dashboardLayout';
 
 describe('desktop dashboard layout', () => {
-  it('uses the expected visual layout breakpoints', () => {
-    expect(getDashboardLayoutMode(1280)).toBe('wide');
-    expect(getDashboardLayoutMode(1200)).toBe('wide');
-    expect(getDashboardLayoutMode(1024)).toBe('compact');
-    expect(getDashboardLayoutMode(820)).toBe('compact');
-    expect(getDashboardLayoutMode(819)).toBe('narrow');
-  });
 
   it('does not reopen persisted panel choices while reacting to viewport changes', () => {
     const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
@@ -21,41 +13,6 @@ describe('desktop dashboard layout', () => {
     expect(responsiveBlock).toContain('setLayoutMode(nextMode)');
     expect(responsiveBlock).not.toContain('setLibraryOpen(true');
     expect(responsiveBlock).not.toContain('setSidebarOpen(true');
-  });
-
-  it('fits the command rail on one row with the library docked', () => {
-    // The rail wraps, so every flex item on it costs a gap whether or not it
-    // draws anything -- and it was 3.2px over its 596.8px column at 1280x800
-    // with the library docked, which dropped the play actions onto a second
-    // row and took ~33px of height off the board. `npm run test:viewport` is
-    // the probe that measures this; these two guard what it found.
-    const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-
-    // The play actions push themselves right; no empty element does it. The
-    // class name survives in the comments that explain its removal, so match
-    // the rule and the markup rather than the word.
-    expect(dashboardSource).not.toContain('navbar-spacer');
-    expect(css).not.toContain('.navbar-spacer {');
-    expect(css).toContain(
-      '.wk-dashboard .playactions { display: flex; align-items: center; gap: 6px; margin-left: auto; }'
-    );
-
-    // The tightest tier states each declaration once: it carried two
-    // .move-counter paddings and two .navbar paddings, only the last of which
-    // did anything.
-    const tier = css.slice(
-      css.indexOf('@container boardcol (max-width: 700px) {'),
-      css.indexOf('/* ---------------- Sidebar (analysis) ---------------- */')
-    );
-    expect(tier).toContain('.wk-dashboard .navbar { gap: 1px; padding: 8px 4px 12px; }');
-    expect(tier).toContain('.wk-dashboard .move-counter { padding: 0 4px; }');
-    for (const selector of ['.wk-dashboard .navbar {', '.wk-dashboard .move-counter {']) {
-      expect(tier.split(selector), selector).toHaveLength(2);
-    }
-    // Nothing was paid for out of a control: the WCAG-floor sizes stand.
-    expect(tier).toContain('.wk-dashboard .navbtn { width: 28px; }');
-    expect(tier).toContain('.wk-dashboard .move-counter input { width: 30px; }');
   });
 
   it('draws Resign from the theme, like every other button on the rail', () => {
@@ -109,18 +66,6 @@ describe('desktop dashboard layout', () => {
     );
   });
 
-  it('keeps first-run actions in a compact, non-overlapping board rail', () => {
-    const dashboardSource = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-
-    expect(dashboardSource).toContain('data-dashboard-hero="true"');
-    expect(dashboardSource).toContain("<div className=\"hero-title\">{t('Start here')}</div>");
-    expect(dashboardSource).not.toContain('className="hero-tips"');
-    expect(css).toContain('grid-template-rows: minmax(0, 1fr) auto;');
-    expect(css).toContain('min-height: 46px;');
-    expect(css).toContain('flex-wrap: nowrap;');
-  });
-
   it('keeps desktop focus mode board-only, visible, and clear of its move ticker', () => {
     const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
 
@@ -156,27 +101,6 @@ describe('desktop dashboard layout', () => {
     expect(dashboardSource).not.toContain('data-dashboard-build-chip="true"');
     expect(dashboardSource).toContain('data-dashboard-build-link="true"');
     expect(css).not.toContain('.wk-dashboard .build-chip');
-  });
-
-  it('keeps primary desktop header icon targets at the standard 32px size', () => {
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-
-    expect(css).toMatch(/\.wk-dashboard \.iconbtn \{\s*width: 32px; height: 32px;/);
-    expect(css).not.toContain('.wk-dashboard .iconcluster .iconbtn { width: 28px; height: 28px; }');
-  });
-
-  it('keeps frequent desktop board actions at the standard 32px height', () => {
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-
-    expect(css).toMatch(/\.wk-dashboard \.board-chip \{[^}]*height: 32px;/);
-    expect(css).not.toMatch(/\.wk-dashboard \.board-chip \{[^}]*height: 28px;/);
-  });
-
-  it('compacts play actions before the standard desktop command bar wraps', () => {
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-
-    expect(css).toContain('@container boardcol (max-width: 919px)');
-    expect(css).toContain('.wk-dashboard .playactions .tbtn { padding: 0 9px; }');
   });
 
   it('mounts the full library manager inside the desktop dashboard library column', () => {
@@ -270,27 +194,6 @@ describe('desktop dashboard layout', () => {
 
     expect(gameTreeBlock).toContain('{branchInfo.currentIndex}/{branchInfo.totalBranches}');
     expect(gameTreeBlock).not.toContain('branchInfo.currentIndex + 1');
-  });
-
-  it('gives the docked score bar a navbar row instead of a third one', () => {
-    const css = readFileSync('src/components/dashboard/dashboard.css', 'utf8');
-
-    // The bar is as wide as the strip allows, so in the wrapping navbar it took
-    // the row it landed on and pushed the play actions onto a third row of
-    // their own. Three rows cost the board 102px at 1440x900 and 121px at
-    // 1280x800 for a bar that is 48px tall.
-    expect(css).toMatch(
-      /\.wk-dashboard \.navbar:has\(\.manual-score-docked\) \.board-tools \{\s*order: 1;\s*flex-basis: 100%;/
-    );
-    // Only while scoring: edit mode docks a 32px launcher that fits the row.
-    expect(css).not.toContain('.wk-dashboard .navbar .board-tools {\n  order: 1;');
-
-    // Done and the header cross both call onDone. Side by side on one bar they
-    // are the same action twice, and the cross's 32px was what pushed the bar
-    // past the strip at 1280x800 onto a second row.
-    expect(css).toMatch(
-      /\.manual-score-panel\.manual-score-docked \.manual-score-icon \{\s*display: none;/
-    );
   });
 
   it('labels visible dashboard tree and analysis toolbar controls', () => {

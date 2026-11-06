@@ -10,6 +10,8 @@ import {
   stopNavigationSounds,
   resetAudioContextForTests,
   warmAudioContext,
+  NAVIGATION_INTERVAL_MS,
+  NAVIGATION_ACTIVITY_MS,
 } from '../src/utils/sound';
 
 const cleanups: Array<() => void> = [];
@@ -273,7 +275,10 @@ describe('AI sound activation and recovery', () => {
 });
 
 describe('forward-navigation sound cadence', () => {
-  it('lets HTML audio tails overlap on the 160ms beat and keeps capture 100ms after its stone', () => {
+  const inputLead = Math.min(NAVIGATION_INTERVAL_MS, NAVIGATION_ACTIVITY_MS) / 4;
+  const quietPeriod = Math.max(NAVIGATION_INTERVAL_MS, NAVIGATION_ACTIVITY_MS) * 2;
+
+  it('lets HTML audio tails overlap on the configured beat and keeps capture after its stone', () => {
     vi.useFakeTimers();
     const audio = mockFallback();
     vi.stubGlobal('window', Object.assign(new EventTarget(), { Audio: audio.Audio }));
@@ -281,8 +286,9 @@ describe('forward-navigation sound cadence', () => {
     window.dispatchEvent(Object.assign(new Event('keydown'), { key: 'ArrowRight', code: 'ArrowRight' }));
     vi.spyOn(Math, 'random').mockReturnValue(0);
     playNavigationSound('stone');
+    vi.advanceTimersByTime(NAVIGATION_INTERVAL_MS - inputLead);
     playNavigationSound('capture');
-    vi.advanceTimersByTime(159);
+    vi.advanceTimersByTime(inputLead - 1);
     expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3']);
     vi.advanceTimersByTime(1);
     expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/0.mp3']);
@@ -292,7 +298,7 @@ describe('forward-navigation sound cadence', () => {
     expect(audio.srcs).toHaveLength(2);
     vi.advanceTimersByTime(1);
     expect(audio.srcs).toEqual(['/themes/sabaki/0.mp3', '/themes/sabaki/0.mp3', '/themes/sabaki/capture0.mp3']);
-    vi.advanceTimersByTime(500);
+    vi.advanceTimersByTime(quietPeriod);
     expect(audio.srcs).toHaveLength(3);
   });
 
@@ -307,16 +313,16 @@ describe('forward-navigation sound cadence', () => {
     expect(parts).toHaveLength(2);
     expect(parts[0].start).toHaveBeenCalledWith();
     expect(parts[1].start).toHaveBeenCalledWith(10.1);
-    audio.advance(30);
+    audio.advance(NAVIGATION_INTERVAL_MS - inputLead);
     playNavigationSound('stone');
-    audio.advance(130);
+    audio.advance(inputLead);
     // Neither original part has ended, but the next placement starts anyway.
     expect(audio.audibleStarts()).toBe(3);
     parts.forEach(part => part.onended?.());
     expect(audio.audibleStarts()).toBe(3);
   });
 
-  it.each([100, 160])('uses the same 160ms onset interval with a %ims sample', async duration => {
+  it.each([0.5, 1.5])('keeps the configured beat with a sample lasting %s times the interval', async ratio => {
     vi.useFakeTimers();
     const audio = mockWebAudio();
     cleanups.push(installSoundUnlockHandlers());
@@ -324,23 +330,24 @@ describe('forward-navigation sound cadence', () => {
     await flushAudio();
     playNavigationSound();
     const first = audio.contexts[0].sources.at(-1)!;
+    const duration = NAVIGATION_INTERVAL_MS * ratio;
     Object.defineProperty(first.buffer, 'duration', { value: duration / 1000 });
-    audio.advance(30);
-    playNavigationSound();
-    audio.advance(70);
-    if (duration === 100) first.onended?.();
+    audio.advance(NAVIGATION_INTERVAL_MS / 2);
+    if (ratio < 1) first.onended?.();
     expect(audio.audibleStarts()).toBe(1);
-    audio.advance(59);
+    audio.advance(NAVIGATION_INTERVAL_MS / 2 - inputLead);
+    playNavigationSound();
+    audio.advance(inputLead - 1);
     expect(audio.audibleStarts()).toBe(1);
     audio.advance(1);
     expect(audio.audibleStarts()).toBe(2);
-    audio.advance(30);
+    audio.advance(NAVIGATION_INTERVAL_MS - inputLead);
     playNavigationSound();
-    audio.advance(130);
+    audio.advance(inputLead);
     expect(audio.audibleStarts()).toBe(3);
     // Sample duration and playback rate are left intact.
     expect(first.buffer?.duration).toBe(duration / 1000);
-    audio.advance(500);
+    audio.advance(quietPeriod);
     expect(audio.audibleStarts()).toBe(3);
   });
 
@@ -351,13 +358,13 @@ describe('forward-navigation sound cadence', () => {
     audio.key('keydown');
     await flushAudio();
     playNavigationSound();
-    audio.advance(30);
+    audio.advance(NAVIGATION_INTERVAL_MS - 2 * inputLead);
     playNavigationSound('capture');
-    audio.advance(30);
+    audio.advance(inputLead);
     playNavigationSound('pass');
-    audio.advance(100);
+    audio.advance(inputLead);
     expect(audio.audibleStarts()).toBe(2); // Latest pass; no stale capture pair.
-    audio.advance(600);
+    audio.advance(quietPeriod);
     expect(audio.audibleStarts()).toBe(2);
   });
 
@@ -368,12 +375,12 @@ describe('forward-navigation sound cadence', () => {
     audio.key('keydown');
     await flushAudio();
     playNavigationSound();
-    audio.advance(30);
+    audio.advance(inputLead);
     playNavigationSound();
     if (action === 'keyup') audio.key('keyup');
     else if (action === 'stop') stopNavigationSounds();
     else audio.gesture('blur');
-    audio.advance(500);
+    audio.advance(quietPeriod);
     audio.endClip();
     expect(audio.audibleStarts()).toBe(1);
   });
@@ -385,9 +392,9 @@ describe('forward-navigation sound cadence', () => {
     audio.key('keydown');
     await flushAudio();
     playNavigationSound();
-    audio.advance(30);
+    audio.advance(inputLead);
     playNavigationSound();
-    audio.advance(500);
+    audio.advance(quietPeriod);
     expect(audio.audibleStarts()).toBe(1);
   });
 
@@ -399,11 +406,11 @@ describe('forward-navigation sound cadence', () => {
     await flushAudio();
     playNavigationSound();
     audio.key('keyup');
-    audio.advance(30);
+    audio.advance(inputLead);
     audio.key('keydown');
     playNavigationSound();
     expect(audio.audibleStarts()).toBe(2);
-    audio.advance(500);
+    audio.advance(quietPeriod);
     expect(audio.audibleStarts()).toBe(2);
   });
 

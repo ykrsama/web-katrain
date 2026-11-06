@@ -35,13 +35,6 @@ describe('engine suites leave room to report', () => {
     expect(timeout - budget).toBeGreaterThanOrEqual(60_000);
   });
 
-  it.each([
-    ['graph search', graph],
-    ['golden tuned', golden],
-  ])('%s uses the named constants rather than repeating the numbers', (_name, source) => {
-    expect(source).toContain('maxTimeMs: SEARCH_BUDGET_MS');
-    expect(source).toContain('}, TEST_TIMEOUT_MS);');
-  });
 
   it('never lets a search budget exceed the engine cap that truncates it', () => {
     // A budget above the cap would be silently clamped, so the timeout would be

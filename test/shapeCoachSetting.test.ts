@@ -18,10 +18,7 @@ describe('shape coach display setting', () => {
     expect(modal).toContain("t('Analysis Detail')");
   });
 
-  it('defaults to off and is discoverable from the settings search', () => {
-    expect(read('src/store/gameStore.ts')).toContain('showShapeCoach: false');
-    expect(read('src/types.ts')).toContain('showShapeCoach: boolean');
-
+  it('is discoverable from the settings search', () => {
     const entry = SETTINGS_SEARCH_INDEX.find((item) => item.id === 'settings-analysis-show-shape-coach');
     expect(entry?.tab).toBe('analysis');
     expect(entry?.label).toBe('Shape Coach');

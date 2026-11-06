@@ -2,7 +2,7 @@ import { readLocalStorage, writeLocalStorage } from './storage';
 
 const STORAGE_KEY = 'web-katrain:library_positions:v1';
 /** Enough for any real library's recent games, small enough to rewrite freely. */
-const MAX_ENTRIES = 200;
+export const MAX_ENTRIES = 200;
 
 /**
  * Where each Library game was left, as the child-index path from the root.

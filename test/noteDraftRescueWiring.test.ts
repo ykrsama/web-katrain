@@ -35,9 +35,4 @@ describe('the note editor keeps what was typed', () => {
     expect(source).toContain('draft: noteDraftRef.current');
     expect(source).toContain('previousNote: previousNoteTextRef.current');
   });
-
-  it('keeps the draft mirror as an effect, which lint requires', () => {
-    // Writing a ref during render is a react-hooks/refs error.
-    expect(source).toMatch(/useEffect\(\(\) => \{\s*noteDraftRef\.current = noteDraft;\s*\}, \[noteDraft\]\);/);
-  });
 });

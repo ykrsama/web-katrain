@@ -78,6 +78,11 @@ downloading from KataGo training media.
 
 ## Testing
 
+Before adding or changing tests, follow the [repository test-writing rules](../AGENTS.md).
+Add coverage for meaningful behavior that is not already protected, rather than
+requiring a new test for every edit. Keep tunable configuration in one place;
+tests should use it to check behavior and boundaries.
+
 Use focused tests while developing, then run the broader checks before handing
 off larger changes:
 

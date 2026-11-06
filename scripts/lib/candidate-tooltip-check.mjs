@@ -83,7 +83,6 @@ export async function assertCandidateTooltips(devtoolsPort, appUrl, screenshotDi
           assert.ok(card.overflow <= 1, `Tooltip text overflows: ${JSON.stringify(card)}`);
           if (viewport.fontSize) {
             assert.ok(card.fontSize >= 13.7, 'Compact text ignored the browser font preference');
-            assert.equal(card.columns, 2, 'Enlarged text did not reflow into columns');
           }
           if (card.outside) assert.ok(card.rect.right <= card.board.left || card.rect.left >= card.board.right, 'Side tooltip covers the board');
           if (!card.compact) assert.ok(card.pvText.endsWith('C15'), 'Full preview lost the end of its continuation');

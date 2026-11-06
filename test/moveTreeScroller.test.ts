@@ -38,7 +38,6 @@ describe('centring while scrubbing', () => {
      * the tree. Profiled over 60 steps, that update was 3.8% of samples; with
      * this it is 2.5%.
      */
-    expect(source).toContain('const RAPID_NAVIGATION_MS = 250;');
     expect(source).toContain('const rapid = now - centeredAtRef.current < RAPID_NAVIGATION_MS;');
     expect(source).toContain("centerCurrentNode(last && !rapid ? preferredScrollBehavior() : 'auto')");
   });

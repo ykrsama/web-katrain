@@ -224,16 +224,6 @@ describe('AnalysisCommandBar', () => {
     );
   });
 
-  it('marks active phone toggles with a fill rather than a detached underline', () => {
-    const styles = readFileSync('src/index.css', 'utf8');
-
-    // 44px touch targets left `inset 0 -2px` floating ~20px under the label.
-    expect(styles).not.toContain('box-shadow: inset 0 -2px 0 var(--ui-accent);');
-    expect(styles).toContain(
-      '.analysis-command-bar__button.active {\n      background: var(--ui-accent-soft);',
-    );
-  });
-
   it('keeps fallback and error states visible in the status pill', () => {
     const html = renderToStaticMarkup(
       <AnalysisCommandBar

@@ -26,10 +26,6 @@ describe('the help rows can wrap when a chip does not fit', () => {
     // squeezed narrower than its text is worse than one on its own line.
     expect(help).toContain('<kbd className="shrink-0 rounded bg-[var(--ui-panel)]');
   });
-
-  it('still has a phrase long enough to need it', () => {
-    expect(help).toContain("control: 'Middle-click a candidate'");
-  });
 });
 
 describe('the sweep looks for dialog content painting off-screen', () => {

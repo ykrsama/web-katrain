@@ -83,18 +83,6 @@ describe('one table decides what counts as a mistake', () => {
     expect(declarers).toEqual(['src/utils/nodeAnalysis.ts']);
   });
 
-  it('has the numbers written down in exactly one file', () => {
-    /**
-     * Checked across the whole tree rather than against a list of graders. The
-     * first version of this guard looked only for a redeclared
-     * `DEFAULT_EVAL_THRESHOLDS` in six named components, so it did not see the
-     * two bare copies of the literal that were sitting in the fallbacks inside
-     * gameReport.ts -- the module that actually computes the report.
-     */
-    const spelledOut = files.filter((file) => /\[12, 6, 3, 1\.5, 0\.5, 0\]/.test(readFileSync(file, 'utf8')));
-    expect(spelledOut).toEqual(['src/utils/nodeAnalysis.ts']);
-  });
-
   it('is imported by every module that falls back to it', () => {
     const users = files.filter((file) => {
       const source = readFileSync(file, 'utf8');

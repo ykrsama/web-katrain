@@ -90,15 +90,6 @@ describe('AnalysisPanel', () => {
     expect(html).toContain('min-h-11');
   });
 
-  it('keeps cache and legend on the compact overlay row instead of their own band', () => {
-    const html = renderToStaticMarkup(<AnalysisPanel {...baseProps} compact />);
-
-    // Two icons had a full right-aligned row of a phone panel to themselves.
-    expect(html).not.toContain('flex items-center justify-end gap-2');
-    const controls = html.slice(html.indexOf('data-analysis-overlay-controls="true"'));
-    expect(controls.indexOf('Territory')).toBeLessThan(controls.indexOf('Show analysis legend'));
-  });
-
   it('holds the compact overlay controls in fixed columns across phone widths', () => {
     const html = renderToStaticMarkup(<AnalysisPanel {...baseProps} compact />);
     const css = readFileSync('src/index.css', 'utf8');

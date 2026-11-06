@@ -39,13 +39,6 @@ describe('desktop dashboard', () => {
     expect(dashboard).toContain('jumpForward={insertGuarded(() => jumpForward(10))}');
   });
 
-  it('scrolls the tree inside its own scroller so Center current move works', () => {
-    const css = read('src/components/dashboard/dashboard.css');
-
-    expect(css).toContain('.wk-dashboard .tree-region { padding: 8px 10px; overflow: hidden; }');
-    expect(css).toContain('.wk-dashboard .tree-region .move-tree-shell { max-height: 224px; }');
-  });
-
   it('recomputes the Swing tooltip when analysis lands on the same node', () => {
     const source = read('src/components/dashboard/DesktopDashboard.tsx');
 

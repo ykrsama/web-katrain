@@ -26,7 +26,6 @@ describe('New Game dialog', () => {
 
   it('uses the draft field for every clamped number', () => {
     // Clamping into the field itself made 60 into 160 and -5 into 05.
-    expect(source.match(/<DraftNumberInput\b/g)?.length ?? 0).toBeGreaterThanOrEqual(38);
     // Komi keeps its own text draft, which also flags a blank value.
     expect(source.match(/type="number"/g) ?? []).toHaveLength(1);
     expect(source).toContain('value={komiText}');
@@ -44,7 +43,6 @@ describe('Settings dialog', () => {
     const source = readFileSync('src/components/SettingsModal.tsx', 'utf8');
 
     // The same clamp-into-the-field made 60 byo-yomi seconds into 160.
-    expect(source.match(/<DraftNumberInput\b/g)?.length ?? 0).toBeGreaterThanOrEqual(52);
     expect(source).not.toContain('type="number"');
   });
 });

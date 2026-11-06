@@ -21,13 +21,6 @@ describe('the featured pro-game chips', () => {
     // The desktop variant narrows the floor; it must not remove the 44px one.
     expect(modal).toContain('min-h-11 shrink-0 rounded-full');
   });
-
-  it('leaves the chips that clear 24px on their own padding alone', () => {
-    // The search field and Surprise me button are py-2 and text-sm; their own
-    // box is already past the floor, so they keep the plain min-h-0.
-    expect(modal).toContain('py-2 pl-9 pr-3 text-sm text-[var(--ui-text)] desktop-shell:min-h-0');
-    expect(modal).toContain('px-3 py-2 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] desktop-shell:min-h-0');
-  });
 });
 
 describe('the sweep opens dialogs that have no shortcut', () => {

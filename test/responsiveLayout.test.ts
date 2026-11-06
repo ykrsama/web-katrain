@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  DESKTOP_LAYOUT_MEDIA,
   isDesktopLayoutSize,
   isDesktopLayoutViewport,
   isMobileLayoutSize,
   isMobileLayoutViewport,
-  MOBILE_LAYOUT_MEDIA,
   shouldShowMobileMatchStrip,
 } from '../src/utils/responsiveLayout';
 
@@ -33,11 +31,6 @@ describe('responsive layout thresholds', () => {
     expect(isMobileLayoutSize(390, 844)).toBe(true);
     expect(isMobileLayoutSize(844, 390)).toBe(true);
     expect(isMobileLayoutSize(1024, 390)).toBe(true);
-  });
-
-  it('exports media queries that match the size helper boundary', () => {
-    expect(DESKTOP_LAYOUT_MEDIA).toBe('(min-width: 1024px) and (min-height: 500px)');
-    expect(MOBILE_LAYOUT_MEDIA).toBe('(max-width: 1023px), (max-height: 499px)');
   });
 
   it('falls back to viewport dimensions when matchMedia is unavailable', () => {

@@ -8,8 +8,7 @@ import {
 } from '../src/engine/katago/backendFallback';
 
 describe('KataGo backend fallback policy', () => {
-  it('defaults to WebGPU while preserving explicit CPU/WASM choices', () => {
-    expect(normalizeKataGoBackendPreference()).toBe('webgpu');
+  it('preserves explicit WebGPU/CPU/WASM choices', () => {
     expect(normalizeKataGoBackendPreference('webgpu')).toBe('webgpu');
     expect(normalizeKataGoBackendPreference('wasm')).toBe('wasm');
     expect(normalizeKataGoBackendPreference('cpu')).toBe('cpu');
