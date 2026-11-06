@@ -34,7 +34,7 @@ describe('board coordinates', () => {
     expect(board).toContain('const coordGap = cellSize * 0.56;');
     expect(board).toContain('left: originX - coordGap,');
     expect(board).toContain("'translate(-100%, -50%)'");
-    expect(board).toContain('top: originY + (boardSize - 1) * cellSize + coordGap,');
+    expect(board).toContain('top: originY + (boardSize - 1) * cellHeight + coordGap,');
     expect(board).toContain("'translate(-50%, 0)'");
     expect(board).not.toContain('coordOffset');
   });

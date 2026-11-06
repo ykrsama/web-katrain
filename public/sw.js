@@ -45,7 +45,6 @@ const PRECACHE_URLS = [
   './tfjs/tfjs-backend-wasm-simd.wasm',
   // The default Sabaki board loads before this worker controls a first visit.
   // Runtime caching cannot recover those requests after the network goes away.
-  './themes/sabaki/board.png',
   './themes/sabaki/stone-black.svg',
   './themes/sabaki/stone-white.svg',
   // Shared markers and graph paper are used under every theme. Other board

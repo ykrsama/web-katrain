@@ -225,7 +225,6 @@ const THEMES: Record<BoardThemeId, BoardThemeConfig> = {
       borderColor: '#8b6914',
       foregroundColor: '#3c392f',
       borderWidth: 0,
-      texture: 'board.png',
     },
     stones: {
       black: {

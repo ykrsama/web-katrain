@@ -3346,7 +3346,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     const centerX = originX + ((Math.min(a.x, b.x) + Math.max(a.x, b.x)) / 2) * cellSize;
     const top = Math.max(cellHeight * 0.9, originY + Math.min(a.y, b.y) * cellHeight - cellHeight * 0.55);
     return { left: centerX, top, text: regionResult.text };
-  }, [cellHeight, originX, originY, regionResult, toDisplay]);
+  }, [cellSize, cellHeight, originX, originY, regionResult, toDisplay]);
 
   const passCircle = useMemo(() => {
     const m = lastMove;
