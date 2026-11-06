@@ -516,7 +516,8 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
         />
         <input
           ref={depthInputRef}
-          type="number"
+          type="text"
+          inputMode="numeric"
           min={ANALYSIS_MIN_VISITS}
           max={ENGINE_MAX_VISITS}
           step={1}

@@ -478,7 +478,7 @@ const GameInfoPanelContent: React.FC = () => {
       <div className="space-y-3 rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3" data-game-info-ai-edit="true">
         <div>
           <div className="text-xs font-semibold text-[var(--ui-text)]">{t('AI bot')}</div>
-          <div className="text-[0.625rem] ui-text-faint">{t('Configure the current game opponent without starting over.')}</div>
+          <div className="text-[0.625rem] ui-text-faint">{t('Configure your opponent and continue from this position.')}</div>
         </div>
         <label className="min-w-0 space-y-1">
           <span className="block text-[0.625rem] font-semibold uppercase tracking-wide ui-text-faint">
@@ -614,7 +614,7 @@ const GameInfoPanelContent: React.FC = () => {
             {aiOpponent === currentPlayer ? (
               <button
                 type="button"
-                className="min-h-9 rounded border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 text-xs font-semibold text-[var(--ui-text)] hover:brightness-110"
+                className="block min-h-9 rounded border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 text-xs font-semibold text-[var(--ui-text)] hover:brightness-110"
                 onClick={() => makeAiMove()}
                 onKeyDown={handleKeyDown}
               >

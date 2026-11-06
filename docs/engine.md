@@ -142,10 +142,29 @@ point at it (`b18c384nbt-humanv0.bin.gz`); the analysis itself always comes from
 the main network, and the human network only adds a `humanPolicy` to the payload,
 which the policy overlay can draw instead of the engine's own policy.
 
+The default is the same-origin `models/b18c384nbt-humanv0.bin.gz`, copied from `public/models/` by the frontend build and published through Git LFS. Pages checkout already enables LFS. The previous official-download default migrates to this path; custom URLs stay unchanged. The file is downloaded only when human policy is used.
+
+In remote mode, the WebSocket client sends the selected profile as
+`overrideSettings.humanSLProfile` and requests `includePolicy: true`. The server
+must start KataGo with `-human-model`; the supplied WebSocket forwarding script
+already does so when `ENABLE_HUMAN_MODEL` is enabled. The browser does not upload
+or fetch its local human weights in this mode, and Settings hides local weight
+controls. The default profile for new settings is `proyear_2020` (Pro, 2020);
+saved profile choices are retained.
+
+Main-model `policy` and human-model `humanPolicy` are read independently, for
+both streaming updates and final results. Illegal moves and pass retain the
+native row-major mapping; human probabilities also populate candidate
+`humanPrior` values. Display-only human policy adds no search-exploration
+settings. Human-style bot play can explicitly request
+`humanSLRootExploreProbWeightless`. Missing or malformed human arrays are not
+replaced with engine probabilities. See KataGo's
+[Human SL analysis guide](https://github.com/lightvector/KataGo/blob/v1.18.2/docs/Analysis_Engine.md#human-sl-analysis-guide).
+
+To validate the full bundled model parser locally, run `ENGINE_TESTS=1 npx vitest run test/humanModelParse.test.ts`. This large-file check remains opt-in.
+
 Profiles follow KataGo's `humanSLProfile` names: `rank_20k` through `rank_9d`,
-`preaz_*` for pre-AlphaGo style, and `proyear_1800` through `proyear_2023`. The
-official download does not send CORS headers, so Settings also accepts a local
-path under `public/models/` or a file loaded from disk for the session.
+`preaz_*` for pre-AlphaGo style, and `proyear_1800` through `proyear_2023`. Settings also accepts a custom model URL or a file loaded from disk for the session.
 
 The report and the move info panel use the same numbers the other way round: how
 often a player of the configured rank plays the move that was actually played, so

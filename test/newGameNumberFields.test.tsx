@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { DraftNumberInput } from '../src/components/DraftNumberInput';
 
 describe('DraftNumberInput', () => {
-  it('renders the owner value as a number field', () => {
+  it('renders the owner value with a numeric keyboard and editable text', () => {
     const html = renderToStaticMarkup(<DraftNumberInput value={30} min={1} onChange={() => undefined} />);
 
-    expect(html).toContain('type="number"');
+    expect(html).toContain('type="text"');
+    expect(html).toContain('inputMode="numeric"');
     expect(html).toContain('value="30"');
     expect(html).toContain('min="1"');
   });

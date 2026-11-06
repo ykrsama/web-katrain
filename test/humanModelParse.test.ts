@@ -3,12 +3,13 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { parseKataGoModelV8 } from '../src/engine/katago/loadModelV8';
+import { KATAGO_HUMAN_MODEL_PATH } from '../src/engine/katago/modelDefaults';
 
-// The human SL net is a ~99MB download, so this only runs when it has been fetched
-// into .external (see docs). It is the only net that exercises the meta encoder.
-const HUMAN_MODEL = path.resolve(__dirname, '../.external/katago-human-model.bin.gz');
+// Parsing the full human net is opt-in; keep normal/deployment tests small.
+const bundled = path.resolve(__dirname, '../public', KATAGO_HUMAN_MODEL_PATH);
+const HUMAN_MODEL = fs.existsSync(bundled) ? bundled : path.resolve(__dirname, '../.external/katago-human-model.bin.gz');
 
-describe.skipIf(!fs.existsSync(HUMAN_MODEL))('human SL model parsing', () => {
+describe.skipIf(process.env.ENGINE_TESTS !== '1' || !fs.existsSync(HUMAN_MODEL))('human SL model parsing', () => {
   it('parses the metadata encoder', () => {
     const raw = zlib.gunzipSync(fs.readFileSync(HUMAN_MODEL));
     const parsed = parseKataGoModelV8(new Uint8Array(raw));

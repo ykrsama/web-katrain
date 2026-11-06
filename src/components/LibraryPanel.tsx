@@ -2696,7 +2696,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                     title={t('Move selected items')}
                     aria-label={t('Move selected items')}
                   >
-                    {t('Move')}
+                    {t('Move selected items')}
                   </button>
                 </div>
               )}

@@ -65,6 +65,7 @@ export interface RemoteMoveInfo {
   scoreSelfplay: number;
   scoreStdev: number;
   prior: number;
+  humanPrior?: number;
   pv: string[];
   order: number;
   /** Per-move ownership (len boardSize*boardSize), +1 black, -1 white. */
@@ -114,6 +115,9 @@ export interface RemoteResponse {
   /** Row-major ownership, in the query's requested black perspective. */
   ownership?: number[];
   ownershipStdev?: number[];
+  /** Full row-major policies, with illegal=-1 and pass at the last index. */
+  policy?: number[];
+  humanPolicy?: number[];
   /** Present when the query failed. */
   error?: string;
   /** Present when the engine has a non-fatal warning. */
@@ -352,6 +356,9 @@ export type RemoteAnalysisOptions = {
   rootPolicyTemperature?: number;
   conservativePass?: boolean;
   fillDameBeforePass?: boolean;
+  /** The server loads its own human model with -human-model; no browser URL is sent. */
+  humanSlProfile?: string;
+  humanSlRootExploreProb?: number;
   regionOfInterest?: RegionOfInterest | null;
   avoidMoves?: Array<{ x: number; y: number; player?: Player; untilDepth?: number }>;
   allowMoves?: Array<{ moves: Array<{ x: number; y: number }>; player?: Player; untilDepth?: number }>;
@@ -400,6 +407,12 @@ export function buildAnalysisQuery(args: {
   }
   if (options.conservativePass !== undefined) overrideSettings.conservativePass = options.conservativePass;
   if (options.fillDameBeforePass !== undefined) overrideSettings.fillDameBeforePass = options.fillDameBeforePass;
+  if (options.humanSlProfile?.trim()) {
+    overrideSettings.humanSLProfile = options.humanSlProfile.trim();
+    if (options.humanSlRootExploreProb !== undefined && Number.isFinite(options.humanSlRootExploreProb)) {
+      overrideSettings.humanSLRootExploreProbWeightless = Math.max(0, Math.min(1, options.humanSlRootExploreProb));
+    }
+  }
 
   const query: RemoteQuery = {
     id,

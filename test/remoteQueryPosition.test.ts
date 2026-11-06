@@ -261,6 +261,22 @@ describe('remote analysis query', () => {
   const position = { initialStones: [['W', 'Q16']] as Array<[string, string]>, moves: [], initialPlayer: 'B' as const };
   const base = { id: 'Q1', position, boardSize: 19, komi: 7.5, rules: 'chinese' as const };
 
+  it('requests human policy from the server without sending a browser model path or changing display-only search settings', () => {
+    const regular = buildAnalysisQuery({ ...base, options: { visits: 400 } });
+    const human = buildAnalysisQuery({ ...base, options: { visits: 400, humanSlProfile: 'rank_4k' } });
+    expect(human).toEqual({ ...regular, overrideSettings: { ...regular.overrideSettings, humanSLProfile: 'rank_4k' } });
+    expect(human.includePolicy).toBe(true);
+    expect(human).not.toHaveProperty('humanModelUrl');
+    expect(human).not.toHaveProperty('humanSlProfile');
+    expect(regular.overrideSettings).not.toHaveProperty('humanSLProfile');
+  });
+
+  it('only changes human exploration when explicitly requested for human-style play', () => {
+    const query = buildAnalysisQuery({ ...base, options: { humanSlProfile: 'rank_1d', humanSlRootExploreProb: 0.8 } });
+    expect(query.overrideSettings).toMatchObject({ humanSLProfile: 'rank_1d', humanSLRootExploreProbWeightless: 0.8 });
+    expect(buildAnalysisQuery({ ...base, options: { humanSlRootExploreProb: 0.8 } }).overrideSettings).not.toHaveProperty('humanSLRootExploreProbWeightless');
+  });
+
   it('sends search settings as override settings, not top-level query fields', () => {
     // KataGo reported maxTime/wideRootNoise/conservativePass/fillDameBeforePass
     // as "Unexpected or unused field" at the top level and ignored them, so the

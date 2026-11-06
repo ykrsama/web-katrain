@@ -2728,6 +2728,7 @@ export const Layout: React.FC = () => {
     setIsGameAnalysisOpen,
     setIsTsumegoFrameOpen,
     setIsGameReportOpen,
+    setIsBlindfoldOpen,
     setViewMenuOpen,
     setMenuOpen,
     setIsCommandPaletteOpen,
@@ -3418,6 +3419,7 @@ export const Layout: React.FC = () => {
       },
       {
         id: 'blindfold',
+        shortcutId: 'blindfold-modal',
         label: t('Blindfold training'),
         category: t('Study'),
         run: () => openSimpleModal(() => setIsBlindfoldOpen(true)),

@@ -245,7 +245,7 @@ export default {
   'Edit': '编辑',
   'No metadata yet': '暂无元数据',
   'AI bot': 'AI 机器人',
-  'Configure the current game opponent without starting over.': '配置当前对局的对手，无需重新开始。',
+  'Configure your opponent and continue from this position.': '配置对手，从当前局面继续',
   'AI is to move now.': '现在轮到 AI 落子。',
   'Full per-strategy parameters remain available in Settings → AI/Engine.':
     '每种策略的完整参数仍可在“设置 → AI/引擎”中调整。',

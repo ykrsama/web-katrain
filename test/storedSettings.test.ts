@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { KATAGO_HUMAN_MODEL_DOWNLOAD_URL, KATAGO_HUMAN_MODEL_URL } from '../src/engine/katago/modelDefaults';
 import { normalizeStoredSettings } from '../src/store/gameStore';
 
 /**
@@ -69,6 +70,12 @@ describe('normalizeStoredSettings', () => {
   it('forgets an uploaded model whose blob URL died with the page', () => {
     expect('humanSlModelUrl' in normalizeStoredSettings({ humanSlModelUrl: 'blob:http://x/y' })!).toBe(false);
     expect('katagoModelUrl' in normalizeStoredSettings({ katagoModelUrl: 42 })!).toBe(false);
+  });
+
+  it('migrates the old human model default while preserving a custom host', () => {
+    expect(normalizeStoredSettings({ humanSlModelUrl: KATAGO_HUMAN_MODEL_DOWNLOAD_URL })?.humanSlModelUrl).toBe(KATAGO_HUMAN_MODEL_URL);
+    const custom = 'https://models.example/my-human.bin.gz';
+    expect(normalizeStoredSettings({ humanSlModelUrl: custom })?.humanSlModelUrl).toBe(custom);
   });
 
   it('survives the shapes a corrupt entry actually takes', () => {

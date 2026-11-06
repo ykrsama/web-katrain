@@ -33,6 +33,28 @@ function buildPolicy(moveInfos: RemoteMoveInfo[], boardSize: number): number[] {
   return policy;
 }
 
+function readPolicy(values: unknown, boardSize: number): Float32Array | undefined {
+  if (!Array.isArray(values) || values.length !== boardSize * boardSize + 1 ||
+    !values.every(value => typeof value === 'number' && Number.isFinite(value) && (value === -1 || (value >= 0 && value <= 1)))) return undefined;
+  return new Float32Array(values);
+}
+
+function humanPrior(move: RemoteMoveInfo, policy: Float32Array | undefined, boardSize: number): number | undefined {
+  if (Number.isFinite(move.humanPrior) && move.humanPrior! >= 0 && move.humanPrior! <= 1) return move.humanPrior;
+  if (!policy) return undefined;
+  const point = /^([A-HJ-T])([1-9]\d?)$/.exec(move.move.trim().toUpperCase());
+  let index: number;
+  if (move.move.trim().toLowerCase() === 'pass') index = boardSize * boardSize;
+  else if (point) {
+    const x = point[1]!.charCodeAt(0) - 65 - (point[1]! > 'I' ? 1 : 0);
+    const y = boardSize - Number(point[2]);
+    if (x < 0 || x >= boardSize || y < 0 || y >= boardSize) return undefined;
+    index = y * boardSize + x;
+  } else return undefined;
+  const prior = policy[index];
+  return prior !== undefined && prior >= 0 ? prior : undefined;
+}
+
 // ─── Client ───────────────────────────────────────────────────────────────
 
 export class KataGoCanceledError extends Error {
@@ -745,7 +767,8 @@ class RemoteEngineClient {
     const ownershipStdev = resp.ownershipStdev?.length === boardSize * boardSize
       ? new Float32Array(resp.ownershipStdev)
       : new Float32Array(boardSize * boardSize);
-    const policy = buildPolicy(mi, boardSize);
+    const policy = readPolicy(resp.policy, boardSize) ?? buildPolicy(mi, boardSize);
+    const humanPolicy = readPolicy(resp.humanPolicy, boardSize);
 
     const moves = mi.map((m, idx) => ({
       x: (() => {
@@ -781,7 +804,7 @@ class RemoteEngineClient {
       utilityLcb: m.utilityLcb,
       playSelectionValue: m.playSelectionValue,
       utility: m.utility,
-      humanPrior: undefined,
+      humanPrior: humanPrior(m, humanPolicy, boardSize),
       ownership: m.ownership,
     }));
 
@@ -802,6 +825,7 @@ class RemoteEngineClient {
       ownership,
       ownershipStdev,
       policy,
+      humanPolicy,
       moves,
     };
   }

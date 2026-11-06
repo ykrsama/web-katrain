@@ -1,6 +1,7 @@
 // Chinese (Simplified) translations for settings-related UI strings.
 // Source files: SettingsModal.tsx, ShortcutSettingsPanel.tsx, KeyboardHelpModal.tsx
 export default {
+  'The remote engine predicts human moves for the selected player profile.': '按所选棋力显示人类走法，由远程引擎计算。',
   // ── SettingsModal.tsx ─────────────────────────────────────────────────────
   'Settings': '设置',
   'Close settings': '关闭设置',
@@ -23,7 +24,7 @@ export default {
   'Next Move Preview': '下一步走法预览',
   'Show Move Numbers': '显示走法序号',
   'Show Board Controls': '显示棋盘控件',
-  'Fuzzy Stone Placement': '模糊落子位置',
+  'Fuzzy Stone Placement': '随机落子位置偏移',
   'Sets stones slightly off-center, fixed once played.': '将棋子略微偏离中心摆放，落子后固定。',
   'Board Theme': '棋盘主题',
   'Board theme {label}': '棋盘主题 {label}',

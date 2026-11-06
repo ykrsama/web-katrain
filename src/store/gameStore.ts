@@ -12,7 +12,7 @@ import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { clampAnalysisVisits } from '../utils/visitPresets';
 import { DEFAULT_EVAL_THRESHOLDS } from '../utils/nodeAnalysis';
-import { KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
+import { KATAGO_HUMAN_MODEL_DOWNLOAD_URL, KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMMENDED_MODEL_URL, KATAGO_SMALL_MODEL_PATH } from '../engine/katago/modelDefaults';
 import { KATAGO_HUMAN_PROFILE_DEFAULT } from '../engine/katago/searchParams';
 import { decodeKaTrainKt, kaTrainAnalysisToAnalysisResult } from '../utils/katrainSgfAnalysis';
 import { decodeKayaKa } from '../utils/kayaSgfAnalysis';
@@ -504,6 +504,8 @@ export function normalizeStoredSettings(
       const stored = (parsed as { humanSlModelUrl?: unknown }).humanSlModelUrl;
       if (typeof stored !== 'string' || /^blob:/i.test(stored.trim())) {
         delete (parsed as { humanSlModelUrl?: unknown }).humanSlModelUrl;
+      } else if (stored.trim() === KATAGO_HUMAN_MODEL_DOWNLOAD_URL) {
+        (parsed as { humanSlModelUrl: string }).humanSlModelUrl = KATAGO_HUMAN_MODEL_URL;
       }
     }
     if ('katagoModelUrl' in parsed) {
@@ -5763,7 +5765,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
         const nnRandomize = false;
         const conservativePass = state.settings.katagoConservativePass;
         const aiNeedsMovesOwnership = state.settings.aiStrategy === 'simple' || state.settings.aiStrategy === 'settle';
-        const aiWantsHumanPolicy = state.settings.aiStrategy === 'human' && !!state.settings.humanSlModelUrl;
+        const aiWantsHumanPolicy = state.settings.aiStrategy === 'human' && (isRemoteEngine(state.settings) || !!state.settings.humanSlModelUrl);
         // KataHandicap: read the position as if one side had more search, which
         // is what makes a strong bot keep pressing in a handicap game instead of
         // trading down into a quiet, already-decided endgame.

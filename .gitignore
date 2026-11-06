@@ -23,6 +23,7 @@ __pycache__/
 public/models/*.bin.gz
 public/models/*.txt.gz
 !public/models/katago-small.bin.gz
+!public/models/b18c384nbt-humanv0.bin.gz
 public/tfjs/*.wasm
 
 # Editor directories and files

@@ -119,6 +119,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: 'keyboard-help', category: 'Modals', label: 'Keyboard shortcuts', defaultBindings: [{ key: '?' }] },
   { id: 'game-analysis-modal', category: 'Modals', label: 'Game re-analysis', defaultBindings: [{ key: 'F2' }] },
   { id: 'game-report-modal', category: 'Modals', label: 'Game report', defaultBindings: [{ key: 'F3' }] },
+  { id: 'blindfold-modal', category: 'Modals', label: 'Blindfold training', defaultBindings: [{ key: 'F9' }] },
   { id: 'tsumego-frame-modal', category: 'Modals', label: 'Frame as tsumego', defaultBindings: [{ key: 'F10' }] },
   { id: 'settings-modal', category: 'Modals', label: 'Settings', defaultBindings: [{ key: ',', ctrl: true }, { key: 'F8' }] },
   { id: 'escape', category: 'Modals', label: 'Close / cancel', defaultBindings: [{ key: 'Escape' }] },

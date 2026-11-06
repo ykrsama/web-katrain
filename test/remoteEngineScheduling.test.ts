@@ -83,6 +83,49 @@ afterEach(() => {
 });
 
 describe('remote engine scheduling', () => {
+  it.each([9, 13, 19])('keeps normal analysis and full human probabilities separate on a %s board, including streaming and pass', async size => {
+    const client = getRemoteEngineClient('ws://fake.invalid/katago');
+    const progress: unknown[] = [];
+    const promise = client.analyze(baseArgs({ board: emptyBoard(size), currentPlayer: 'white', humanSlProfile: 'rank_4k', humanModelUrl: '/browser-only-human.bin.gz', onProgress: (value: unknown) => progress.push(value) }));
+    await flush();
+    const socket = FakeSocket.instances.at(-1)!;
+    const query = socket.queries().at(-1)!;
+    expect(query.overrideSettings).toMatchObject({ humanSLProfile: 'rank_4k' });
+    expect(JSON.stringify(query)).not.toContain('browser-only-human');
+    const policy = new Array(size * size + 1).fill(0);
+    const humanPolicy = [...policy];
+    policy[1] = 0.75; policy[size * size] = 0.25;
+    humanPolicy[1] = 0.2; humanPolicy[2] = 0.3; humanPolicy[size * size] = 0.5; humanPolicy[0] = -1;
+    const info = { visits: 10, winrate: 0.6, scoreLead: 2, scoreSelfplay: 2, scoreStdev: 1, prior: 0.75, pv: [], order: 0 };
+    const response = { ...analysisReply(query.id as string), policy, humanPolicy,
+      moveInfos: [{ ...info, move: `B${size}` }, { ...info, move: 'pass', order: 1, prior: 0.25 }] };
+    socket.reply({ ...response, isDuringSearch: true });
+    await flush();
+    expect(progress).toHaveLength(1);
+    socket.reply(response);
+    const result = await promise;
+    expect(result.policy[1]).toBeCloseTo(0.75);
+    expect(result.humanPolicy?.[1]).toBeCloseTo(0.2);
+    expect(result.humanPolicy?.[2]).toBeCloseTo(0.3); // A legal human move outside the engine's reported candidates.
+    expect(result.humanPolicy?.[0]).toBe(-1);
+    expect(result.moves[0]?.humanPrior).toBeCloseTo(0.2);
+    expect(result.moves[1]?.humanPrior).toBeCloseTo(0.5);
+    expect(result.rootWinRate).toBe(0.5);
+    expect(result.rootScoreLead).toBe(0);
+  });
+
+  it('continues normal analysis when a server omits or sends malformed human policy, without labelling engine policy as human', async () => {
+    const client = getRemoteEngineClient('ws://fake.invalid/katago');
+    for (const humanPolicy of [undefined, [0.5], new Array(362).fill('bad'), new Array(362).fill(-0.2)]) {
+      const promise = client.analyze(baseArgs({ humanSlProfile: 'rank_4k' }));
+      await flush();
+      const socket = FakeSocket.instances.at(-1)!;
+      const query = socket.queries().at(-1)!;
+      socket.reply({ ...analysisReply(query.id as string), humanPolicy });
+      expect((await promise).humanPolicy).toBeUndefined();
+    }
+  });
+
   it('sends the queue priority with the query so the engine can rank it', async () => {
     const client = getRemoteEngineClient('ws://fake.invalid/katago');
     const promise = client.analyze(baseArgs({ priority: 1000 }));

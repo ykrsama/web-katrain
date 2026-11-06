@@ -9,4 +9,4 @@ export const KATAGO_HUMAN_PROFILES: string[] = [
   'preaz_5k', 'preaz_1d', 'preaz_9d',
   'proyear_1900', 'proyear_1950', 'proyear_1980', 'proyear_2000', 'proyear_2020',
 ];
-export const KATAGO_HUMAN_PROFILE_DEFAULT = 'rank_5k';
+export const KATAGO_HUMAN_PROFILE_DEFAULT = 'proyear_2020';

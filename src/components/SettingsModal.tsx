@@ -772,7 +772,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                         <div className={rowClass}>
                                             <div>
                                                 <label htmlFor="settings-fuzzy-stone-placement" className={labelClass}>{t('Fuzzy Stone Placement')}</label>
-                                                <p className={subtextClass}>{t('Sets stones slightly off-center, fixed once played.')}</p>
                                             </div>
                                             <input
                                                 id="settings-fuzzy-stone-placement"
@@ -2213,7 +2212,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                             />
                                         </div>
                                         <p className={subtextClass}>
-                                            {t('KataGo’s human network predicts the move a player of a given rank would make, rather than the best move. It is a second set of weights ({size}) downloaded on first use, and it never changes the analysis itself.', { size: KATAGO_HUMAN_MODEL_SIZE })}
+                                            {isRemoteEngine ? t('The remote engine predicts human moves for the selected player profile.') : t('KataGo’s human network predicts the move a player of a given rank would make, rather than the best move. It is a second set of weights ({size}) downloaded on first use, and it never changes the analysis itself.', { size: KATAGO_HUMAN_MODEL_SIZE })}
                                         </p>
 
                                         {settings.humanSlEnabled || settings.aiStrategy === 'human' ? (
@@ -2279,7 +2278,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                                     </select>
                                                 </div>
 
-                                                <div className="space-y-2">
+                                                {!isRemoteEngine && <div className="space-y-2">
                                                     <label htmlFor="settings-human-sl-url" className="text-[var(--ui-text-muted)] block">
                                                         {t('Human model URL')}
                                                     </label>
@@ -2291,9 +2290,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                                         className={`${inputClass} text-xs`}
                                                         placeholder={KATAGO_HUMAN_MODEL_URL}
                                                     />
-                                                    <p className={subtextClass}>
-                                                        {t('The official download does not allow cross-origin fetches, so either host the file yourself, put it under {path}, or load it from disk below.', { path: publicUrl('models/') })}
-                                                    </p>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <button
                                                             type="button"
@@ -2323,7 +2319,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                                     {humanModelError ? (
                                                         <p className="text-xs text-[var(--ui-danger,#ef4444)]">{humanModelError}</p>
                                                     ) : null}
-                                                </div>
+                                                </div>}
                                             </>
                                         ) : null}
                                     </div>

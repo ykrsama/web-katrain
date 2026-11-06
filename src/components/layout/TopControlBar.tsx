@@ -89,6 +89,7 @@ const TOP_CONTROL_SHORTCUT_IDS = [
   'game-analysis-modal',
   'game-report-modal',
   'tsumego-frame-modal',
+  'blindfold-modal',
 ] as const;
 
 type TopControlShortcutId = (typeof TOP_CONTROL_SHORTCUT_IDS)[number];
@@ -478,7 +479,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           className="mobile-tools-redundant w-full px-3 py-2 text-left hover:bg-[var(--ui-surface-2)] flex items-center justify-between"
           onClick={() => { onBlindfold(); closeViewMenu(); }}
         >
-          <span className="flex items-center gap-2"><FaAssistiveListeningSystems /> {t('Blindfold training')}</span>
+          <span className="flex items-center gap-2"><FaAssistiveListeningSystems /> {t('Blindfold training')}</span><span className="text-xs ui-text-faint">{shortcutLabels['blindfold-modal']}</span>
         </button>
         <div className="mobile-tools-redundant h-px bg-[var(--ui-border)] w-full" />
         {viewToggleRow({
@@ -605,7 +606,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
           <button type="button" className={mobileToolsGridBtn} onClick={() => { onBlindfold(); closeMobileToolsAfterAction(); }}>
             <FaAssistiveListeningSystems size={18} className="text-[var(--ui-text-muted)]" />
             <span className="text-sm font-medium">{t('Blindfold training')}</span>
-            <span className="text-[0.6875rem] ui-text-faint">{t('Blindfold mode')}</span>
+            <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['blindfold-modal']}</span>
           </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { analyzeExtra('equalize'); closeMobileToolsAfterAction(); }}>
             <FaBalanceScale size={18} className="text-[var(--ui-text-muted)]" />

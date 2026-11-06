@@ -29,9 +29,12 @@ import { GameInfoPanel } from '../GameInfoPanel';
 import { FoxLiveStatus } from '../FoxLiveStatus';
 import { formatReadableScoreLead, formatWinRateFavorLabel, POINTS_LOST_EXPLANATION } from '../../utils/analysisSummary';
 import { useT } from '../../i18n';
+import { useShortcutLabels } from '../../hooks/useShortcutLabels';
 import { readLocalStorage, removeLocalStorage, writeLocalStorage } from '../../utils/storage';
 import { getResizeObserverConstructor } from '../../utils/resizeObserver';
 import { useDocumentFlag } from '../../hooks/useDocumentFlag';
+
+const BLINDFOLD_SHORTCUT_IDS = ['blindfold-modal'] as const;
 
 type EngineState = 'ready' | 'running' | 'loading' | 'error';
 
@@ -278,6 +281,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     toast, headerNotification,
   } = props;
   const t = useT();
+  const blindfoldShortcut = useShortcutLabels(BLINDFOLD_SHORTCUT_IDS)['blindfold-modal'];
   const rulesLabel = formatRulesLabel(rules);
 
   // Game info starts closed: the gamestrip already carries the summary, so this
@@ -627,7 +631,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
           <button type="button" className="iconbtn" title={t('New game')} aria-label={t('New game')} onClick={onNewGame}><Icon name="plus" /></button>
           <button type="button" className="iconbtn" title={t('Open game, board photo, or model weights')} aria-label={t('Open game, board photo, or model weights')} onClick={onLoadSgf}><Icon name="folder" /></button>
           <button type="button" className="iconbtn" title={t('Save SGF')} aria-label={t('Save SGF')} onClick={onSaveSgf}><Icon name="save" /></button>
-          <button type="button" className="iconbtn" title={t('Blindfold training')} aria-label={t('Blindfold training')} onClick={onBlindfold}><Icon name="ear" /></button>
+          <button type="button" className="iconbtn" title={`${t('Blindfold training')} (${blindfoldShortcut})`} aria-label={t('Blindfold training')} onClick={onBlindfold}><Icon name="ear" /></button>
           <button
             type="button"
             className={`iconbtn${pop?.id === 'file' ? ' active' : ''}`}

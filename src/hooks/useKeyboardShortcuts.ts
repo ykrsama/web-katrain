@@ -23,6 +23,7 @@ interface UseKeyboardShortcutsOptions {
   setIsGameAnalysisOpen: (v: boolean) => void;
   setIsGameReportOpen: (v: boolean) => void;
   setIsTsumegoFrameOpen: (v: boolean) => void;
+  setIsBlindfoldOpen: (v: boolean) => void;
   setViewMenuOpen: (v: boolean) => void;
   setMenuOpen: (v: boolean) => void;
   setIsCommandPaletteOpen: (v: boolean) => void;
@@ -50,6 +51,7 @@ export function useKeyboardShortcuts({
   setIsGameAnalysisOpen,
   setIsGameReportOpen,
   setIsTsumegoFrameOpen,
+  setIsBlindfoldOpen,
   setViewMenuOpen,
   setMenuOpen,
   setIsCommandPaletteOpen,
@@ -568,6 +570,11 @@ export function useKeyboardShortcuts({
         setIsGameReportOpen(true);
         return;
       }
+      if (matches('blindfold-modal')) {
+        e.preventDefault();
+        setIsBlindfoldOpen(true);
+        return;
+      }
       if (matches('tsumego-frame-modal')) {
         e.preventDefault();
         setIsTsumegoFrameOpen(true);
@@ -635,6 +642,7 @@ export function useKeyboardShortcuts({
     setIsGameAnalysisOpen,
     setIsGameReportOpen,
     setIsTsumegoFrameOpen,
+    setIsBlindfoldOpen,
       setViewMenuOpen,
     setMenuOpen,
     setIsCommandPaletteOpen,

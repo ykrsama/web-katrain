@@ -6,7 +6,8 @@ type DraftNumberInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, '
 
 /**
  * A number field whose owner clamps on change, without the clamp fighting the
- * typing.
+ * typing. Text with a numeric keyboard avoids mobile number controls
+ * rewriting incomplete or out-of-range input before editing is finished.
  *
  * Writing the clamped number straight back into the field rewrote it under
  * the cursor: clearing it to type 60 made it the minimum 1 at once, and the
@@ -15,12 +16,13 @@ type DraftNumberInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, '
  * typed while it has focus, the owner hears each complete number (it still
  * clamps them), and on blur the field shows the owner's value again.
  */
-export const DraftNumberInput: React.FC<DraftNumberInputProps> = ({ value, onChange, onBlur, ...rest }) => {
+export const DraftNumberInput: React.FC<DraftNumberInputProps> = ({ value, onChange, onBlur, inputMode, ...rest }) => {
   const [draft, setDraft] = React.useState<string | null>(null);
   return (
     <input
       {...rest}
-      type="number"
+      type="text"
+      inputMode={inputMode ?? (Number(rest.min) < 0 ? 'text' : rest.step === undefined || rest.step === 1 ? 'numeric' : 'decimal')}
       value={draft ?? value}
       onChange={(event) => {
         const raw = event.target.value;
