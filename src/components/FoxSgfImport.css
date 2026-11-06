@@ -24,11 +24,11 @@
 .fox-import-dialog button:disabled { opacity: .45; cursor: default; }
 .fox-import-dialog :is(button, input, select, a):focus-visible, .fox-live-status button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .fox-import-dialog input::placeholder { color: var(--ui-text-faint); opacity: 1; }
-.fox-import-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.fox-import-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 7px; }
 .fox-search-field { position: relative; min-width: 0; }
 .fox-search-input { display: flex; }
 .fox-search-input input { width: 100%; }
-.fox-search-history { position: absolute; top: calc(100% + 5px); inset-inline: 0; z-index: 5; padding: 6px; background: var(--ui-panel); border: 1px solid var(--ui-border-strong); border-radius: 9px; box-shadow: 0 8px 24px #0003; }
+.fox-search-history { margin-top: 5px; padding: 6px; background: var(--ui-panel); border: 1px solid var(--ui-border-strong); border-radius: 9px; box-shadow: 0 8px 24px #0003; }
 .fox-search-history > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; color: var(--ui-text-muted); font-size: 12px; }
 .fox-search-history ul { list-style: none; padding: 0; margin: 4px 0 0; max-height: 200px; overflow-y: auto; }
 .fox-search-history li { display: flex; }
