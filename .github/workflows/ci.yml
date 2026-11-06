@@ -36,6 +36,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Fetch test model
+        run: git lfs pull --include="public/models/katago-small.bin.gz" --exclude=""
+
       # Matches deploy-pages.yml. They used to differ -- 20 here, 24 there -- so
       # a pull request was verified on one major and the thing that actually
       # ships was built on another. A change that works on 20 and breaks on 24
@@ -82,6 +85,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Fetch test model
+        run: git lfs pull --include="public/models/katago-small.bin.gz" --exclude=""
 
       - name: Setup Node
         uses: actions/setup-node@v6

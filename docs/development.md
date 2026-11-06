@@ -4,6 +4,7 @@
 
 - Node.js 24 or newer.
 - npm.
+- Git LFS for the checked-in model weights (`git lfs pull`).
 - Chrome if you want to run the viewport smoke test.
 
 Install dependencies once:
