@@ -202,7 +202,7 @@ export default {
   'Remote Server': '远程服务器',
   'Connect to a remote KataGo server via WebSocket.': '通过 WebSocket 连接远程 KataGo 服务器。',
   'Remote Engine URL': '远程引擎 URL',
-  'ws://hostname:port/katago or /katago-proxy': 'ws://hostname:port/katago 或 /katago-proxy',
+  'wss://host/katago/<token> or /katago-proxy': 'wss://host/katago/<token> 或 /katago-proxy',
   'WebSocket URL of a remote KataGo analysis engine. Use {ws} or {wss} for direct connections, or a path like {proxy} for same-origin proxy connections.': '远程 KataGo 分析引擎的 WebSocket URL。直连使用 {ws} 或 {wss}，同源代理连接可使用 {proxy} 之类的路径。',
   'KataGo': 'KataGo',
   'Model URL': '模型 URL',

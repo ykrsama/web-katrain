@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   /** Fox API origin, e.g. https://web-katrain-fox.example.workers.dev. */
   readonly VITE_FOX_API_BASE_URL?: string;
-  /** Remote engine base URL or full WebSocket endpoint; HTTPS deployments need wss://. */
+  /** Full remote WebSocket endpoint, e.g. wss://host/katago/<token>; HTTPS deployments need wss://. */
   readonly VITE_KATAGO_WS_URL?: string;
   /** Build-time override for `ENGINE_MAX_VISITS`; see `src/engine/katago/limits.ts`. */
   readonly VITE_KATAGO_MAX_VISITS?: string;

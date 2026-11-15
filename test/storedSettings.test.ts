@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KATAGO_HUMAN_MODEL_DOWNLOAD_URL, KATAGO_HUMAN_MODEL_URL } from '../src/engine/katago/modelDefaults';
+import { getDefaultRemoteEngineUrl } from '../src/engine/remote/defaults';
 import { normalizeStoredSettings } from '../src/store/gameStore';
 
 /**
@@ -76,6 +77,44 @@ describe('normalizeStoredSettings', () => {
     expect(normalizeStoredSettings({ humanSlModelUrl: KATAGO_HUMAN_MODEL_DOWNLOAD_URL })?.humanSlModelUrl).toBe(KATAGO_HUMAN_MODEL_URL);
     const custom = 'https://models.example/my-human.bin.gz';
     expect(normalizeStoredSettings({ humanSlModelUrl: custom })?.humanSlModelUrl).toBe(custom);
+  });
+
+  describe('remote engine endpoint', () => {
+    const deployedDefault = getDefaultRemoteEngineUrl();
+
+    it.each([
+      '/katago-proxy',
+      'wss://engine.example/katago',
+      'wss://engine.example',
+      'ws://127.0.0.1:8000',
+    ])('moves a pre-upgrade endpoint saved as %s onto the deployed default', (remoteEngineUrl) => {
+      expect(normalizeStoredSettings({ remoteEngineUrl })?.remoteEngineUrl).toBe(deployedDefault);
+      expect(normalizeStoredSettings({ remoteEngineUrl, settingsRevision: 1 })?.remoteEngineUrl)
+        .toBe(deployedDefault);
+    });
+
+    it('keeps the one-click private link', () => {
+      const privateLink = 'wss://katago.ykrsama.org/katago/ZehuKDD2_BgGHB3wg9piFyvyG6A614zsCQmoiozoJxg';
+      expect(normalizeStoredSettings({ remoteEngineUrl: privateLink })?.remoteEngineUrl).toBe(privateLink);
+      expect(normalizeStoredSettings({ remoteEngineUrl: privateLink, settingsRevision: 1 })?.remoteEngineUrl)
+        .toBe(privateLink);
+      // Any working private link has the new shape; the deployed host is not
+      // special-cased.
+      const otherLink = 'wss://engine.example/katago/another-token';
+      expect(normalizeStoredSettings({ remoteEngineUrl: otherLink })?.remoteEngineUrl).toBe(otherLink);
+    });
+
+    it('keeps an endpoint the player entered after the upgrade', () => {
+      // Once a save carries the current revision, an old-looking endpoint is a
+      // choice, not leftover state.
+      const laterChoice = 'wss://my.server/katago';
+      expect(normalizeStoredSettings({ remoteEngineUrl: laterChoice, settingsRevision: 2 })?.remoteEngineUrl)
+        .toBe(laterChoice);
+    });
+
+    it('drops an endpoint that is not a string', () => {
+      expect(normalizeStoredSettings({ remoteEngineUrl: 42 })).not.toHaveProperty('remoteEngineUrl');
+    });
   });
 
   it('survives the shapes a corrupt entry actually takes', () => {

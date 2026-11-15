@@ -2382,7 +2382,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                                 value={settings.remoteEngineUrl}
                                                 onChange={(e) => updateSettings({ remoteEngineUrl: e.target.value })}
                                                 className={`${inputClass} text-xs`}
-                                                placeholder={t('ws://hostname:port/katago or /katago-proxy')}
+                                                placeholder={t('wss://host/katago/<token> or /katago-proxy')}
                                             />
                                             <p className={subtextClass}>
                                                 {t('WebSocket URL of a remote KataGo analysis engine. Use {ws} or {wss} for direct connections, or a path like {proxy} for same-origin proxy connections.', {

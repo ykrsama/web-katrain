@@ -269,13 +269,15 @@ uses all three, the way KaTrain does:
   closed explicitly, since the browser counts sockets it has not reclaimed yet.
   A reconnect re-sends the queries the dropped socket was carrying, which is
   what keeps a blip from failing a whole game review.
-- One client per configured URL. A relative proxy path (`/katago-proxy`) is
-  resolved against the origin when the client is constructed, so the resolved
-  URL is not the string the caller passed; comparing the resolved form against
-  the configured one made every lookup look like a different server, and each
-  analysis disposed the client — closing the socket the previous analysis was
-  using — and reconnected. That is what filled Chrome's WebSocket budget
-  ("Connection failed: Insufficient resources") on a whole-game review.
+- One client per configured URL. The URL a one-click server prints
+  (`wss://host/katago/<token>`) is used unchanged: the token is part of the
+  path. A relative proxy path (`/katago-proxy`) is resolved against the origin
+  when the client is constructed, so the resolved URL is not the string the
+  caller passed; comparing the resolved form against the configured one made
+  every lookup look like a different server, and each analysis disposed the
+  client — closing the socket the previous analysis was using — and reconnected.
+  That is what filled Chrome's WebSocket budget ("Connection failed:
+  Insufficient resources") on a whole-game review.
 
 Sweep and equalize follow KaTrain's `refine_move`: on the remote engine they ask
 for one query per candidate, each searching the position *after* that move

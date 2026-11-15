@@ -47,7 +47,10 @@ jobs:
 
       - name: Build
         env:
-          VITE_KATAGO_WS_URL: ${{ secrets.VITE_KATAGO_WS_URL }}
+          # A full one-click private link. The fallback keeps deployments that
+          # never set the secret on the shared server; a secret still wins, so
+          # it can be changed later to any other working endpoint.
+          VITE_KATAGO_WS_URL: ${{ secrets.VITE_KATAGO_WS_URL || 'wss://katago.ykrsama.org/katago/ZehuKDD2_BgGHB3wg9piFyvyG6A614zsCQmoiozoJxg' }}
           VITE_FOX_API_BASE_URL: ${{ vars.VITE_FOX_API_BASE_URL }}
         run: npm run build
 

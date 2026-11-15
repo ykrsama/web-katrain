@@ -2,8 +2,10 @@
  * Remote KataGo Analysis Engine — WebSocket client.
  *
  * Connects to a remote KataGo server that speaks the same JSON-line protocol
- * KataGo uses over stdin/stdout.  See katrain/core/remote_engine.py for the
- * Python reference implementation.
+ * KataGo uses over stdin/stdout.  A KataGo Remote One-Click bridge is the
+ * reference endpoint: its private link is `wss://host/katago/<token>`, and the
+ * token is part of the path.
+ * See https://github.com/ykrsama/katago-remote-one-click
  */
 
 import type { KataGoAnalysisPayload } from '../katago/types';
@@ -92,7 +94,7 @@ type PendingEvalBatch = {
  * WebSocket-based remote KataGo engine client.
  *
  * Usage:
- *   const client = new RemoteEngineClient("ws://host:port/katago");
+ *   const client = new RemoteEngineClient("wss://host/katago/<private-token>");
  *   await client.init();  // establishes the WebSocket
  *   const analysis = await client.analyze({ ... });
  */

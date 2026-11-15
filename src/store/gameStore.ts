@@ -7,7 +7,7 @@ import { playStoneSound, playCaptureSound, playPassSound, playNewGameSound, play
 import { coordinateToSgf, expandSgfPointList, extractKaTrainUserNoteFromSgfComment, formatSgfDate, type ParsedSgf } from '../utils/sgf';
 import { isKataGoCanceledError } from '../engine/katago/client';
 import { engineCanExtendSearch, getEngineClient, isRemoteEngine } from '../engine/client';
-import { getDefaultRemoteEngineUrl, REMOTE_ENGINE_PROXY_PATH } from '../engine/remote/defaults';
+import { getDefaultRemoteEngineUrl, hasRemoteEngineTokenPath } from '../engine/remote/defaults';
 import type { KataGoAnalysisPayload } from '../engine/katago/types';
 import { ENGINE_MAX_TIME_MS, ENGINE_MAX_VISITS } from '../engine/katago/limits';
 import { clampAnalysisVisits } from '../utils/visitPresets';
@@ -410,7 +410,14 @@ const OLD_DEFAULT_KATAGO_VISITS = 500;
  * on every reload. Settings saved since carry this, and keep their 500.
  */
 const SETTINGS_REVISION_FIELD = 'settingsRevision';
-const SETTINGS_REVISION = 1;
+/**
+ * Revision 2 replaced the old `.../katago` remote endpoint with the one-click
+ * private link, `.../katago/<token>`. Bump the current revision for later
+ * settings changes; keep the migration threshold separate so those changes
+ * never rewrite an endpoint saved since.
+ */
+const SETTINGS_REVISION = 2;
+const REMOTE_ENGINE_TOKEN_REVISION = 2;
 export const DEFAULT_KATAGO_VISITS = 5000;
 
 const normalizeModelUrl = (value: unknown): string | null => {
@@ -495,9 +502,6 @@ export function normalizeStoredSettings(
     // An array is an object as far as typeof is concerned, and spreading one
     // over the defaults would put numeric keys into the settings.
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    if ((parsed as Record<string, unknown>).remoteEngineUrl === REMOTE_ENGINE_PROXY_PATH) {
-      (parsed as Record<string, unknown>).remoteEngineUrl = getDefaultRemoteEngineUrl();
-    }
     // An uploaded human net lives in a blob: URL that dies with the page, so a
     // stored one would only produce a failing fetch on the next load.
     if ('humanSlModelUrl' in parsed) {
@@ -530,6 +534,21 @@ export function normalizeStoredSettings(
     const revision = (parsed as Record<string, unknown>)[SETTINGS_REVISION_FIELD];
     delete (parsed as Record<string, unknown>)[SETTINGS_REVISION_FIELD];
     const savedBeforeRevisions = typeof revision !== 'number';
+    if ('remoteEngineUrl' in parsed) {
+      const stored = (parsed as { remoteEngineUrl?: unknown }).remoteEngineUrl;
+      // `.../katago` was the old endpoint and `/katago-proxy` the old default;
+      // neither reaches the one-click bridge, whose token is part of the path.
+      // Only settings written before this revision are moved onto the deployed
+      // default, so an endpoint the player picks afterwards is left alone.
+      if (typeof stored !== 'string') {
+        delete (parsed as { remoteEngineUrl?: unknown }).remoteEngineUrl;
+      } else if (
+        !hasRemoteEngineTokenPath(stored) &&
+        (savedBeforeRevisions || revision < REMOTE_ENGINE_TOKEN_REVISION)
+      ) {
+        (parsed as { remoteEngineUrl: string }).remoteEngineUrl = getDefaultRemoteEngineUrl();
+      }
+    }
     if (savedBeforeRevisions && (parsed as { katagoVisits?: unknown }).katagoVisits === OLD_DEFAULT_KATAGO_VISITS) {
       (parsed as { katagoVisits: number }).katagoVisits = DEFAULT_KATAGO_VISITS;
     }

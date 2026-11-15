@@ -2,7 +2,8 @@
  * KataGo Remote Analysis Engine — WebSocket protocol types.
  *
  * The remote server speaks the same JSON-line protocol KataGo uses over stdin/stdout.
- * See katrain/core/remote_engine.py for the Python reference implementation.
+ * A KataGo Remote One-Click bridge transports it:
+ * https://github.com/ykrsama/katago-remote-one-click
  */
 
 import type { BoardState, FloatArray, GameRules, Move, Player, RegionOfInterest } from '../../types';

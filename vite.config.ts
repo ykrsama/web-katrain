@@ -166,10 +166,14 @@ function preloadDesktopShellPlugin(): Plugin {
   };
 }
 
-const DEFAULT_KATAGO_WS_URL = 'ws://127.0.0.1:8000';
+// The local analysis server's usual path. A one-click remote endpoint is the
+// full private link, token included, and its path is forwarded unchanged.
+const DEFAULT_KATAGO_WS_URL = 'ws://127.0.0.1:8000/katago';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, 'VITE_');
+  const remoteEngineUrl = new URL(env.VITE_KATAGO_WS_URL?.trim() || DEFAULT_KATAGO_WS_URL);
+  const remoteEnginePath = `${remoteEngineUrl.pathname}${remoteEngineUrl.search}`;
   return {
   base,
   plugins: [react(), tailwindcss(), versionMetadataPlugin(), offlineEnginePlugin(), preloadDesktopShellPlugin()],
@@ -246,15 +250,16 @@ export default defineConfig(({ mode }) => {
         // Proxy WebSocket connections to the remote KataGo engine.
         // This avoids COEP/CORS issues by making the WebSocket same-origin.
         '/katago-proxy': {
-          // The rewrite below decides the path, so the base URL must not carry
-          // `/katago` itself.
-          target: env.VITE_KATAGO_WS_URL || DEFAULT_KATAGO_WS_URL,
+          // The rewrite below forwards the endpoint's own path, so a one-click
+          // server's private token (`/katago/<token>`) reaches the bridge
+          // instead of being replaced by a bare `/katago`.
+          target: remoteEngineUrl.origin,
           ws: true,
           // Send the engine's own host in the Host header. Without this the
           // upgrade carries the dev server's host (127.0.0.1:5173), which a
           // host-routed tunnel rejects.
           changeOrigin: true,
-          rewrite: () => '/katago',
+          rewrite: () => remoteEnginePath,
         },
       },
       host: '0.0.0.0',

@@ -112,15 +112,24 @@ https://sir-teo.github.io/web-katrain/
 
 GitHub Pages serves static files; it does not run the `/katago-proxy` configured
 in Vite's development server. Production builds instead read
-`VITE_KATAGO_WS_URL` as the default direct WebSocket endpoint. A bare server URL
-gets `/katago` appended; a URL with an explicit path is preserved.
+`VITE_KATAGO_WS_URL` as the complete direct WebSocket endpoint. That endpoint is
+used exactly as configured: a
+[KataGo Remote One-Click](https://github.com/ykrsama/katago-remote-one-click)
+private link carries its token in the path (`wss://host/katago/<token>`), so
+nothing is appended.
 
 The Pages workflow passes the repository secret `VITE_KATAGO_WS_URL` to the
-build step. Set it to an endpoint such as `wss://engine.example.com/katago`,
-then push the changes or rerun the deployment workflow. Existing browsers
-that saved the old `/katago-proxy` default adopt the deployed endpoint;
-custom URLs remain unchanged. You can also enter the endpoint directly in
-Settings → Engine → Remote Engine URL.
+build step. With no secret it deploys the shared one-click endpoint
+`wss://katago.ykrsama.org/katago/ZehuKDD2_BgGHB3wg9piFyvyG6A614zsCQmoiozoJxg`.
+Set the secret to another working endpoint — including a different
+`wss://katago.ykrsama.org/katago/...` private link — to override it.
+
+Existing browsers that saved an endpoint from before the private-link format
+(`/katago-proxy`, a bare server URL, or `.../katago`) adopt the deployed
+endpoint once, on the first load after this build. Settings saved since are not
+rewritten, so an endpoint the player changes to afterwards, including any
+`wss://.../katago/<token>` link, is kept. You can also enter the endpoint
+directly in Settings → Engine → Remote Engine URL.
 
 Pages uses HTTPS, so its WebSocket endpoint must use `wss://` with a valid TLS
 certificate. Changing `ws://` to `wss://` is insufficient if the server only
@@ -129,8 +138,10 @@ WebSocket upgrades in front of that server. For example, inside an existing
 Nginx HTTPS server block with a valid certificate:
 
 ```nginx
-location /katago {
-    proxy_pass http://YOUR_ENGINE_HOST:YOUR_ENGINE_PORT/katago;
+location /katago/ {
+    # No URI after the host: the request path, private token included, passes
+    # through unchanged. A URI here would replace it and drop the token.
+    proxy_pass http://YOUR_ENGINE_HOST:YOUR_ENGINE_PORT;
     proxy_http_version 1.1;
     proxy_set_header Host $proxy_host;
     proxy_set_header Upgrade $http_upgrade;
@@ -139,10 +150,12 @@ location /katago {
 }
 ```
 
-Use the proxy's `wss://` address in the secret. If the backend restricts
-WebSocket origins, allow your Pages origin (`https://USERNAME.github.io`).
-The endpoint is embedded in the browser bundle even when supplied through an
-Actions secret; it is public configuration, so do not include private credentials.
+Use the proxy's `wss://` address, including the `/katago/<token>` path, in the
+secret. If the backend restricts WebSocket origins, allow your Pages origin
+(`https://USERNAME.github.io`). The endpoint is embedded in the browser bundle
+even when supplied through an Actions secret, so a one-click private link is
+public to every visitor: anyone who has it can use that engine. Only deploy a
+link you are willing to share.
 
 ## Headers
 

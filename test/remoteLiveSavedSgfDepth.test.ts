@@ -6,10 +6,11 @@
  * `npm run dev` proxies `/katago-proxy` to — and the suite runs; otherwise it
  * skips.
  *
- *   VITE_KATAGO_WS_URL=ws://host:port
+ *   VITE_KATAGO_WS_URL=wss://host/katago/<private-token>
  *
- * The dev server's proxy rewrites the path to `/katago`; connecting straight to
- * the engine means appending the same path here.
+ * The endpoint is the complete one-click private link. Its token is part of the
+ * path, so connecting straight to the engine uses it unchanged; appending
+ * `/katago` (the old shape) would name a path the bridge does not serve.
  *
  * Why a real engine: a remote analysis engine keeps no search tree between
  * queries, so every request starts from zero. That restart is what used to make
@@ -23,8 +24,7 @@ import { useGameStore } from '../src/store/gameStore';
 import { parseSgf } from '../src/utils/sgf';
 import { encodeKaTrainKtFromAnalysis } from '../src/utils/katrainSgfAnalysis';
 
-const engineBaseUrl = (import.meta.env.VITE_KATAGO_WS_URL ?? '').trim().replace(/\/+$/, '');
-const remoteUrl = engineBaseUrl ? `${engineBaseUrl}/katago` : '';
+const remoteUrl = (import.meta.env.VITE_KATAGO_WS_URL ?? '').trim();
 
 /** An SGF whose single KT blob remembers a whole-game review at `visits`. */
 const sgfWithSavedReview = (visits: number): string => {

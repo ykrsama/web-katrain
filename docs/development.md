@@ -161,23 +161,27 @@ Two suites need more than a plain checkout and skip themselves otherwise:
   server. Point `VITE_KATAGO_WS_URL` at one in a gitignored `.env`:
 
   ```sh
-  VITE_KATAGO_WS_URL=ws://host:port
+  VITE_KATAGO_WS_URL=wss://host/katago/<private-token>
   ```
 
-  No URL configured means no remote engine, and the suite skips; the mocked
-  regression for the same rule lives in `test/analysisDepth.test.ts` and always
-  runs.
+  The value is the complete endpoint printed by a
+  [KataGo Remote One-Click](https://github.com/ykrsama/katago-remote-one-click)
+  server; the private token is part of the path and no path is appended. No URL
+  configured means no remote engine, and the suite skips; the mocked regression
+  for the same rule lives in `test/analysisDepth.test.ts` and always runs.
 
 ## Remote Engine URL
 
 `VITE_KATAGO_WS_URL`, read from the gitignored `.env` (or the real process
-environment), is the engine the dev server proxies `/katago-proxy` to, with the
-path rewritten to `/katago` so the WebSocket stays same-origin. Unset, it falls
-back to `ws://127.0.0.1:8000`, which is where production runs its engine.
+environment), is the engine the dev server proxies `/katago-proxy` to. The proxy
+forwards the endpoint's own path, private token included, so the WebSocket stays
+same-origin and avoids COEP/CORS problems. Unset, it falls back to
+`ws://127.0.0.1:8000/katago`.
 
 `/katago-proxy` is the app's default remote engine URL in `src/store` for that
-reason: a relative URL avoids COEP/CORS problems. The base URL must not carry
-`/katago` itself — the proxy decides the path.
+reason: a relative URL avoids COEP/CORS problems. The configured value is a
+complete endpoint; the old `.../katago` shape (a bare server URL with `/katago`
+appended) is not supported.
 
 ## Local Storage During Development
 
