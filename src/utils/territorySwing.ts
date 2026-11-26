@@ -32,7 +32,8 @@
  * whole-board estimates leaves a haze everywhere. Painting that haze says
  * "the whole board moved", which is exactly the wrong answer.
  */
-export const SWING_POINT_THRESHOLD = 0.25;
+export const SWING_SAME_DIRECTION_THRESHOLD = 0.25;
+export const SWING_OPPOSITE_DIRECTION_THRESHOLD = 0.5;
 
 /**
  * How faint the weakest painted point may be. A point that only just clears the
@@ -49,9 +50,14 @@ export type TerritorySwing = {
   grid: number[][];
   /** The largest single-point move, as an absolute value. */
   peak: number;
-  /** Intersections that moved toward Black by at least the threshold. */
+  /**
+   * `[y][x]` threshold for each point. A change that continues toward the
+   * previous owner needs less evidence than one that reverses it.
+   */
+  thresholds: number[][];
+  /** Intersections that moved toward Black by at least their threshold. */
   towardBlack: number;
-  /** Intersections that moved toward White by at least the threshold. */
+  /** Intersections that moved toward White by at least their threshold. */
   towardWhite: number;
 };
 
@@ -75,6 +81,7 @@ export function computeTerritorySwing(
 
   const size = after.length;
   const grid: number[][] = [];
+  const thresholds: number[][] = [];
   let peak = 0;
   let towardBlack = 0;
   let towardWhite = 0;
@@ -84,6 +91,7 @@ export function computeTerritorySwing(
     const afterRow = after[y];
     if (!beforeRow || !afterRow || beforeRow.length !== afterRow.length) return null;
     const row = new Array<number>(afterRow.length);
+    const thresholdRow = new Array<number>(afterRow.length);
     for (let x = 0; x < afterRow.length; x++) {
       const a = afterRow[x];
       const b = beforeRow[x];
@@ -93,15 +101,25 @@ export function computeTerritorySwing(
       if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       const delta = a! - b!;
       row[x] = delta;
+      // With no previous owner (or a dead-even point), a change is a new claim
+      // rather than a reversal, so it gets the lighter threshold.
+      const sameDirection = b! === 0 || (b! > 0 ? delta > 0 : delta < 0);
+      const threshold = sameDirection
+        ? SWING_SAME_DIRECTION_THRESHOLD
+        : SWING_OPPOSITE_DIRECTION_THRESHOLD;
+      thresholdRow[x] = threshold;
       const magnitude = Math.abs(delta);
       if (magnitude > peak) peak = magnitude;
-      if (delta >= SWING_POINT_THRESHOLD) towardBlack++;
-      else if (delta <= -SWING_POINT_THRESHOLD) towardWhite++;
+      if (magnitude >= threshold) {
+        if (delta > 0) towardBlack++;
+        else if (delta < 0) towardWhite++;
+      }
     }
     grid.push(row);
+    thresholds.push(thresholdRow);
   }
 
-  return { grid, peak, towardBlack, towardWhite };
+  return { grid, peak, thresholds, towardBlack, towardWhite };
 }
 
 /**
@@ -216,12 +234,16 @@ export function swingOverlayEnabled(analysisShowSwing: boolean, analysisShowOwne
  * fixed scale would render it as a blank board even though that exchange is
  * the whole story of the move.
  */
-export function swingAlpha(value: number, peak: number): number {
+export function swingAlpha(
+  value: number,
+  peak: number,
+  threshold: number = SWING_SAME_DIRECTION_THRESHOLD
+): number {
   const magnitude = Math.abs(value);
   if (!Number.isFinite(magnitude) || !Number.isFinite(peak)) return 0;
-  if (magnitude < SWING_POINT_THRESHOLD || peak < SWING_POINT_THRESHOLD) return 0;
-  const span = peak - SWING_POINT_THRESHOLD;
-  const ramp = span > 1e-6 ? Math.min(1, (magnitude - SWING_POINT_THRESHOLD) / span) : 1;
+  if (magnitude < threshold || peak < threshold) return 0;
+  const span = peak - threshold;
+  const ramp = span > 1e-6 ? Math.min(1, (magnitude - threshold) / span) : 1;
   return SWING_MIN_ALPHA + (1 - SWING_MIN_ALPHA) * ramp;
 }
 

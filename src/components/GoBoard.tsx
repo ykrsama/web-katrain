@@ -1235,7 +1235,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
               : 'white'
             : null;
         const swingVal = swingGrid ? (swingGrid[y]?.[x] ?? 0) : null;
-        const swingScale = swingVal !== null ? swingAlpha(swingVal, swingPeak) : 0;
+        const swingScale = swingVal !== null
+          ? swingAlpha(swingVal, swingPeak, territorySwing?.thresholds[y]?.[x])
+          : 0;
         const swingOwner = swingVal !== null && swingVal !== 0 ? (swingVal > 0 ? 'black' : 'white') : null;
         const stoneAlpha = stoneAlphaFor({
           dead: isDeadScoringStone,
@@ -2558,7 +2560,9 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         // The swing is normalised against its own peak: an endgame exchange
         // moves ownership by a fraction of what a capture does, and against a
         // fixed scale it would render as a blank board.
-        let alpha = inBoard ? (swingGrid ? swingAlpha(val, peak) : Math.abs(val)) : 0;
+        let alpha = inBoard
+          ? (swingGrid ? swingAlpha(val, peak, territorySwing?.thresholds[internal.y]?.[internal.x]) : Math.abs(val))
+          : 0;
         if (alpha > 1) alpha = 1;
         alpha = alpha ** (1 / OWNERSHIP_GAMMA);
         alpha = base[3] * alpha;
