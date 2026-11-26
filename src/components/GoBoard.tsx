@@ -1243,13 +1243,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
           owner,
           cell,
         });
-        // In Swing mode every stone whose point crossed the threshold gets the
-        // square: its direction colours the fill and its strength sizes it. A
-        // same-colour square is still visible through the mid-grey outline; the
-        // territory mode keeps the opposite-owner condition because there the
-        // square means "this stone belongs to the other side".
         const showMark = swingActive
-          ? !!swingOwner && swingScale > 0
+          ? !!swingOwner && cell !== swingOwner && swingScale > 0
           : ownershipVal !== null && owner && cell !== owner && ownershipAbs > 0;
         const markOwner = swingActive ? swingOwner : owner;
         const markScale = swingActive ? swingScale : ownershipAbs;
