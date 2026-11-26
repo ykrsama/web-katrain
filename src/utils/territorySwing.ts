@@ -51,8 +51,9 @@ export type TerritorySwing = {
   /** The largest single-point move, as an absolute value. */
   peak: number;
   /**
-   * `[y][x]` threshold for each point. A strongly owned point shows a change
-   * from 0.25; a contested point needs 0.5.
+   * `[y][x]` threshold for each point, decided by the ownership before the
+   * move. A strongly owned point shows a change from 0.25; a contested point
+   * needs 0.5.
    */
   thresholds: number[][];
   /** Intersections that moved toward Black by at least their threshold. */
@@ -101,10 +102,10 @@ export function computeTerritorySwing(
       if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       const delta = a! - b!;
       row[x] = delta;
-      // Judge the point after the move: a settled point (|ownership| >= 0.5)
+      // Judge the point before the move: a settled point (|ownership| >= 0.5)
       // shows a 0.25 change; a contested one needs 0.5 before it is worth
       // painting.
-      const threshold = Math.abs(a!) >= 0.5
+      const threshold = Math.abs(b!) >= 0.5
         ? SWING_STRONG_OWNERSHIP_THRESHOLD
         : SWING_WEAK_OWNERSHIP_THRESHOLD;
       thresholdRow[x] = threshold;

@@ -34,31 +34,31 @@ describe('computeTerritorySwing', () => {
     expect(swing?.peak).toBeCloseTo(0.9, 6);
   });
 
-  it('uses 0.25 when the point is strongly owned after the change', () => {
-    const black = computeTerritorySwing(grid([[0.4]]), grid([[0.8]]));
+  it('uses 0.25 when the point was strongly owned before the change', () => {
+    const black = computeTerritorySwing(grid([[0.8]]), grid([[0.4]]));
     expect(black?.thresholds[0]?.[0]).toBe(SWING_STRONG_OWNERSHIP_THRESHOLD);
-    expect(black?.towardBlack).toBe(1);
+    expect(black?.towardWhite).toBe(1);
     expect(hasVisibleSwing(black)).toBe(true);
 
-    const white = computeTerritorySwing(grid([[-0.4]]), grid([[-0.8]]));
+    const white = computeTerritorySwing(grid([[-0.8]]), grid([[-0.4]]));
     expect(white?.thresholds[0]?.[0]).toBe(SWING_STRONG_OWNERSHIP_THRESHOLD);
-    expect(white?.towardWhite).toBe(1);
+    expect(white?.towardBlack).toBe(1);
     expect(hasVisibleSwing(white)).toBe(true);
   });
 
-  it('requires 0.5 when the point is still contested after the change', () => {
-    const smallBlack = computeTerritorySwing(grid([[0.8]]), grid([[0.4]]));
+  it('requires 0.5 when the point was contested before the change', () => {
+    const smallBlack = computeTerritorySwing(grid([[0.4]]), grid([[0.8]]));
     expect(smallBlack?.thresholds[0]?.[0]).toBe(SWING_WEAK_OWNERSHIP_THRESHOLD);
-    expect(smallBlack?.towardWhite).toBe(0);
+    expect(smallBlack?.towardBlack).toBe(0);
     expect(hasVisibleSwing(smallBlack)).toBe(false);
 
-    const smallWhite = computeTerritorySwing(grid([[-0.8]]), grid([[-0.4]]));
+    const smallWhite = computeTerritorySwing(grid([[-0.4]]), grid([[-0.8]]));
     expect(smallWhite?.thresholds[0]?.[0]).toBe(SWING_WEAK_OWNERSHIP_THRESHOLD);
-    expect(smallWhite?.towardBlack).toBe(0);
+    expect(smallWhite?.towardWhite).toBe(0);
     expect(hasVisibleSwing(smallWhite)).toBe(false);
 
-    const largeBlack = computeTerritorySwing(grid([[0.8]]), grid([[0.2]]));
-    expect(largeBlack?.towardWhite).toBe(1);
+    const largeBlack = computeTerritorySwing(grid([[0.2]]), grid([[0.8]]));
+    expect(largeBlack?.towardBlack).toBe(1);
     expect(hasVisibleSwing(largeBlack)).toBe(true);
   });
 
