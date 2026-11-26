@@ -201,6 +201,29 @@ describe('a live read against a position that already has analysis', () => {
     }
   });
 
+  it('stores ownership for every position a fast review rewrites', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    useGameStore.setState({ isAnalysisMode: false });
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.getState().playMove(15, 15);
+    useGameStore.setState((s) => ({
+      settings: { ...s.settings, katagoOwnershipMode: 'root', katagoFastVisits: 25 },
+    }));
+
+    searchTo(25);
+    useGameStore.getState().startFastGameAnalysis();
+    for (let i = 0; i < 200 && useGameStore.getState().isGameAnalysisRunning; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const root = useGameStore.getState().rootNode;
+    const first = root.children[0]!;
+    expect(root.analysis?.ownershipMode).toBe('root');
+    expect(root.analysis?.territory).toHaveLength(19);
+    expect(first.analysis?.ownershipMode).toBe('root');
+    expect(first.analysis?.territory[0]).toHaveLength(19);
+  });
+
   it('asks the engine for as many top moves as the setting says', async () => {
     const { useGameStore } = await import('../src/store/gameStore');
     const { analysisQueue } = await import('../src/utils/analysisQueue');

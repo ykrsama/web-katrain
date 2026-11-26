@@ -4406,6 +4406,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
         }
         const previousAnalysis = node.analysis;
         const s = get();
+        const ownershipMode = s.settings.katagoOwnershipMode;
+        const nodeBoardSize = getBoardSizeFromBoard(node.gameState.board);
         const { previousBoard: parentBoard, previousPreviousBoard: grandparentBoard } = engineHistoryBoards(node);
         const modelUrl = resolveModelUrlForFetch(s.settings.katagoModelUrl);
         const rules = s.settings.gameRules;
@@ -4431,7 +4433,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
             s.settings.katagoWideRootNoise,
             s.settings.katagoRootPolicyTemperature,
             s.settings.katagoNnRandomize,
-            s.settings.katagoConservativePass
+            s.settings.katagoConservativePass,
+            ownershipMode
           ),
           // A review is a refresh, and the model can change with no signal the
           // client can see: a remote engine's weights are the server's, and even
@@ -4456,6 +4459,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
           rules,
           topK,
           analysisPvLen,
+          // Per-move ownership maps are only for the AI's settledness
+          // strategies. The board's territory and swing read the single root
+          // map, so a fast review does not pay for one map per candidate.
           includeMovesOwnership: false,
           wideRootNoise: s.settings.katagoWideRootNoise,
           rootPolicyTemperature: s.settings.katagoRootPolicyTemperature,
@@ -4467,7 +4473,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           batchSize,
           maxChildren,
           reuseTree: false,
-          ownershipMode: 'none',
+          ownershipMode,
           analysisGroup: 'background',
           priority: ctx.priority,
           signal: ctx.signal,
@@ -4498,10 +4504,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
           rawStScoreError: analysis.rawStScoreError,
           rawVarTimeLeft: analysis.rawVarTimeLeft,
           moves: analysis.moves,
-          territory: createEmptyTerritory(getBoardSizeFromBoard(node.gameState.board)),
+          territory: analysis.ownership
+            ? ownershipToTerritoryGrid(analysis.ownership, nodeBoardSize)
+            : createEmptyTerritory(nodeBoardSize),
           policy: undefined,
-          ownershipStdev: undefined,
-          ownershipMode: 'none',
+          ownershipStdev: analysis.ownershipStdev,
+          ownershipMode: analysis.ownership ? ownershipMode : 'none',
         };
         node.analysisVisitsRequested = fastVisits;
         markDone();
