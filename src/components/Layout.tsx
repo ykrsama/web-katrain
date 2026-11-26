@@ -1607,6 +1607,18 @@ export const Layout: React.FC = () => {
     void runAnalysis({ ifIdle: true });
   }, [currentNode.id, isAnalysisMode, runAnalysis]);
 
+  // In analysis mode an existing analysis may lack the ownership map (a fast
+  // review, or an older saved review). Fill it so the swing and territory
+  // overlays have data. This only supplements an existing analysis, so it never
+  // becomes a hidden shallow search. Outside analysis mode nothing is fetched:
+  // the overlays show only what the file already carries.
+  useEffect(() => {
+    if (!isAnalysisMode || !currentNode.analysis
+      || isEditMode || scoringMode || isSelectingRegionOfInterest) return;
+    void runAnalysis({ ownershipOnly: true });
+  }, [currentNode.id, currentNode.analysis, currentNode.analysis?.ownershipMode,
+    isAnalysisMode, isEditMode, scoringMode, isSelectingRegionOfInterest, runAnalysis]);
+
   // PV animation
   const activeHoverMove = activeReportHoverMove ?? resolveCandidatePreview(hoveredSelection?.context === previewContext ? hoveredSelection : null, candidates);
   // Candidate tiles follow the same ownership rule as the board canvases: a

@@ -50,6 +50,35 @@ describe('territory overlay data', () => {
     expect(state.settings.katagoOwnershipMode).toBe('tree');
   });
 
+  it('fills missing ownership in analysis mode even with the overlays off', async () => {
+    useGameStore.setState((s) => ({
+      isAnalysisMode: true,
+      settings: { ...s.settings, analysisShowOwnership: false, analysisShowSwing: false },
+    }));
+    const node = useGameStore.getState().currentNode;
+    node.analysis = savedReview();
+
+    await useGameStore.getState().runAnalysis({ ownershipOnly: true });
+
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({ ownershipMode: 'root', visits: 25 }));
+    expect(node.analysis?.ownershipMode).toBe('root');
+    expect(node.analysis?.territory[0][0]).toBe(0.75);
+  });
+
+  it('does not fetch ownership outside analysis mode just because Swing is shown', async () => {
+    useGameStore.setState((s) => ({
+      isAnalysisMode: false,
+      settings: { ...s.settings, analysisShowOwnership: false, analysisShowSwing: true },
+    }));
+    const node = useGameStore.getState().currentNode;
+    node.analysis = savedReview();
+
+    await useGameStore.getState().runAnalysis({ ownershipOnly: true });
+
+    expect(analyze).not.toHaveBeenCalled();
+    expect(node.analysis?.ownershipMode).toBe('none');
+  });
+
   it('fills a fast review without replacing its deeper win rate, score, policy or requested depth', async () => {
     const node = useGameStore.getState().currentNode;
     const review = savedReview();

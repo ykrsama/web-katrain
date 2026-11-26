@@ -4746,7 +4746,13 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
   runAnalysis: async (opts) => {
       const state = get();
-      if (opts?.ownershipOnly ? !state.settings.analysisShowOwnership : !state.isAnalysisMode) return;
+      // An ownership-only read is part of analysis mode: it fills a map an
+      // existing analysis lacks, whether or not an overlay is currently shown.
+      // Outside analysis mode it is allowed only for an explicit territory
+      // display read, never as a hidden search.
+      if (opts?.ownershipOnly
+        ? !state.isAnalysisMode && !state.settings.analysisShowOwnership
+        : !state.isAnalysisMode) return;
       const boardSize = getBoardSizeFromBoard(state.board);
       const hasTerritory = (analysis: AnalysisResult | null | undefined): boolean =>
         !!analysis && (analysis.ownershipMode ?? 'root') !== 'none' &&
