@@ -2629,6 +2629,11 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       if (!next) {
           continuousToken++;
+          // The loop only notices the token change after its current request
+          // settles. A remote search can run for a long time, so cancel the
+          // query it is waiting on; otherwise switching continuous off leaves
+          // the engine reading and progress arriving until that search ends.
+          analysisQueue.cancelGroup('interactive', 'Continuous analysis off');
           return;
       }
 

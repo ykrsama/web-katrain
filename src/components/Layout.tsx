@@ -4602,6 +4602,7 @@ export const Layout: React.FC = () => {
               canClearAnalysisCache={canClearAnalysisCache}
               toggleInsertMode={toggleInsertMode}
               selfplayToEnd={selfplayToEnd}
+              isContinuousAnalysis={isContinuousAnalysis}
               toggleContinuousAnalysis={toggleContinuousAnalysis}
               makeAiMove={requestAiMove}
               rotateBoard={rotateBoard}

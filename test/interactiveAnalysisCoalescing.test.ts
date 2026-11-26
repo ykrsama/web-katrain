@@ -82,6 +82,26 @@ describe('interactive work shared by automatic analysis triggers', () => {
     expect(state().analysisData?.rootVisits).toBe(25);
   });
 
+  it('cancels the search in flight when continuous analysis is switched off', async () => {
+    useGameStore.setState({ isAnalysisMode: false });
+    state().toggleContinuousAnalysis(true);
+    const layout = state().runAnalysis({ ifIdle: true });
+    expect(held).toHaveLength(1);
+    expect(held[0]!.args.signal?.aborted).toBe(false);
+
+    state().toggleContinuousAnalysis(true); // The second press turns it off.
+
+    expect(state().isContinuousAnalysis).toBe(false);
+    // The loop only notices the token change after its current request
+    // settles. A remote search can run for a long time, so the toggle has to
+    // abort that query instead of leaving the engine reading.
+    expect(held[0]!.args.signal?.aborted).toBe(true);
+    held[0]!.resolve(payload(25));
+    await layout;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(held).toHaveLength(1);
+  });
+
   it('shares the phone toggle timer and layout effect', async () => {
     useGameStore.setState({ isAnalysisMode: false });
     state().toggleAnalysisMode();
