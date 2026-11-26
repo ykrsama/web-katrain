@@ -46,7 +46,12 @@ describe('analyzeTenuki', () => {
     analysisQueue.cancelWhere(() => true, 'test reset');
     analysisQueue.clearCache();
     useGameStore.getState().resetGame();
-    useGameStore.setState({ notification: null, tenukiAnalysis: null });
+    useGameStore.setState({
+      notification: null,
+      tenukiAnalysis: null,
+      regionOfInterest: null,
+      isAnalysisMode: false,
+    });
   });
 
   it('refuses without an analysis to compare against, and says why', async () => {
@@ -81,6 +86,55 @@ describe('analyzeTenuki', () => {
     expect(args.reuseTree).toBe(false);
     expect(args.analysisGroup).toBe('background');
     expect(args.positionId).toBe(`${node.id}:pass`);
+  });
+
+  it('gives the post-pass read the framed region', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    analyzeMock.mockResolvedValue(payload(6));
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.getState().currentNode.analysis = nodeAnalysis(-4);
+    const regionOfInterest = { xMin: 2, xMax: 6, yMin: 2, yMax: 6 };
+    useGameStore.setState({ regionOfInterest });
+
+    useGameStore.getState().analyzeTenuki();
+    await waitFor(() => useGameStore.getState().tenukiAnalysis?.status === 'ready');
+
+    expect(analyzeMock.mock.calls[0]![0].regionOfInterest).toEqual(regionOfInterest);
+  });
+
+  it('does not reuse a post-pass result from a different framed region', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    analyzeMock.mockResolvedValue(payload(6));
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.getState().currentNode.analysis = nodeAnalysis(-4);
+    const firstRegion = { xMin: 2, xMax: 6, yMin: 2, yMax: 6 };
+    const secondRegion = { xMin: 10, xMax: 14, yMin: 10, yMax: 14 };
+
+    useGameStore.setState({ regionOfInterest: firstRegion });
+    useGameStore.getState().analyzeTenuki();
+    await waitFor(() => useGameStore.getState().tenukiAnalysis?.status === 'ready');
+
+    useGameStore.setState({ regionOfInterest: secondRegion });
+    useGameStore.getState().analyzeTenuki();
+    await waitFor(() => useGameStore.getState().tenukiAnalysis?.status === 'ready');
+
+    expect(analyzeMock).toHaveBeenCalledTimes(2);
+    expect(analyzeMock.mock.calls[0]![0].regionOfInterest).toEqual(firstRegion);
+    expect(analyzeMock.mock.calls[1]![0].regionOfInterest).toEqual(secondRegion);
+  });
+
+  it('drops the price when the framed region changes', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    analyzeMock.mockResolvedValue(payload(6));
+    useGameStore.getState().playMove(3, 3);
+    useGameStore.getState().currentNode.analysis = nodeAnalysis(-4);
+    useGameStore.setState({ regionOfInterest: { xMin: 2, xMax: 6, yMin: 2, yMax: 6 } });
+    useGameStore.getState().analyzeTenuki();
+    await waitFor(() => useGameStore.getState().tenukiAnalysis?.status === 'ready');
+
+    useGameStore.getState().setRegionOfInterest({ xMin: 10, xMax: 14, yMin: 10, yMax: 14 });
+
+    expect(useGameStore.getState().tenukiAnalysis).toBeNull();
   });
 
   it('prices the swing between playing here and passing', async () => {

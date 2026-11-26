@@ -72,7 +72,7 @@ export const TenukiRow: React.FC<{ className?: string }> = ({ className }) => {
           className="panel-action-button"
           onClick={() => analyzeTenuki()}
           disabled={row.disabled}
-          title={row.disabledReason ?? t('Evaluate the position again after a pass, to price the point here')}
+          title={row.disabledReason ?? t('Evaluate the position again after a pass, to price the point here. Uses the framed region when one is selected.')}
           aria-describedby={tenukiDescriptionId}
         >
           {row.buttonLabel}

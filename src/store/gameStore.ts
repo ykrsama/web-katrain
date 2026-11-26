@@ -2832,7 +2832,16 @@ export const useGameStore = create<GameStore>((commit, get) => {
         group: 'tenuki',
         priority: ANALYSIS_QUEUE_PRIORITY.tenuki,
         staleKey: 'tenuki-analysis',
-        cacheKey: analysisCacheKey('tenuki', positionKey, modelUrl, state.settings.katagoBackend, visits),
+        cacheKey: analysisCacheKey(
+          'tenuki',
+          positionKey,
+          modelUrl,
+          state.settings.katagoBackend,
+          visits,
+          // The framed region changes what the post-pass read is allowed to
+          // play, so it is part of what makes a cached answer valid.
+          JSON.stringify(state.regionOfInterest ?? null)
+        ),
         run: (ctx) =>
           getEngineClient(get().settings).analyze({
             // A distinct position id, and `reuseTree` off: the worker keeps a
@@ -2851,6 +2860,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
             repetitionHistory,
             komi,
             rules,
+            // With a framed region, the opponent's reply after the pass is
+            // judged inside it too. The current-position analysis this is
+            // compared against was already taken with the same frame.
+            regionOfInterest: state.regionOfInterest,
             topK: Math.max(1, Math.min(state.settings.katagoTopK, 50)),
             analysisPvLen: state.settings.katagoAnalysisPvLen,
             visits,
@@ -3235,9 +3248,15 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
   setRegionOfInterest: (roi) => {
     const normalized = normalizeRegionOfInterest(roi, getBoardSizeFromBoard(get().board));
+    // The price was measured against the old frame, and a read still in flight
+    // is reading the old one. Drop both instead of showing a stale number next
+    // to the new box.
+    analysisQueue.cancelGroup('tenuki', 'Region changed');
+    tenukiToken++;
     set((state) => ({
       regionOfInterest: normalized,
       isSelectingRegionOfInterest: false,
+      tenukiAnalysis: null,
       treeVersion: state.treeVersion + 1,
     }));
     if (get().isAnalysisMode) scheduleAnalysis(() => void get().runAnalysis({ force: true }), 0);

@@ -208,6 +208,6 @@ export default {
   'No trick moves here.': '未找到骗着。',
   '{count} trick move: {points}': '{count} 个骗着：{points}',
   '{count} trick moves: {points}': '{count} 个骗着：{points}',
-  'Evaluate the position again after a pass, to price the point here': '停手后重新评估局面，以衡量此处的价值',
+  'Evaluate the position again after a pass, to price the point here. Uses the framed region when one is selected.': '停手后重新评估局面，以衡量此处的价值；选中区域时，对手的应手也限制在该区域内。',
   'Ask what playing elsewhere would cost': '询问脱先会付出多大代价',
 } as Record<string, string>;
