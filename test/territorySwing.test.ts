@@ -76,7 +76,11 @@ describe('computeTerritorySwing', () => {
 describe('swingAlpha', () => {
   it('paints the peak fully and ramps the rest down to the visible minimum', () => {
     expect(swingAlpha(0.8, 0.8)).toBe(1);
-    expect(swingAlpha(-0.4, 0.8)).toBeCloseTo(SWING_MIN_ALPHA + (1 - SWING_MIN_ALPHA) * (0.15 / 0.55), 6);
+    const aboveThreshold = SWING_POINT_THRESHOLD + 0.15;
+    expect(swingAlpha(-aboveThreshold, 0.8)).toBeCloseTo(
+      SWING_MIN_ALPHA + (1 - SWING_MIN_ALPHA) * (0.15 / (0.8 - SWING_POINT_THRESHOLD)),
+      6
+    );
     expect(swingAlpha(0, 0.8)).toBe(0);
   });
 
