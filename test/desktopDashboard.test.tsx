@@ -10,7 +10,7 @@ describe('DesktopDashboard', () => {
     // A quick graph writes an all-zero territory placeholder. The chip used to
     // read that as a real map and print a confident intersection count even
     // though the position had no ownership.
-    expect(source).toContain('hasTerritoryMap(afterAnalysis)');
+    expect(source).toContain('hasTerritoryMap(afterAnalysis, boardSize)');
     expect(source).toContain("'needs this move analyzed with territory'");
   });
 

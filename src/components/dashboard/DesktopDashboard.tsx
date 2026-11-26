@@ -517,7 +517,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   const swingSummary = useMemo(() => {
     void treeVersion;
     const afterAnalysis = currentNode.analysis;
-    const after = hasTerritoryMap(afterAnalysis) ? afterAnalysis.territory : null;
+    const after = hasTerritoryMap(afterAnalysis, boardSize) ? afterAnalysis.territory : null;
     const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
       formatMoveLabel(x, y, boardSize)
     );

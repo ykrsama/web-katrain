@@ -979,7 +979,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     if (!hasAnalysisOverlay || !swingOverlayEnabled(settings.analysisShowSwing, settings.analysisShowOwnership)
       || scoringMode || hidesAnswer) return null;
     const after = currentNode.analysis;
-    if (!hasTerritoryMap(after)) return null;
+    if (!hasTerritoryMap(after, boardSize)) return null;
     const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
       formatBoardMoveLabel({ x, y }, boardSize)
     );

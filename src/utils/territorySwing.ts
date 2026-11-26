@@ -145,10 +145,14 @@ type SwingNode = {
  * ownership is represented by an empty territory, never by a board of zeroes.
  */
 export function hasTerritoryMap(
-  analysis: { territory?: number[][]; ownershipMode?: 'none' | 'root' | 'tree' } | null | undefined
+  analysis: { territory?: number[][]; ownershipMode?: 'none' | 'root' | 'tree' } | null | undefined,
+  boardSize?: number
 ): analysis is { territory: number[][]; ownershipMode?: 'none' | 'root' | 'tree' } {
   if (!analysis || (analysis.ownershipMode ?? 'root') === 'none') return false;
-  return isGrid(analysis.territory);
+  if (!isGrid(analysis.territory)) return false;
+  if (boardSize === undefined) return true;
+  return analysis.territory.length === boardSize
+    && analysis.territory.every((row) => row.length === boardSize && row.every(Number.isFinite));
 }
 
 /** Where the swing at `node` should measure from, under `compare`. */

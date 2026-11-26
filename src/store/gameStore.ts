@@ -16,6 +16,7 @@ import { KATAGO_HUMAN_MODEL_DOWNLOAD_URL, KATAGO_HUMAN_MODEL_URL, KATAGO_RECOMME
 import { KATAGO_HUMAN_PROFILE_DEFAULT } from '../engine/katago/searchParams';
 import { decodeKaTrainKt, kaTrainAnalysisToAnalysisResult } from '../utils/katrainSgfAnalysis';
 import { decodeKayaKa } from '../utils/kayaSgfAnalysis';
+import { hasTerritoryMap } from '../utils/territorySwing';
 import { publicUrl } from '../utils/publicUrl';
 import { isLegacyGameEncoding } from '../utils/gameRecordImport';
 import { isBoardThemeId } from '../utils/boardThemes';
@@ -4768,10 +4769,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
         ? !state.isAnalysisMode && !state.settings.analysisShowOwnership
         : !state.isAnalysisMode) return;
       const boardSize = getBoardSizeFromBoard(state.board);
-      const hasTerritory = (analysis: AnalysisResult | null | undefined): boolean =>
-        !!analysis && (analysis.ownershipMode ?? 'root') !== 'none' &&
-        analysis.territory.length === boardSize &&
-        analysis.territory.every((row) => row.length === boardSize && row.every(Number.isFinite));
       const ownershipMode = opts?.ownershipOnly
         ? 'root'
         : state.settings.katagoOwnershipMode;
@@ -4786,7 +4783,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
         const existing = state.currentNode.analysis;
         const existingOwnershipMode = existing.ownershipMode ?? 'root';
         const requiredOwnershipMode = ownershipMode;
-        const ownershipOk = hasTerritory(existing) &&
+        const ownershipOk = hasTerritoryMap(existing, boardSize) &&
           (requiredOwnershipMode !== 'tree' || existingOwnershipMode === 'tree');
         const needsPolicy = state.settings.analysisShowPolicy;
         const policyOk = !needsPolicy || !!existing.policy;
@@ -4881,7 +4878,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
               ownershipStdev: analysis.ownershipStdev,
               ownershipMode: opts.includeTerritory
                 ? (territory.length > 0 ? ownershipMode : 'none')
-                : hasTerritory(node.analysis) ? (node.analysis?.ownershipMode ?? 'root') : 'none',
+                : hasTerritoryMap(node.analysis, boardSize) ? (node.analysis?.ownershipMode ?? 'root') : 'none',
             };
 
             const roi = get().regionOfInterest;
@@ -4918,18 +4915,20 @@ export const useGameStore = create<GameStore>((commit, get) => {
             if (node.analysis && (opts?.ownershipOnly || (keepDeeper && incomingVisits <= analysisDepth(node.analysis)))) {
               // A quick territory read supplements an existing deep review.
               // Its win rate, score, candidates and requested depth stay intact.
-              if (!hasTerritory(node.analysis)) {
+              const existingAnalysis = node.analysis;
+              const existingHasTerritory: boolean = hasTerritoryMap(existingAnalysis, boardSize);
+              if (!existingHasTerritory) {
                 const supplement = ownershipToTerritoryGrid(analysis.ownership, boardSize);
                 if (supplement.length === 0) {
                   // The engine had no map to give. If the node already says
                   // none with an empty grid there is nothing to write: replacing
                   // the analysis object here was what made the refill effect
                   // run again on its own output.
-                  const alreadyMissing = (node.analysis.ownershipMode ?? 'root') === 'none'
-                    && node.analysis.territory.length === 0;
+                  const alreadyMissing = (existingAnalysis.ownershipMode ?? 'root') === 'none'
+                    && existingAnalysis.territory.length === 0;
                   if (!alreadyMissing) {
                     node.analysis = {
-                      ...node.analysis,
+                      ...existingAnalysis,
                       territory: [],
                       ownershipStdev: undefined,
                       ownershipMode: 'none',
@@ -4941,7 +4940,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
                   }
                 } else {
                   node.analysis = {
-                    ...node.analysis,
+                    ...existingAnalysis,
                     territory: supplement,
                     ownershipStdev: analysis.ownershipStdev,
                     ownershipMode: 'root',

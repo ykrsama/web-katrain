@@ -83,6 +83,14 @@ describe('hasTerritoryMap', () => {
     expect(hasTerritoryMap(null)).toBe(false);
   });
 
+  it('checks the board shape when the caller knows the board size', () => {
+    const grid = (values: number[][]) => ({ territory: values, ownershipMode: 'root' as const });
+    expect(hasTerritoryMap(grid([[1, -1], [-1, 1]]), 2)).toBe(true);
+    expect(hasTerritoryMap(grid([[1], [-1, 1]]), 2)).toBe(false);
+    expect(hasTerritoryMap(grid([[1, Number.NaN], [-1, 1]]), 2)).toBe(false);
+    expect(hasTerritoryMap(grid([[1, -1]]), 2)).toBe(false);
+  });
+
   it('rejects a current position that has no ownership even when the previous one does', () => {
     const previous = { territory: [[1, -1], [-1, 1]], ownershipMode: 'root' as const };
     const current = { territory: [], ownershipMode: 'none' as const };
