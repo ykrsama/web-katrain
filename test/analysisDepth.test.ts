@@ -133,6 +133,74 @@ describe('a live read against a position that already has analysis', () => {
     expect(depth()).toBe(12000);
   });
 
+  it('does not let a load-time fast review replace the review stored in the SGF', async () => {
+    const { useGameStore } = await import('../src/store/gameStore');
+    const { parseSgf } = await import('../src/utils/sgf');
+    const { encodeKaTrainKtFromAnalysis } = await import('../src/utils/katrainSgfAnalysis');
+
+    const kt = encodeKaTrainKtFromAnalysis({
+      analysis: {
+        rootWinRate: 0.5,
+        rootScoreLead: 3,
+        rootVisits: 5000,
+        moves: [
+          {
+            x: 3,
+            y: 3,
+            order: 0,
+            visits: 5000,
+            winRate: 0.5,
+            winRateLost: 0,
+            scoreLead: 3,
+            scoreSelfplay: 3,
+            scoreStdev: 0,
+            pointsLost: 0,
+            relativePointsLost: 0,
+          },
+        ],
+        territory: Array.from({ length: 19 }, () => Array(19).fill(0)),
+      },
+      boardSize: 19,
+    });
+    const sgf = `(;GM[1]SZ[19]KT${kt.map((blob) => `[${blob}]`).join('')};B[pd];W[dd])`;
+
+    // `loadGame` only starts the load-time pass in a browser.
+    const originalSettings = useGameStore.getState().settings;
+    vi.stubGlobal('window', { location: { origin: 'http://localhost', href: 'http://localhost/' } });
+    vi.stubGlobal('Worker', vi.fn());
+    try {
+      useGameStore.getState().resetGame();
+      useGameStore.setState((s) => ({
+        isAnalysisMode: false,
+        settings: {
+          ...s.settings,
+          engineMode: 'local',
+          loadSgfFastAnalysis: true,
+          katagoFastVisits: 25,
+        },
+      }));
+      searchTo(25);
+      useGameStore.getState().loadGame(parseSgf(sgf));
+
+      // The load schedules the fast review on the next tick. It must read the
+      // moves the file does not cover and then finish.
+      for (let i = 0; i < 400 && analyzeMock.mock.calls.length === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      for (let i = 0; i < 400 && useGameStore.getState().isGameAnalysisRunning; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      // 5000 visits came from the file, the load-time pass only had 25. It must
+      // fill the unanalysed moves without downgrading the root.
+      expect(useGameStore.getState().rootNode.analysis?.rootVisits).toBe(5000);
+      expect(useGameStore.getState().rootNode.children[0]?.analysis?.rootVisits).toBe(25);
+    } finally {
+      vi.unstubAllGlobals();
+      useGameStore.setState({ settings: originalSettings });
+    }
+  });
+
   it('asks the engine for as many top moves as the setting says', async () => {
     const { useGameStore } = await import('../src/store/gameStore');
     const { analysisQueue } = await import('../src/utils/analysisQueue');

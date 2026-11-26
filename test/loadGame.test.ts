@@ -719,6 +719,9 @@ describe('GameStore loadGame', () => {
 
             expect(quick).not.toHaveBeenCalled();
             expect(fast).toHaveBeenCalledTimes(1);
+            // A review already in the file must not be replaced by the shallow
+            // load-time pass; only positions without one are filled in.
+            expect(fast).toHaveBeenCalledWith({ reanalyzeExisting: false });
         } finally {
             useGameStore.setState({
                 settings: originalSettings,

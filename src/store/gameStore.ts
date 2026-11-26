@@ -8009,8 +8009,11 @@ export const useGameStore = create<GameStore>((commit, get) => {
 		    }));
 
 		    // KaTrain-like: optionally start fast background analysis of the whole mainline so graphs populate fast.
+		    // A file that already carries a review is the reader's work: fill in
+		    // positions it does not cover, but do not replace a saved result
+		    // (or a deeper one) with this shallow pass.
 		    if (typeof window !== 'undefined' && typeof Worker !== 'undefined' && get().settings.loadSgfFastAnalysis) {
-		      setTimeout(() => get().startFastGameAnalysis(), 0);
+		      setTimeout(() => get().startFastGameAnalysis({ reanalyzeExisting: false }), 0);
 		    }
 		  },
 
