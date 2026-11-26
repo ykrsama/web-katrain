@@ -6,8 +6,7 @@ import {
   hasVisibleSwing,
   hasTerritoryMap,
   SWING_MIN_ALPHA,
-  SWING_STRONG_OWNERSHIP_THRESHOLD,
-  SWING_WEAK_OWNERSHIP_THRESHOLD,
+  SWING_MIN_THRESHOLD,
   swingAlpha,
   swingOverlayEnabled,
 } from '../src/utils/territorySwing';
@@ -34,32 +33,26 @@ describe('computeTerritorySwing', () => {
     expect(swing?.peak).toBeCloseTo(0.9, 6);
   });
 
-  it('uses 0.25 when the point was strongly owned before the change', () => {
-    const black = computeTerritorySwing(grid([[0.8]]), grid([[0.4]]));
-    expect(black?.thresholds[0]?.[0]).toBe(SWING_STRONG_OWNERSHIP_THRESHOLD);
-    expect(black?.towardWhite).toBe(1);
-    expect(hasVisibleSwing(black)).toBe(true);
+  it('takes the threshold from the more confident side, floored at 0.25', () => {
+    const strongBoth = computeTerritorySwing(grid([[0.8]]), grid([[0.9]]));
+    expect(strongBoth?.thresholds[0]?.[0]).toBe(SWING_MIN_THRESHOLD);
 
-    const white = computeTerritorySwing(grid([[-0.8]]), grid([[-0.4]]));
-    expect(white?.thresholds[0]?.[0]).toBe(SWING_STRONG_OWNERSHIP_THRESHOLD);
-    expect(white?.towardBlack).toBe(1);
-    expect(hasVisibleSwing(white)).toBe(true);
-  });
+    const strongBefore = computeTerritorySwing(grid([[0.8]]), grid([[0.4]]));
+    expect(strongBefore?.thresholds[0]?.[0]).toBe(SWING_MIN_THRESHOLD);
+    expect(strongBefore?.towardWhite).toBe(1);
 
-  it('requires 0.5 when the point was contested before the change', () => {
-    const smallBlack = computeTerritorySwing(grid([[0.4]]), grid([[0.8]]));
-    expect(smallBlack?.thresholds[0]?.[0]).toBe(SWING_WEAK_OWNERSHIP_THRESHOLD);
-    expect(smallBlack?.towardBlack).toBe(0);
-    expect(hasVisibleSwing(smallBlack)).toBe(false);
+    const strongAfter = computeTerritorySwing(grid([[0.4]]), grid([[0.8]]));
+    expect(strongAfter?.thresholds[0]?.[0]).toBe(SWING_MIN_THRESHOLD);
+    expect(strongAfter?.towardBlack).toBe(1);
 
-    const smallWhite = computeTerritorySwing(grid([[-0.4]]), grid([[-0.8]]));
-    expect(smallWhite?.thresholds[0]?.[0]).toBe(SWING_WEAK_OWNERSHIP_THRESHOLD);
-    expect(smallWhite?.towardWhite).toBe(0);
-    expect(hasVisibleSwing(smallWhite)).toBe(false);
+    const contested = computeTerritorySwing(grid([[0.4]]), grid([[0.2]]));
+    expect(contested?.thresholds[0]?.[0]).toBeCloseTo(0.6, 6);
+    expect(contested?.towardWhite).toBe(0);
+    expect(hasVisibleSwing(contested)).toBe(false);
 
-    const largeBlack = computeTerritorySwing(grid([[0.2]]), grid([[0.8]]));
-    expect(largeBlack?.towardBlack).toBe(1);
-    expect(hasVisibleSwing(largeBlack)).toBe(true);
+    const nearNeutral = computeTerritorySwing(grid([[0]]), grid([[0.4]]));
+    expect(nearNeutral?.thresholds[0]?.[0]).toBeCloseTo(0.6, 6);
+    expect(hasVisibleSwing(nearNeutral)).toBe(false);
   });
 
   it('counts only points past the threshold, so haze is not a finding', () => {
@@ -140,22 +133,22 @@ describe('swingOverlayEnabled', () => {
 describe('swingAlpha', () => {
   it('paints the peak fully and ramps the rest down to the visible minimum', () => {
     expect(swingAlpha(0.8, 0.8)).toBe(1);
-    const aboveThreshold = SWING_STRONG_OWNERSHIP_THRESHOLD + 0.15;
+    const aboveThreshold = SWING_MIN_THRESHOLD + 0.15;
     expect(swingAlpha(-aboveThreshold, 0.8)).toBeCloseTo(
-      SWING_MIN_ALPHA + (1 - SWING_MIN_ALPHA) * (0.15 / (0.8 - SWING_STRONG_OWNERSHIP_THRESHOLD)),
+      SWING_MIN_ALPHA + (1 - SWING_MIN_ALPHA) * (0.15 / (0.8 - SWING_MIN_THRESHOLD)),
       6
     );
     expect(swingAlpha(0, 0.8)).toBe(0);
   });
 
-  it('can use the contested-point threshold', () => {
-    expect(swingAlpha(-0.4, 0.8, SWING_WEAK_OWNERSHIP_THRESHOLD)).toBe(0);
-    expect(swingAlpha(-0.6, 0.8, SWING_WEAK_OWNERSHIP_THRESHOLD)).toBeGreaterThan(0);
+  it('can use a point-specific threshold', () => {
+    expect(swingAlpha(-0.4, 0.8, 0.5)).toBe(0);
+    expect(swingAlpha(-0.6, 0.8, 0.5)).toBeGreaterThan(0);
   });
 
   it('paints nothing below the threshold, so the haze stays off the board', () => {
-    expect(swingAlpha(SWING_STRONG_OWNERSHIP_THRESHOLD - 0.001, 0.9)).toBe(0);
-    expect(swingAlpha(SWING_STRONG_OWNERSHIP_THRESHOLD, 0.9)).toBeCloseTo(SWING_MIN_ALPHA, 6);
+    expect(swingAlpha(SWING_MIN_THRESHOLD - 0.001, 0.9)).toBe(0);
+    expect(swingAlpha(SWING_MIN_THRESHOLD, 0.9)).toBeCloseTo(SWING_MIN_ALPHA, 6);
   });
 
   it('paints nothing when the whole board sits under the threshold', () => {
@@ -163,7 +156,7 @@ describe('swingAlpha', () => {
   });
 
   it('paints a lone qualifying point fully rather than dividing by nothing', () => {
-    expect(swingAlpha(SWING_STRONG_OWNERSHIP_THRESHOLD, SWING_STRONG_OWNERSHIP_THRESHOLD)).toBe(1);
+    expect(swingAlpha(SWING_MIN_THRESHOLD, SWING_MIN_THRESHOLD)).toBe(1);
   });
 
   it('never exceeds one, even if a reading runs past the peak', () => {

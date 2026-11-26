@@ -32,8 +32,7 @@
  * whole-board estimates leaves a haze everywhere. Painting that haze says
  * "the whole board moved", which is exactly the wrong answer.
  */
-export const SWING_STRONG_OWNERSHIP_THRESHOLD = 0.25;
-export const SWING_WEAK_OWNERSHIP_THRESHOLD = 0.5;
+export const SWING_MIN_THRESHOLD = 0.25;
 
 /**
  * How faint the weakest painted point may be. A point that only just clears the
@@ -51,9 +50,9 @@ export type TerritorySwing = {
   /** The largest single-point move, as an absolute value. */
   peak: number;
   /**
-   * `[y][x]` threshold for each point, decided by the ownership before the
-   * move. A strongly owned point shows a change from 0.25; a contested point
-   * needs 0.5.
+   * `[y][x]` threshold for each point: `max(min(1 - |before|, 1 - |after|),
+   * 0.25)`. The more confidently either side owns the point, the smaller the
+   * change needed to call it.
    */
   thresholds: number[][];
   /** Intersections that moved toward Black by at least their threshold. */
@@ -102,12 +101,13 @@ export function computeTerritorySwing(
       if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       const delta = a! - b!;
       row[x] = delta;
-      // Judge the point before the move: a settled point (|ownership| >= 0.5)
-      // shows a 0.25 change; a contested one needs 0.5 before it is worth
-      // painting.
-      const threshold = Math.abs(b!) >= 0.5
-        ? SWING_STRONG_OWNERSHIP_THRESHOLD
-        : SWING_WEAK_OWNERSHIP_THRESHOLD;
+      // Take the more confident of the two readings: if either side owns the
+      // point strongly, a smaller change is meaningful. The 0.25 floor keeps a
+      // settled point from needing an unreasonably tiny change.
+      const threshold = Math.max(
+        Math.min(1 - Math.abs(b!), 1 - Math.abs(a!)),
+        SWING_MIN_THRESHOLD
+      );
       thresholdRow[x] = threshold;
       const magnitude = Math.abs(delta);
       if (magnitude > peak) peak = magnitude;
@@ -238,7 +238,7 @@ export function swingOverlayEnabled(analysisShowSwing: boolean, analysisShowOwne
 export function swingAlpha(
   value: number,
   peak: number,
-  threshold: number = SWING_STRONG_OWNERSHIP_THRESHOLD
+  threshold: number = SWING_MIN_THRESHOLD
 ): number {
   const magnitude = Math.abs(value);
   if (!Number.isFinite(magnitude) || !Number.isFinite(peak)) return 0;
