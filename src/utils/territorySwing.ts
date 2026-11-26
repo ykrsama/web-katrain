@@ -87,9 +87,11 @@ export function computeTerritorySwing(
     for (let x = 0; x < afterRow.length; x++) {
       const a = afterRow[x];
       const b = beforeRow[x];
-      // A non-finite reading is a hole in the data, not a swing of zero, but a
-      // hole in one corner must not discard the rest of the board.
-      const delta = Number.isFinite(a) && Number.isFinite(b) ? a! - b! : 0;
+      // A non-finite reading is missing data, not a swing of zero. Comparing
+      // against an invented zero would paint a change that the engine never
+      // reported, so reject the whole pair instead.
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      const delta = a! - b!;
       row[x] = delta;
       const magnitude = Math.abs(delta);
       if (magnitude > peak) peak = magnitude;
@@ -129,11 +131,18 @@ type SwingNode = {
   move?: { x: number; y: number } | null;
   analysis?: {
     territory?: number[][];
+    ownershipMode?: 'none' | 'root' | 'tree';
     moves?: Array<{ x: number; y: number; order: number }>;
   } | null;
   parent?: SwingNode | null;
   children?: SwingNode[];
 };
+
+/** A map that exists and was not explicitly left empty by a previous writer. */
+function hasTerritoryMap(analysis: SwingNode['analysis']): analysis is NonNullable<SwingNode['analysis']> & { territory: number[][] } {
+  if (!analysis || (analysis.ownershipMode ?? 'root') === 'none') return false;
+  return isGrid(analysis.territory);
+}
 
 /** Where the swing at `node` should measure from, under `compare`. */
 export function resolveSwingBaseline(
@@ -145,9 +154,8 @@ export function resolveSwingBaseline(
   if (!node || !parent) return { kind: 'unavailable', reason: 'there is no move before this one' };
 
   if (compare === 'previous') {
-    const territory = parent.analysis?.territory;
-    return territory
-      ? { kind: 'previous', territory }
+    return hasTerritoryMap(parent.analysis)
+      ? { kind: 'previous', territory: parent.analysis.territory }
       : { kind: 'unavailable', reason: 'needs this move and the one before it analyzed' };
   }
 
@@ -165,9 +173,10 @@ export function resolveSwingBaseline(
   if (!sibling) {
     return { kind: 'unavailable', reason: `play ${label} from the previous move to compare against it` };
   }
-  const territory = sibling.analysis?.territory;
-  if (!territory) return { kind: 'unavailable', reason: `${label} is not analyzed yet` };
-  return { kind: 'best', territory, label };
+  if (!hasTerritoryMap(sibling.analysis)) {
+    return { kind: 'unavailable', reason: `${label} is not analyzed yet` };
+  }
+  return { kind: 'best', territory: sibling.analysis.territory, label };
 }
 
 /** True when at least one point changed hands, so there is something to draw. */

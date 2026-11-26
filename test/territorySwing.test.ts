@@ -41,13 +41,9 @@ describe('computeTerritorySwing', () => {
     expect(swing?.towardWhite).toBe(1);
   });
 
-  it('keeps the rest of the board when one reading is missing', () => {
-    const swing = computeTerritorySwing(
-      grid([[0, 0], [0, 0]]),
-      [[Number.NaN, 0.8], [0, 0]]
-    );
-    expect(swing?.grid[0]?.[0]).toBe(0);
-    expect(swing?.grid[0]?.[1]).toBeCloseTo(0.8, 6);
+  it('refuses to compare when a reading is missing', () => {
+    expect(computeTerritorySwing(grid([[0, 0], [0, 0]]), [[Number.NaN, 0.8], [0, 0]])).toBeNull();
+    expect(computeTerritorySwing([[0, 0], [0, Number.NaN]], grid([[0, 0], [0, 0]]))).toBeNull();
   });
 
   it('returns null rather than guessing when a side is missing or disagrees', () => {
@@ -155,7 +151,11 @@ describe('resolveSwingBaseline', () => {
   const label = (x: number, y: number) => `pt${x}${y}`;
   type Fake = {
     move?: { x: number; y: number } | null;
-    analysis?: { territory?: number[][]; moves?: Array<{ x: number; y: number; order: number }> } | null;
+    analysis?: {
+      territory?: number[][];
+      ownershipMode?: 'none' | 'root' | 'tree';
+      moves?: Array<{ x: number; y: number; order: number }>;
+    } | null;
     parent?: Fake | null;
     children?: Fake[];
   };
@@ -170,6 +170,19 @@ describe('resolveSwingBaseline', () => {
     const parent = parentWith(null);
     const node = { parent, move: { x: 1, y: 1 }, analysis: { territory: grid9() } };
     expect(resolveSwingBaseline(node, 'previous', label)).toEqual({ kind: 'previous', territory: grid9() });
+  });
+
+  it('refuses a previous baseline whose ownership was never computed', () => {
+    const parent: Fake = { analysis: { territory: grid9(), ownershipMode: 'none' }, children: [] };
+    const node = { parent, move: { x: 1, y: 1 }, analysis: { territory: grid9(), ownershipMode: 'root' as const } };
+    expect(resolveSwingBaseline(node, 'previous', label).kind).toBe('unavailable');
+  });
+
+  it('refuses an unowned sibling as the best baseline', () => {
+    const sibling = { move: { x: 3, y: 3 }, analysis: { territory: grid9(), ownershipMode: 'none' as const } };
+    const parent = parentWith({ x: 3, y: 3 }, [sibling]);
+    const node = { parent, move: { x: 1, y: 1 }, analysis: { territory: grid9(), ownershipMode: 'root' as const } };
+    expect(resolveSwingBaseline(node, 'best', label).kind).toBe('unavailable');
   });
 
   it('has nothing to measure from at the root', () => {
