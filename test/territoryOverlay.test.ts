@@ -65,18 +65,19 @@ describe('territory overlay data', () => {
     expect(node.analysis?.territory[0][0]).toBe(0.75);
   });
 
-  it('records a failed ownership refill so the automatic retry does not loop', async () => {
+  it('leaves an analysis unchanged when the ownership refill has no map to add', async () => {
     const node = useGameStore.getState().currentNode;
-    node.analysis = savedReview();
+    const before = savedReview();
+    node.analysis = before;
     analyze.mockResolvedValueOnce({
       rootWinRate: 0.4, rootScoreLead: -3, rootVisits: 25, moves: [],
     });
 
     await useGameStore.getState().runAnalysis({ ownershipOnly: true });
 
-    expect(node.analysis?.ownershipMode).toBe('none');
-    expect(node.analysis?.territory).toEqual([]);
-    expect(node.ownershipFillAttempted).toBe(true);
+    // Replacing the object here would retrigger the auto-fill effect on its own
+    // output without adding anything.
+    expect(node.analysis).toBe(before);
   });
 
   it('does not fetch ownership outside analysis mode just because Swing is shown', async () => {

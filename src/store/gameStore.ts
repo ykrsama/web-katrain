@@ -4920,17 +4920,37 @@ export const useGameStore = create<GameStore>((commit, get) => {
               // Its win rate, score, candidates and requested depth stay intact.
               if (!hasTerritory(node.analysis)) {
                 const supplement = ownershipToTerritoryGrid(analysis.ownership, boardSize);
-                node.analysis = {
-                  ...node.analysis,
-                  territory: supplement,
-                  ownershipStdev: analysis.ownershipStdev,
-                  ownershipMode: supplement.length > 0 ? 'root' : 'none',
-                };
-                if (supplement.length === 0) node.ownershipFillAttempted = true;
-                set((s) => ({
-                  ...(s.currentNode.id === node.id ? { analysisData: node.analysis } : {}),
-                  treeVersion: s.treeVersion + 1,
-                }));
+                if (supplement.length === 0) {
+                  // The engine had no map to give. If the node already says
+                  // none with an empty grid there is nothing to write: replacing
+                  // the analysis object here was what made the refill effect
+                  // run again on its own output.
+                  const alreadyMissing = (node.analysis.ownershipMode ?? 'root') === 'none'
+                    && node.analysis.territory.length === 0;
+                  if (!alreadyMissing) {
+                    node.analysis = {
+                      ...node.analysis,
+                      territory: [],
+                      ownershipStdev: undefined,
+                      ownershipMode: 'none',
+                    };
+                    set((s) => ({
+                      ...(s.currentNode.id === node.id ? { analysisData: node.analysis } : {}),
+                      treeVersion: s.treeVersion + 1,
+                    }));
+                  }
+                } else {
+                  node.analysis = {
+                    ...node.analysis,
+                    territory: supplement,
+                    ownershipStdev: analysis.ownershipStdev,
+                    ownershipMode: 'root',
+                  };
+                  set((s) => ({
+                    ...(s.currentNode.id === node.id ? { analysisData: node.analysis } : {}),
+                    treeVersion: s.treeVersion + 1,
+                  }));
+                }
               }
               if (isFinal) {
                 const engineInfo = getEngineClient(get().settings).getEngineInfo();
