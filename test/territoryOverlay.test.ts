@@ -120,18 +120,6 @@ describe('territory overlay data', () => {
     expect(analyze).not.toHaveBeenCalled();
   });
 
-  it('refreshes blank maps saved by the old remote client when Territory is explicitly enabled', async () => {
-    const node = useGameStore.getState().currentNode;
-    node.analysis = { ...savedReview(), ownershipMode: 'root',
-      territory: Array.from({ length: 19 }, () => Array(19).fill(0)) };
-    useGameStore.setState((s) => ({ settings: { ...s.settings, analysisShowOwnership: false } }));
-    useGameStore.getState().updateSettings({ analysisShowOwnership: true });
-    expect(node.analysis?.ownershipMode).toBe('none');
-    await useGameStore.getState().runAnalysis({ ownershipOnly: true });
-    expect(node.analysis?.territory[0][0]).toBe(0.75);
-    expect(node.analysis?.rootVisits).toBe(50000);
-  });
-
   it('does not mistake a throttled progress placeholder for completed ownership', async () => {
     vi.spyOn(performance, 'now').mockReturnValue(10000);
     useGameStore.setState((s) => ({

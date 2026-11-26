@@ -14,6 +14,34 @@ const makeAnalysis = (n: number): AnalysisResult => ({
 });
 
 describe('KT analysis round trip on small boards', () => {
+  it('keeps a missing ownership map missing instead of inventing a zero map', () => {
+    s().resetGame();
+    s().loadGame(parseSgf('(;GM[1]SZ[9];B[dd])'));
+    const node = s().rootNode.children[0]!;
+    node.analysis = { ...makeAnalysis(9), ownershipMode: 'none', territory: [] };
+    const sgf = generateSgfFromTree(s().rootNode);
+    s().loadGame(parseSgf(sgf));
+    const back = s().rootNode.children[0]!.analysis!;
+    expect(back.ownershipMode).toBe('none');
+    expect(back.territory).toEqual([]);
+  });
+
+  it('keeps a genuine all-zero map as data', () => {
+    s().resetGame();
+    s().loadGame(parseSgf('(;GM[1]SZ[9];B[dd])'));
+    const node = s().rootNode.children[0]!;
+    node.analysis = {
+      ...makeAnalysis(9),
+      ownershipMode: 'root',
+      territory: Array.from({ length: 9 }, () => Array(9).fill(0)),
+    };
+    const sgf = generateSgfFromTree(s().rootNode);
+    s().loadGame(parseSgf(sgf));
+    const back = s().rootNode.children[0]!.analysis!;
+    expect(back.ownershipMode).toBe('root');
+    expect(back.territory[0]![0]).toBe(0);
+  });
+
   for (const n of [9, 13, 19]) {
     it(`${n}x${n} keeps ownership and policy`, () => {
       s().resetGame();

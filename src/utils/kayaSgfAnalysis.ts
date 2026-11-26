@@ -173,7 +173,7 @@ export function decodeKayaKa(args: {
       rootScoreStdev: 0,
       rootVisits: typeof data.v === 'number' && Number.isFinite(data.v) ? Math.max(0, Math.floor(data.v)) : undefined,
       moves,
-      territory: ownershipToGrid(ownership, boardSize),
+      territory: ownership ? ownershipToGrid(ownership, boardSize) : [],
       policy,
       ownershipMode: ownership ? 'root' : 'none',
     };

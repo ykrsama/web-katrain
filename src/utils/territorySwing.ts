@@ -138,8 +138,15 @@ type SwingNode = {
   children?: SwingNode[];
 };
 
-/** A map that exists and was not explicitly left empty by a previous writer. */
-function hasTerritoryMap(analysis: SwingNode['analysis']): analysis is NonNullable<SwingNode['analysis']> & { territory: number[][] } {
+/**
+ * A map that exists and was not explicitly left empty by a previous writer.
+ *
+ * Exported because the display surfaces must make the same decision: missing
+ * ownership is represented by an empty territory, never by a board of zeroes.
+ */
+export function hasTerritoryMap(
+  analysis: { territory?: number[][]; ownershipMode?: 'none' | 'root' | 'tree' } | null | undefined
+): analysis is { territory: number[][]; ownershipMode?: 'none' | 'root' | 'tree' } {
   if (!analysis || (analysis.ownershipMode ?? 'root') === 'none') return false;
   return isGrid(analysis.territory);
 }

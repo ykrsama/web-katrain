@@ -765,10 +765,10 @@ class RemoteEngineClient {
 
     const ownership = resp.ownership?.length === boardSize * boardSize
       ? new Float32Array(resp.ownership)
-      : new Float32Array(boardSize * boardSize);
+      : undefined;
     const ownershipStdev = resp.ownershipStdev?.length === boardSize * boardSize
       ? new Float32Array(resp.ownershipStdev)
-      : new Float32Array(boardSize * boardSize);
+      : undefined;
     const policy = readPolicy(resp.policy, boardSize) ?? buildPolicy(mi, boardSize);
     const humanPolicy = readPolicy(resp.humanPolicy, boardSize);
 

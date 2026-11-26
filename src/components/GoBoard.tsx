@@ -58,7 +58,7 @@ import {
 } from '../utils/boardKeyboardNavigation';
 import { boardToQaString, countBoardStones } from '../utils/boardQaSnapshot';
 import { useT } from '../i18n';
-import { computeTerritorySwing, hasVisibleSwing, resolveSwingBaseline, swingAlpha, swingOverlayEnabled } from '../utils/territorySwing';
+import { computeTerritorySwing, hasTerritoryMap, hasVisibleSwing, resolveSwingBaseline, swingAlpha, swingOverlayEnabled } from '../utils/territorySwing';
 
 const OWNERSHIP_COLORS = {
   black: [0.0, 0.0, 0.1, 0.75],
@@ -979,7 +979,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     if (!hasAnalysisOverlay || !swingOverlayEnabled(settings.analysisShowSwing, settings.analysisShowOwnership)
       || scoringMode || hidesAnswer) return null;
     const after = currentNode.analysis;
-    if (!after || (after.ownershipMode ?? 'root') === 'none') return null;
+    if (!hasTerritoryMap(after)) return null;
     const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
       formatBoardMoveLabel({ x, y }, boardSize)
     );

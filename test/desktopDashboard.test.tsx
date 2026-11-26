@@ -4,6 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { APP_ISSUE_REPORT_URL } from '../src/utils/appInfo';
 
 describe('DesktopDashboard', () => {
+  it('does not quote a swing for a position without territory', () => {
+    const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
+
+    // A quick graph writes an all-zero territory placeholder. The chip used to
+    // read that as a real map and print a confident intersection count even
+    // though the position had no ownership.
+    expect(source).toContain('hasTerritoryMap(afterAnalysis)');
+    expect(source).toContain("'needs this move analyzed with territory'");
+  });
+
   it('keeps the primary desktop shell wired to issue reporting', () => {
     const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
     const icons = readFileSync('src/components/dashboard/icons.tsx', 'utf8');

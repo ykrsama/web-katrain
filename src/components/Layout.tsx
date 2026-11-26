@@ -1614,6 +1614,7 @@ export const Layout: React.FC = () => {
   // the overlays show only what the file already carries.
   useEffect(() => {
     if (!isAnalysisMode || !currentNode.analysis
+      || (currentNode.analysis.ownershipMode ?? 'root') === 'none'
       || isEditMode || scoringMode || isSelectingRegionOfInterest) return;
     void runAnalysis({ ownershipOnly: true });
   }, [currentNode.id, currentNode.analysis, currentNode.analysis?.ownershipMode,

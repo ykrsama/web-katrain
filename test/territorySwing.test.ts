@@ -4,6 +4,7 @@ import {
   resolveSwingBaseline,
   describeTerritorySwing,
   hasVisibleSwing,
+  hasTerritoryMap,
   SWING_MIN_ALPHA,
   SWING_POINT_THRESHOLD,
   swingAlpha,
@@ -67,6 +68,26 @@ describe('computeTerritorySwing', () => {
     expect(swing?.peak).toBeCloseTo(0.24, 6);
     expect(hasVisibleSwing(swing)).toBe(false);
     expect(swingAlpha(swing!.grid[1]![0]!, swing!.peak)).toBe(0);
+  });
+});
+
+describe('hasTerritoryMap', () => {
+  it('accepts a real ownership map and rejects an empty or unowned one', () => {
+    expect(hasTerritoryMap({ territory: [[1]], ownershipMode: 'root' })).toBe(true);
+    expect(hasTerritoryMap({ territory: [[0, -1]], ownershipMode: 'tree' })).toBe(true);
+    // A real all-zero reading from the engine is data, not a placeholder.
+    expect(hasTerritoryMap({ territory: [[0]], ownershipMode: 'root' })).toBe(true);
+    expect(hasTerritoryMap({ territory: [[0]], ownershipMode: 'none' })).toBe(false);
+    expect(hasTerritoryMap({ territory: [], ownershipMode: 'root' })).toBe(false);
+    expect(hasTerritoryMap({ ownershipMode: 'root' })).toBe(false);
+    expect(hasTerritoryMap(null)).toBe(false);
+  });
+
+  it('rejects a current position that has no ownership even when the previous one does', () => {
+    const previous = { territory: [[1, -1], [-1, 1]], ownershipMode: 'root' as const };
+    const current = { territory: [], ownershipMode: 'none' as const };
+    expect(hasTerritoryMap(previous)).toBe(true);
+    expect(hasTerritoryMap(current)).toBe(false);
   });
 });
 
@@ -147,7 +168,7 @@ describe('describeTerritorySwing', () => {
 });
 
 describe('resolveSwingBaseline', () => {
-  const grid9 = () => [[0, 0], [0, 0]];
+  const grid9 = () => [[1, -1], [-1, 1]];
   const label = (x: number, y: number) => `pt${x}${y}`;
   type Fake = {
     move?: { x: number; y: number } | null;

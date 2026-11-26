@@ -90,8 +90,8 @@ export interface KataGoAnalysisPayload {
   rawStWrError?: number; // -1 when the net does not predict it
   rawStScoreError?: number;
   rawVarTimeLeft?: number; // KataGo rawVarTimeLeft: how much game the net thinks is left
-  ownership: FloatArray; // len 361, +1 black owns, -1 white owns
-  ownershipStdev: FloatArray; // len 361
+  ownership?: FloatArray; // len 361, +1 black owns, -1 white owns; absent when the engine did not return a map
+  ownershipStdev?: FloatArray; // len 361; absent with ownership
   policy: FloatArray; // len 362, illegal = -1, pass at index 361
   // Same shape as `policy`, from the human SL net for the requested profile.
   humanPolicy?: FloatArray;

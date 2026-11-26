@@ -383,9 +383,6 @@ interface GameStore extends GameState {
 
 type StoreNotification = NonNullable<GameStore['notification']>;
 
-const createEmptyTerritory = (boardSize: number): number[][] =>
-  Array.from({ length: boardSize }, () => Array.from({ length: boardSize }, () => 0));
-
 const getBoardSizeFromBoard = (board: BoardState): BoardSize =>
   normalizeBoardSize(board.length, DEFAULT_BOARD_SIZE);
 
@@ -720,7 +717,14 @@ const rulesToSgfRu = (rules: GameRules): string => rulesToSgf(rules);
 
 const parseSgfRu = (ru: string | undefined): GameRules | null => rulesFromSgf(ru);
 
-const ownershipToTerritoryGrid = (ownership: ArrayLike<number>, boardSize: number): number[][] => {
+const ownershipToTerritoryGrid = (
+  ownership: ArrayLike<number> | null | undefined,
+  boardSize: number
+): number[][] => {
+  // No map is represented by an empty grid, not by a board of zeroes: the
+  // latter is indistinguishable from a real all-zero reading and was the
+  // placeholder that made Swing compare against invented data.
+  if (!ownership || ownership.length < boardSize * boardSize) return [];
   const territory: number[][] = Array(boardSize)
     .fill(0)
     .map(() => Array(boardSize).fill(0));
@@ -2766,7 +2770,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           rootScoreLead: payload.rootScoreLead,
           rootVisits: payload.rootVisits,
           moves: payload.moves,
-          territory: createEmptyTerritory(boardSize),
+          territory: [],
         };
         const value = computeTenukiValue({
           sideToMove,
@@ -4249,14 +4253,13 @@ export const useGameStore = create<GameStore>((commit, get) => {
                 positionChanged = true;
                 continue;
               }
-              const boardSize = getBoardSizeFromBoard(node.gameState.board);
               node.analysis = {
                 rootWinRate: evaled.rootWinRate,
                 rootScoreLead: evaled.rootScoreLead,
                 rootScoreSelfplay: evaled.rootScoreSelfplay,
                 rootScoreStdev: evaled.rootScoreStdev,
                 moves: [],
-                territory: createEmptyTerritory(boardSize),
+                territory: [],
                 policy: undefined,
                 ownershipStdev: undefined,
                 ownershipMode: 'none',
@@ -4487,6 +4490,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
           metaSynced = true;
         }
 
+        const fastTerritory = ownershipToTerritoryGrid(analysis.ownership, nodeBoardSize);
+        const fastHasOwnership = fastTerritory.length > 0;
         if (!(node.analysis && node.analysis !== previousAnalysis && analysisDepth(node.analysis) > (analysis.rootVisits ?? fastVisits))) node.analysis = {
           rootWinRate: analysis.rootWinRate,
           rootScoreLead: analysis.rootScoreLead,
@@ -4504,12 +4509,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
           rawStScoreError: analysis.rawStScoreError,
           rawVarTimeLeft: analysis.rawVarTimeLeft,
           moves: analysis.moves,
-          territory: analysis.ownership
-            ? ownershipToTerritoryGrid(analysis.ownership, nodeBoardSize)
-            : createEmptyTerritory(nodeBoardSize),
+          territory: fastTerritory,
           policy: undefined,
           ownershipStdev: analysis.ownershipStdev,
-          ownershipMode: analysis.ownership ? ownershipMode : 'none',
+          ownershipMode: fastHasOwnership ? ownershipMode : 'none',
         };
         node.analysisVisitsRequested = fastVisits;
         markDone();
@@ -4697,6 +4700,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
           metaSynced = true;
         }
 
+        const fullTerritory = ownershipToTerritoryGrid(analysis.ownership, boardSize);
+        const fullOwnershipMode = s.settings.katagoOwnershipMode;
+        const fullHasOwnership = fullTerritory.length > 0;
         if (!(node.analysis && node.analysis !== previousAnalysis && analysisDepth(node.analysis) > (analysis.rootVisits ?? visits))) node.analysis = {
           rootWinRate: analysis.rootWinRate,
           rootScoreLead: analysis.rootScoreLead,
@@ -4712,10 +4718,10 @@ export const useGameStore = create<GameStore>((commit, get) => {
           rawStScoreError: analysis.rawStScoreError,
           rawVarTimeLeft: analysis.rawVarTimeLeft,
           moves: analysis.moves,
-          territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
+          territory: fullTerritory,
           policy: analysis.policy,
           ownershipStdev: analysis.ownershipStdev,
-          ownershipMode: s.settings.katagoOwnershipMode,
+          ownershipMode: fullHasOwnership ? fullOwnershipMode : 'none',
         };
         node.analysisVisitsRequested = Math.max(node.analysisVisitsRequested ?? 0, visits);
         markDone();
@@ -4851,6 +4857,9 @@ export const useGameStore = create<GameStore>((commit, get) => {
             analysis: KataGoAnalysisPayload,
             opts: { includeTerritory: boolean; fallbackTerritory: number[][] }
           ): AnalysisResult => {
+            const territory = opts.includeTerritory
+              ? ownershipToTerritoryGrid(analysis.ownership, boardSize)
+              : opts.fallbackTerritory;
             let analysisWithTerritory: AnalysisResult = {
               rootWinRate: analysis.rootWinRate,
               rootScoreLead: analysis.rootScoreLead,
@@ -4866,12 +4875,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
               rawStScoreError: analysis.rawStScoreError,
               rawVarTimeLeft: analysis.rawVarTimeLeft,
               moves: analysis.moves,
-              territory: opts.includeTerritory ? ownershipToTerritoryGrid(analysis.ownership, boardSize) : opts.fallbackTerritory,
+              territory,
               policy: analysis.policy,
               humanPolicy: analysis.humanPolicy,
               ownershipStdev: analysis.ownershipStdev,
               ownershipMode: opts.includeTerritory
-                ? ownershipMode
+                ? (territory.length > 0 ? ownershipMode : 'none')
                 : hasTerritory(node.analysis) ? (node.analysis?.ownershipMode ?? 'root') : 'none',
             };
 
@@ -4910,11 +4919,12 @@ export const useGameStore = create<GameStore>((commit, get) => {
               // A quick territory read supplements an existing deep review.
               // Its win rate, score, candidates and requested depth stay intact.
               if (!hasTerritory(node.analysis)) {
+                const supplement = ownershipToTerritoryGrid(analysis.ownership, boardSize);
                 node.analysis = {
                   ...node.analysis,
-                  territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
+                  territory: supplement,
                   ownershipStdev: analysis.ownershipStdev,
-                  ownershipMode: 'root',
+                  ownershipMode: supplement.length > 0 ? 'root' : 'none',
                 };
                 set((s) => ({
                   ...(s.currentNode.id === node.id ? { analysisData: node.analysis } : {}),
@@ -4938,7 +4948,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
             const shouldUpdateTerritory =
               isFinal || (showOwnership && progressApplyMinMs > 0 && now - lastTerritoryUpdateAt >= progressApplyMinMs);
             if (shouldUpdateTerritory) lastTerritoryUpdateAt = now;
-            const fallbackTerritory = node.analysis?.territory ?? createEmptyTerritory(boardSize);
+            const fallbackTerritory = node.analysis?.territory ?? [];
             const analysisWithTerritory = buildAnalysisResult(analysis, {
               includeTerritory: shouldUpdateTerritory,
               fallbackTerritory,
@@ -5211,14 +5221,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
 
       const engineChanged = engineKeys.some((k) => newSettings[k] !== undefined && newSettings[k] !== state.settings[k]);
       if (!engineChanged) {
-        const existing = state.currentNode.analysis;
-        // Older remote clients saved all-zero ownership instead of the server's
-        // map. An explicit Show Territory retries that blank result as well.
-        if (newSettings.analysisShowOwnership === true && !state.settings.analysisShowOwnership &&
-            existing && existing.territory.length > 0 && existing.territory.every((row) => row.every((value) => value === 0))) {
-          state.currentNode.analysis = { ...existing, ownershipMode: 'none' };
-          return { settings: nextSettings, analysisData: state.currentNode.analysis, treeVersion: state.treeVersion + 1 };
-        }
         return { settings: nextSettings };
       }
 
@@ -5813,6 +5815,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
           const settings = latest.settings;
           const boardSize = getBoardSizeFromBoard(latest.board);
 
+          const aiTerritory = ownershipToTerritoryGrid(analysis.ownership, boardSize);
+          const aiHasOwnership = aiTerritory.length > 0;
           const analysisWithTerritory: AnalysisResult = {
             rootWinRate: analysis.rootWinRate,
             rootScoreLead: analysis.rootScoreLead,
@@ -5828,11 +5832,11 @@ export const useGameStore = create<GameStore>((commit, get) => {
             rawStScoreError: analysis.rawStScoreError,
             rawVarTimeLeft: analysis.rawVarTimeLeft,
             moves: analysis.moves,
-            territory: ownershipToTerritoryGrid(analysis.ownership, boardSize),
+            territory: aiTerritory,
             policy: analysis.policy,
             humanPolicy: analysis.humanPolicy,
             ownershipStdev: analysis.ownershipStdev,
-            ownershipMode: aiOwnershipMode,
+            ownershipMode: aiHasOwnership ? aiOwnershipMode : 'none',
           };
 
           // Cache analysis on the node we analyzed -- unless the search was

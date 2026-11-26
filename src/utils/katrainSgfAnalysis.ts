@@ -164,7 +164,15 @@ export function encodeKaTrainKtFromAnalysis(args: { analysis: AnalysisResult; bo
   const boardSize = args.boardSize ?? DEFAULT_BOARD_SIZE;
   const boardSquares = boardSize * boardSize;
 
-  const ownership = flattenTerritoryToOwnership(args.analysis.territory, boardSize).slice(0, boardSquares);
+  // No ownership is an empty section, not a board of zeroes. A real all-zero
+  // reading (the engine returned one) has ownershipMode root/tree and keeps
+  // its grid; the decoder then restores it as data.
+  const hasOwnership = (args.analysis.ownershipMode ?? 'root') !== 'none'
+    && Array.isArray(args.analysis.territory)
+    && args.analysis.territory.length > 0;
+  const ownership = hasOwnership
+    ? flattenTerritoryToOwnership(args.analysis.territory, boardSize).slice(0, boardSquares)
+    : [];
   const policy = (args.analysis.policy ?? []).slice(0, boardSquares + 1);
 
   const moves: Record<string, Record<string, unknown>> = {};
@@ -327,9 +335,9 @@ export function kaTrainAnalysisToAnalysisResult(args: {
     rootScoreStdev,
     rootVisits,
     moves,
-    territory: ownershipToGrid(a.ownership, boardSize),
+    territory: a.ownership ? ownershipToGrid(a.ownership, boardSize) : [],
     policy: a.policy ?? undefined,
     ownershipStdev: undefined,
-    ownershipMode: 'root',
+    ownershipMode: a.ownership ? 'root' : 'none',
   };
 }

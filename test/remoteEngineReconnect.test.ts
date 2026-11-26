@@ -247,7 +247,7 @@ describe('remote ownership response conversion', () => {
     socket.reply({ ...analysisReply(String(query.id)), isDuringSearch: true, ownership, ownershipStdev });
     socket.reply({ ...analysisReply(String(query.id)), ownership, ownershipStdev });
     const result = await pending;
-    expect(Array.from(result.ownership)).toEqual(ownership);
+    expect(Array.from(result.ownership ?? [])).toEqual(ownership);
     expect(Array.from(result.ownershipStdev ?? [])).toEqual(ownershipStdev);
     expect(Array.from(progress[0]!)).toEqual(ownership);
   });

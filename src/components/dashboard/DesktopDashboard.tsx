@@ -16,7 +16,7 @@ import { NotesPanel } from '../NotesPanel';
 import { Timer } from '../Timer';
 import { LanguageSwitcher } from '../layout/LanguageSwitcher';
 import { getDashboardLayoutMode, type DashboardLayoutMode } from '../../utils/dashboardLayout';
-import { computeTerritorySwing, describeTerritorySwing, resolveSwingBaseline } from '../../utils/territorySwing';
+import { computeTerritorySwing, describeTerritorySwing, hasTerritoryMap, resolveSwingBaseline } from '../../utils/territorySwing';
 import { LIBRARY_OPEN_STORAGE_KEY } from '../../utils/layoutPreferences';
 import { APP_BUILD_LABEL, APP_COMMIT_URL, APP_ISSUE_REPORT_URL } from '../../utils/appInfo';
 import { formatEngineBackendLabel, getEngineModelSource } from '../../utils/engineStatusSummary';
@@ -516,7 +516,8 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
   // and back.
   const swingSummary = useMemo(() => {
     void treeVersion;
-    const after = currentNode.analysis?.territory;
+    const afterAnalysis = currentNode.analysis;
+    const after = hasTerritoryMap(afterAnalysis) ? afterAnalysis.territory : null;
     const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
       formatMoveLabel(x, y, boardSize)
     );
@@ -525,7 +526,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     // wants something different from the reader -- wait, play a move, or "that
     // is the answer".
     if (baseline.kind === 'unavailable') return baseline.reason;
-    if (!after) return 'needs this move analyzed';
+    if (!after) return 'needs this move analyzed with territory';
     const against = baseline.kind === 'best' ? `vs ${baseline.label}` : 'vs the move before';
     const summary = describeTerritorySwing(computeTerritorySwing(baseline.territory, after));
     return summary ? `${against}: ${summary}` : `${against}: nothing moved`;
