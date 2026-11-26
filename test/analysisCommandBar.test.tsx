@@ -46,6 +46,32 @@ const analysis = (): AnalysisResult => ({
 });
 
 describe('AnalysisCommandBar', () => {
+  it('keeps Swing disabled and off until Territory is on', () => {
+    const swingButton = (html: string) => html
+      .split('<button')
+      .slice(1)
+      .map((chunk) => `<button${chunk.split('</button>')[0]}`)
+      .find((button) => button.includes('data-analysis-swing-toggle="true"'));
+
+    const withoutTerritory = renderToStaticMarkup(
+      <AnalysisCommandBar
+        {...baseProps}
+        analysisControls={{ ...baseProps.analysisControls, analysisShowOwnership: false, analysisShowSwing: true }}
+      />,
+    );
+    expect(swingButton(withoutTerritory)).toContain('disabled=""');
+    expect(swingButton(withoutTerritory)).not.toContain('aria-pressed="true"');
+
+    const withBoth = renderToStaticMarkup(
+      <AnalysisCommandBar
+        {...baseProps}
+        analysisControls={{ ...baseProps.analysisControls, analysisShowOwnership: true, analysisShowSwing: true }}
+      />,
+    );
+    expect(swingButton(withBoth)).not.toContain('disabled=""');
+    expect(swingButton(withBoth)).toContain('aria-pressed="true"');
+  });
+
   it('surfaces a compact engine status pill with backend and model context', () => {
     // Pro is the app default now, but this case is about the Coach surfaces,
     // so pass Coach explicitly rather than relying on the store snapshot.

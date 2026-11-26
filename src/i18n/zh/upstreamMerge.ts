@@ -2,6 +2,7 @@ export default {
   "Remote engine ready": "远程引擎就绪",
   "Hide what this move changed": "隐藏这一手带来的变化",
   "Show what this move changed, in place of the territory wash": "显示这一手带来的变化，替代领地底色",
+  "Turn on territory ownership first": "请先开启领地",
   "Swing": "领地变化",
   "Lightweight test model selected": "已选择轻量测试模型",
   "Useful for trying the app. Choose stronger weights for serious game review; more visits alone cannot replace a stronger model.": "适合体验应用。认真复盘请使用更强的模型；单纯增加访问数无法替代更强的模型。",

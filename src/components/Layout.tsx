@@ -3284,8 +3284,9 @@ export const Layout: React.FC = () => {
         label: settings.analysisShowSwing ? t('Hide what this move changed') : t('Show what this move changed'),
         category: 'Analysis',
         run: () => updateControls({ analysisShowSwing: !settings.analysisShowSwing }),
-        disabledReason:
-          currentNode.analysis && currentNode.parent?.analysis
+        disabledReason: !settings.analysisShowOwnership
+          ? t('Turn on territory ownership first')
+          : currentNode.analysis && currentNode.parent?.analysis
             ? undefined
             : t('Analyze this move and the one before it, so there are two territory maps to compare.'),
         keywords: ['swing', 'ownership', 'territory', 'difference', 'where', 'lost points', 'delta'],

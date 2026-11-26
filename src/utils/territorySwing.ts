@@ -176,6 +176,17 @@ export function hasVisibleSwing(swing: TerritorySwing | null): swing is Territor
 }
 
 /**
+ * Whether the swing should be drawn at all.
+ *
+ * The swing replaces the territory wash on the same layer, so it needs the
+ * territory overlay on as well as its own switch. Turning territory off hides
+ * the swing without forgetting that the Swing button was left on.
+ */
+export function swingOverlayEnabled(analysisShowSwing: boolean, analysisShowOwnership: boolean): boolean {
+  return analysisShowSwing && analysisShowOwnership;
+}
+
+/**
  * How strongly to paint one point, 0..1.
  *
  * Points under the threshold are haze and paint nothing. Above it the ramp is

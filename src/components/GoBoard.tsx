@@ -58,7 +58,7 @@ import {
 } from '../utils/boardKeyboardNavigation';
 import { boardToQaString, countBoardStones } from '../utils/boardQaSnapshot';
 import { useT } from '../i18n';
-import { computeTerritorySwing, hasVisibleSwing, resolveSwingBaseline, swingAlpha } from '../utils/territorySwing';
+import { computeTerritorySwing, hasVisibleSwing, resolveSwingBaseline, swingAlpha, swingOverlayEnabled } from '../utils/territorySwing';
 
 const OWNERSHIP_COLORS = {
   black: [0.0, 0.0, 0.1, 0.75],
@@ -976,7 +976,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const territorySwing = useMemo(() => {
     void treeVersion;
     void visibleAnalysis;
-    if (!hasAnalysisOverlay || !settings.analysisShowSwing || scoringMode || hidesAnswer) return null;
+    if (!hasAnalysisOverlay || !swingOverlayEnabled(settings.analysisShowSwing, settings.analysisShowOwnership)
+      || scoringMode || hidesAnswer) return null;
     const after = currentNode.analysis;
     if (!after || (after.ownershipMode ?? 'root') === 'none') return null;
     const baseline = resolveSwingBaseline(currentNode, settings.analysisSwingCompare, (x, y) =>
@@ -992,6 +993,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     hidesAnswer,
     scoringMode,
     settings.analysisShowSwing,
+    settings.analysisShowOwnership,
     settings.analysisSwingCompare,
     treeVersion,
     visibleAnalysis,

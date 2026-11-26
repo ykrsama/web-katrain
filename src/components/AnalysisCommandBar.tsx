@@ -295,9 +295,13 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
   const heatmapToggleLabel = analysisControls.analysisShowPolicy ? t('Hide move heatmap') : t('Show move heatmap');
   const policyHeatmapMetricAriaLabel = t('Map: {metric} — cycle move heatmap metric', { metric: policyHeatmapMetricLabel });
   const territoryToggleLabel = analysisControls.analysisShowOwnership ? t('Hide territory ownership') : t('Show territory ownership');
-  const swingToggleLabel = analysisControls.analysisShowSwing
-    ? t('Hide what this move changed')
-    : t('Show what this move changed, in place of the territory wash');
+  const swingAvailable = analysisControls.analysisShowOwnership;
+  const swingShown = swingAvailable && analysisControls.analysisShowSwing;
+  const swingToggleLabel = !swingAvailable
+    ? t('Turn on territory ownership first')
+    : analysisControls.analysisShowSwing
+      ? t('Hide what this move changed')
+      : t('Show what this move changed, in place of the territory wash');
   const gameReportLabel = t('Open the full game report');
   const playedMoveQuality = React.useMemo(
     () => getPlayedMoveQuality(currentNode, pointsLost),
@@ -776,9 +780,10 @@ export const AnalysisCommandBar: React.FC<AnalysisCommandBarProps> = ({
         </button>
         <button
           type="button"
-          className={['analysis-command-bar__button', analysisControls.analysisShowSwing ? 'active' : ''].join(' ')}
+          className={['analysis-command-bar__button', swingShown ? 'active' : ''].join(' ')}
           onClick={() => toggleOverlay('analysisShowSwing')}
-          aria-pressed={analysisControls.analysisShowSwing}
+          disabled={!swingAvailable}
+          aria-pressed={swingShown}
           title={swingToggleLabel}
           data-analysis-swing-toggle="true"
         >

@@ -536,9 +536,10 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     label: string,
     iconName: IconName,
     disabled?: boolean,
-    detail?: string | null
+    detail?: string | null,
+    activeOverride?: boolean
   ) => {
-    const on = !!settings[keyName];
+    const on = activeOverride ?? !!settings[keyName];
     const overlayName = t(DASHBOARD_OVERLAY_NAMES[keyName]);
     const overlayActionLabel = on ? t('Hide {overlay}', { overlay: overlayName }) : t('Show {overlay}', { overlay: overlayName });
     const topMovesHiddenByPolicy = keyName === 'analysisShowHints' && disabled;
@@ -1257,7 +1258,14 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                   {overlayBtn('analysisShowHints', t('Top moves'), 'layers', settings.analysisShowPolicy)}
                   {overlayBtn('analysisShowPolicy', t('Heatmap'), 'grid')}
                   {overlayBtn('analysisShowOwnership', t('Territory'), 'map')}
-                  {overlayBtn('analysisShowSwing', t('Swing'), 'chart', false, swingSummary)}
+                  {overlayBtn(
+                    'analysisShowSwing',
+                    t('Swing'),
+                    'chart',
+                    !settings.analysisShowOwnership,
+                    settings.analysisShowOwnership ? swingSummary : t('Turn on territory ownership first'),
+                    settings.analysisShowSwing && settings.analysisShowOwnership
+                  )}
                 </div>
                 )}
                 {legendOpen && (

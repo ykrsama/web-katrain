@@ -7,6 +7,7 @@ import {
   SWING_MIN_ALPHA,
   SWING_POINT_THRESHOLD,
   swingAlpha,
+  swingOverlayEnabled,
 } from '../src/utils/territorySwing';
 
 const grid = (rows: number[][]) => rows.map((row) => row.slice());
@@ -70,6 +71,15 @@ describe('computeTerritorySwing', () => {
     expect(swing?.peak).toBeCloseTo(0.24, 6);
     expect(hasVisibleSwing(swing)).toBe(false);
     expect(swingAlpha(swing!.grid[1]![0]!, swing!.peak)).toBe(0);
+  });
+});
+
+describe('swingOverlayEnabled', () => {
+  it('requires both the territory and swing switches', () => {
+    expect(swingOverlayEnabled(true, true)).toBe(true);
+    expect(swingOverlayEnabled(true, false)).toBe(false);
+    expect(swingOverlayEnabled(false, true)).toBe(false);
+    expect(swingOverlayEnabled(false, false)).toBe(false);
   });
 });
 
