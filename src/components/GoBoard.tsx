@@ -1156,6 +1156,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
       1,
     ]);
     const readsOwnership = scoringMode || showOwnership;
+    // With Swing on, the wash says how the point changed, not who owns it now.
+    // Stones stay fully opaque, and the square on a stone uses the swing's
+    // direction and strength instead of the current ownership.
+    const swingActive = !scoringMode && swingOverlayEnabled(settings.analysisShowSwing, settings.analysisShowOwnership);
+    const swingGrid = swingActive ? territorySwing?.grid ?? null : null;
+    const swingPeak = territorySwing?.peak ?? 0;
 
     const circularShadowFor = (style: typeof blackStyle) => {
       if (style.shadowShape !== 'circle' || !style.shadowColor) return null;
@@ -1220,7 +1226,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         const top = stoneCy - radius + style.offsetY;
 
         const isDeadScoringStone = scoringMode && !!deadStones?.has(`${x},${y}`);
-        const ownershipVal = readsOwnership && territory ? (territory[y]?.[x] ?? 0) : null;
+        const ownershipVal = readsOwnership && territory && !swingActive ? (territory[y]?.[x] ?? 0) : null;
         const ownershipAbs = ownershipVal !== null ? Math.min(1, Math.abs(ownershipVal)) : 0;
         const owner =
           ownershipVal !== null
@@ -1228,13 +1234,20 @@ export const GoBoard: React.FC<GoBoardProps> = ({
               ? 'black'
               : 'white'
             : null;
+        const swingVal = swingGrid ? (swingGrid[y]?.[x] ?? 0) : null;
+        const swingScale = swingVal !== null ? swingAlpha(swingVal, swingPeak) : 0;
+        const swingOwner = swingVal !== null && swingVal !== 0 ? (swingVal > 0 ? 'black' : 'white') : null;
         const stoneAlpha = stoneAlphaFor({
           dead: isDeadScoringStone,
           ownership: ownershipVal,
           owner,
           cell,
         });
-        const showMark = ownershipVal !== null && owner && cell !== owner && ownershipAbs > 0;
+        const showMark = swingActive
+          ? !!swingOwner && cell !== swingOwner && swingScale > 0
+          : ownershipVal !== null && owner && cell !== owner && ownershipAbs > 0;
+        const markOwner = swingActive ? swingOwner : owner;
+        const markScale = swingActive ? swingScale : ownershipAbs;
 
         ctx.globalAlpha = stoneAlpha;
         const moveNumber = moveNumbers?.[y]?.[x];
@@ -1267,10 +1280,10 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         ctx.restore();
         ctx.globalAlpha = 1;
 
-        if (showMark) {
-          const markSize = Math.max(0, MARK_SIZE * ownershipAbs * stoneDiameter);
+        if (showMark && markOwner) {
+          const markSize = Math.max(0, MARK_SIZE * markScale * stoneDiameter);
           if (markSize > 0) {
-            ctx.fillStyle = owner === 'black' ? blackMarkStyle : whiteMarkStyle;
+            ctx.fillStyle = markOwner === 'black' ? blackMarkStyle : whiteMarkStyle;
             ctx.strokeStyle = markOutlineStyle;
             const markLeft = stoneCx - markSize / 2;
             const markTop = stoneCy - markSize / 2;
@@ -1317,10 +1330,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     scoringMode,
     showOwnership,
     settings.analysisShowOwnership,
+    settings.analysisShowSwing,
     fuzzyOffsets,
     setupOverlayCanvas,
     stoneTextureVersion,
     territory,
+    territorySwing,
     toDisplay,
   ]);
 
@@ -2513,10 +2528,14 @@ export const GoBoard: React.FC<GoBoardProps> = ({
   const ownershipTexture = useMemo(() => {
     // The swing and the ownership wash are the same visual channel -- a tint on
     // an intersection saying who has it -- so they share the layer rather than
-    // stacking into mud. Swing wins while it is on, and says so in its label.
+    // stacking into mud. While Swing is on it owns the layer: if it has nothing
+    // to draw, nothing is drawn; falling back to the territory wash here made
+    // the board show territory even though the reader had asked for the swing.
+    const swingActive = swingOverlayEnabled(settings.analysisShowSwing, settings.analysisShowOwnership);
     const swingGrid = territorySwing?.grid ?? null;
+    if (!scoringMode && swingActive && !swingGrid) return null;
     if (!swingGrid && !scoringMode && (!hasAnalysisOverlay || !settings.analysisShowOwnership)) return null;
-    const source = swingGrid ?? territory;
+    const source = scoringMode ? territory : (swingGrid ?? territory);
     if (!source) return null;
     const peak = territorySwing?.peak ?? 0;
 
@@ -2553,7 +2572,7 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     }
 
     return { width, height, bytes };
-  }, [boardSize, hasAnalysisOverlay, scoringMode, settings.analysisShowOwnership, territory, territorySwing, toInternal]);
+  }, [boardSize, hasAnalysisOverlay, scoringMode, settings.analysisShowOwnership, settings.analysisShowSwing, territory, territorySwing, toInternal]);
 
   useEffect(() => {
     const canvas = ownershipCanvasRef.current;
@@ -2725,6 +2744,8 @@ export const GoBoard: React.FC<GoBoardProps> = ({
 
     const showOwnershipHere = hasAnalysisOverlay && settings.analysisShowOwnership;
     const readsOwnershipHere = scoringMode || showOwnershipHere;
+    const swingActiveHere = !scoringMode
+      && swingOverlayEnabled(settings.analysisShowSwing, settings.analysisShowOwnership);
     const maxWidth = stoneDiameter * MOVE_NUMBER_MAX_WIDTH;
     // One measurement per digit count: the font is fixed for the whole draw.
     const squeezes = new Map<number, number>();
@@ -2752,7 +2773,11 @@ export const GoBoard: React.FC<GoBoardProps> = ({
         // placement moves stones off the intersection, and ownership/scoring
         // fade them, so drawing at the bare intersection would drift.
         const fuzzy = fuzzyOffsets[y]![x]!;
-        const ownershipVal = readsOwnershipHere && territory ? (territory[y]?.[x] ?? 0) : null;
+        const ownershipVal = swingActiveHere
+          ? null
+          : readsOwnershipHere && territory
+            ? (territory[y]?.[x] ?? 0)
+            : null;
         ctx.fillStyle = isLastMove
           ? rgba(MOVE_NUMBER_LAST_COLOR)
           : cell === 'black'
@@ -2788,10 +2813,12 @@ export const GoBoard: React.FC<GoBoardProps> = ({
     releaseOverlayCanvas,
     scoringMode,
     settings.analysisShowOwnership,
+    settings.analysisShowSwing,
     fuzzyOffsets,
     settings.showMoveNumbers,
     setupOverlayCanvas,
     territory,
+    territorySwing,
     toDisplay,
   ]);
 
