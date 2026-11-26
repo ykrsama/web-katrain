@@ -16,7 +16,6 @@ describe('notification auto-dismiss timers', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     useGameStore.setState({
-      isContinuousAnalysis: true,
       isAnalysisMode: true,
       notification: null,
     });
@@ -26,13 +25,12 @@ describe('notification auto-dismiss timers', () => {
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
     useGameStore.setState({
-      isContinuousAnalysis: false,
       notification: null,
     });
   });
 
   it('does not let an older timer clear a newer notification', () => {
-    useGameStore.getState().toggleContinuousAnalysis(false);
+    setTimedNotification('Analysis off');
     const newerNotification = { message: 'Newer message', type: 'success' as const };
     useGameStore.setState({ notification: newerNotification });
 
@@ -42,7 +40,7 @@ describe('notification auto-dismiss timers', () => {
   });
 
   it('clears the matching notification when it is still current', () => {
-    useGameStore.getState().toggleContinuousAnalysis(false);
+    setTimedNotification('Analysis off');
 
     // One policy owns dismissal now, so this clears on the store's schedule
     // rather than the 1200ms timer the call site used to run for itself.

@@ -94,8 +94,8 @@ export interface DesktopDashboardProps {
   // ---- modes / settings ----
   mode: 'play' | 'analyze';
   setMode: (m: 'play' | 'analyze') => void;
-  isContinuousAnalysis: boolean;
-  toggleContinuousAnalysis: () => void;
+  isAnalysisMode: boolean;
+  toggleAnalysisMode: () => void;
   settings: GameSettings;
   updateControls: (partial: Partial<AnalysisControlsState>) => void;
   updateSettings: (partial: Partial<GameSettings>) => void;
@@ -265,7 +265,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     hoveredCandidateKey, onHoverCandidate, branchInfo,
     showAnalysis, winRate, scoreLead, pointsLost, pointsLostLabel,
     engineState, enginePillLabel, engineMetaTitle, engineBackend, engineModelLabel, analysisCacheSize,
-    mode, setMode, isContinuousAnalysis, toggleContinuousAnalysis,
+    mode, setMode, isAnalysisMode, toggleAnalysisMode,
     settings, updateControls, updateSettings,
     isInsertMode, insertProgress, toggleInsertMode, isSelectingRegionOfInterest, startSelectRegionOfInterest,
     hasMoveTimes = false,
@@ -326,7 +326,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
     scoreLead != null ||
     pointsLost != null ||
     !!currentNode.analysis?.moves?.[0];
-  const commandbarHasContent = hasAnalysisMetrics || isContinuousAnalysis || isGameAnalysisRunning;
+  const commandbarHasContent = hasAnalysisMetrics || isAnalysisMode || isGameAnalysisRunning;
   const commandbarVisible = commandbarOpen && showAnalysis && commandbarHasContent;
   // Three states, not two, because the stage reads this to decide whether to
   // hold the bar's footprint: "reserved" means the bar is hidden only because
@@ -704,10 +704,10 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
         <button
           type="button"
           className="analyze-toggle"
-          aria-pressed={isContinuousAnalysis}
+          aria-pressed={isAnalysisMode}
           onClick={() => {
-            if (!isContinuousAnalysis) setMode('analyze');
-            toggleContinuousAnalysis();
+            if (!isAnalysisMode) setMode('analyze');
+            toggleAnalysisMode();
           }}
         >
           <span className="dot" />
@@ -1317,7 +1317,7 @@ export const DesktopDashboard: React.FC<DesktopDashboardProps> = (props) => {
                         aria-label={t('Turn on live analysis')}
                         onClick={() => {
                           setMode('analyze');
-                          if (!isContinuousAnalysis) toggleContinuousAnalysis();
+                          if (!isAnalysisMode) toggleAnalysisMode();
                         }}
                       >
                         <Icon name="chart" size={12} />{t('Turn on')}

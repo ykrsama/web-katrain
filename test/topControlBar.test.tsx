@@ -35,8 +35,6 @@ const baseProps = {
   clearAnalysisCache: noop,
   toggleInsertMode: noop,
   selfplayToEnd: noop,
-  isContinuousAnalysis: false,
-  toggleContinuousAnalysis: noop,
   makeAiMove: noop,
   rotateBoard: noop,
   toggleTeachMode: noop,
@@ -163,31 +161,9 @@ describe('TopControlBar', () => {
     }
     // The state is a mark, not a word, so it must be there to be read at all.
     expect(buttons.filter((markup) => markup.includes('view-toggle-mark'))).toHaveLength(toggleLabels.length);
-    // The tools sheet's Cont. analysis entry tracks the continuous loop, not
-    // analysis mode: turning continuous off leaves analysis mode on, so the
-    // old state made the button look stuck on.
-    expect(source.match(/aria-pressed=\{isContinuousAnalysis\}/g) ?? []).toHaveLength(1);
     expect(source.match(/aria-pressed=\{isAnalysisMode\}/g) ?? []).toHaveLength(1);
     expect(source.match(/aria-pressed=\{isInsertMode\}/g) ?? []).toHaveLength(1);
     expect(source.match(/aria-pressed=\{isTeachMode\}/g) ?? []).toHaveLength(1);
-  });
-
-  it('shows the continuous loop, not analysis mode, on the mobile Cont. analysis toggle', () => {
-    const buttonFor = (html: string) => html
-      .split('<button')
-      .slice(1)
-      .map((chunk) => `<button${chunk.split('</button>')[0]}`)
-      .find((markup) => markup.includes('Cont. analysis'));
-
-    const analysisOnly = renderToStaticMarkup(
-      <TopControlBar {...baseProps} isMobile={true} viewMenuOpen={true} isAnalysisMode={true} isContinuousAnalysis={false} />,
-    );
-    expect(buttonFor(analysisOnly)).toContain('aria-pressed="false"');
-
-    const continuous = renderToStaticMarkup(
-      <TopControlBar {...baseProps} isMobile={true} viewMenuOpen={true} isAnalysisMode={false} isContinuousAnalysis={true} />,
-    );
-    expect(buttonFor(continuous)).toContain('aria-pressed="true"');
   });
 
   it('exposes mobile tools as a modal dialog owned by the tools button', () => {

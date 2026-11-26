@@ -286,7 +286,7 @@ export default {
   'KaTrain uses tree-averaged ownership; root-only disables per-move ownership for speed.': 'KaTrain 使用树平均掌控；仅根节点则禁用逐走法掌控以提升速度。',
   'Reuse Search Tree': '复用搜索树',
   'Enable (faster)': '启用（更快）',
-  'Speeds up continuous analysis by continuing from previous visits.': '通过从之前的计算量继续，加快连续分析。',
+  'Speeds up repeated analysis by continuing from previous visits.': '通过从之前的计算量继续，加快重复分析。',
   'Randomize Symmetry': '对称随机化',
   'Enable (nnRandomize)': '启用（nnRandomize）',
   'Matches KataGo defaults; disable for deterministic/stable analysis.': '与 KataGo 默认一致；禁用可获得确定性/稳定的分析。',

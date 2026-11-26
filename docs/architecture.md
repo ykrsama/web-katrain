@@ -43,7 +43,7 @@ call actions from `useGameStore`.
 - The current board, player to move, captures, komi, and rules.
 - A tree of `GameNode` objects, where each node owns its move, resulting
   `GameState`, SGF properties, notes, optional end state, and optional analysis.
-- UI modes such as analysis, continuous analysis, teach mode, insert/edit mode,
+- UI modes such as analysis, teach mode, insert/edit mode,
   region of interest selection, AI play, and game analysis progress.
 - Settings, including model URL, TensorFlow.js backend preference, visits,
   board theme, locale, timer settings, trainer thresholds, and AI strategy.
@@ -82,7 +82,7 @@ adds:
 - Stale result detection.
 - A bounded in-memory result cache.
 
-The store uses this queue for continuous analysis, AI moves, quick/fast/full
+The store uses this queue for live analysis, AI moves, quick/fast/full
 game analysis, and self-play.
 
 ## Storage

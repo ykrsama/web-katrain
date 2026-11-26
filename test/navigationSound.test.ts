@@ -10,7 +10,7 @@ import { parseSgf } from '../src/utils/sgf';
 beforeEach(() => {
   useGameStore.getState().resetGame();
   useGameStore.setState((state) => ({
-    isAnalysisMode: false, isAiPlaying: false, isContinuousAnalysis: false,
+    isAnalysisMode: false, isAiPlaying: false,
     settings: { ...state.settings, soundEnabled: true, loadSgfFastAnalysis: false },
   }));
   useGameStore.getState().loadGame(parseSgf('(;SZ[9];B[aa];W[bb];B[cc];W[])'));

@@ -37,7 +37,6 @@ describe('analysis cache store actions', () => {
     useGameStore.setState((state) => ({
       analysisData: current.analysis,
       analysisCacheSize: 2,
-      isContinuousAnalysis: true,
       isSelfplayToEnd: true,
       isGameAnalysisRunning: true,
       gameAnalysisType: 'fast',
@@ -64,7 +63,6 @@ describe('analysis cache store actions', () => {
     expect(cleared.rootNode.analysis).toBeNull();
     expect(cleared.rootNode.children[0]?.analysis).toBeNull();
     expect(cleared.currentNode.analysis).toBeNull();
-    expect(cleared.isContinuousAnalysis).toBe(false);
     expect(cleared.isSelfplayToEnd).toBe(false);
     expect(cleared.isGameAnalysisRunning).toBe(false);
     expect(cleared.engineStatus).toBe('idle');
@@ -87,7 +85,6 @@ describe('analysis cache store actions', () => {
     useGameStore.setState((state) => ({
       analysisData: current.analysis,
       analysisCacheSize: 3,
-      isContinuousAnalysis: true,
       isSelfplayToEnd: true,
       isGameAnalysisRunning: true,
       gameAnalysisType: 'full',
@@ -118,7 +115,6 @@ describe('analysis cache store actions', () => {
     expect(changed.currentNode.analysis).toBeNull();
     expect(analysisQueue.getCacheSize()).toBe(0);
     expect(changed.analysisCacheSize).toBe(0);
-    expect(changed.isContinuousAnalysis).toBe(false);
     expect(changed.isSelfplayToEnd).toBe(false);
     expect(changed.isGameAnalysisRunning).toBe(false);
     expect(changed.engineStatus).toBe('idle');
@@ -161,7 +157,6 @@ describe('analysis cache store actions', () => {
     useGameStore.setState((state) => ({
       analysisData: current.analysis,
       analysisCacheSize: 2,
-      isContinuousAnalysis: true,
       isGameAnalysisRunning: true,
       gameAnalysisType: 'fast',
       engineStatus: 'ready',
@@ -187,7 +182,6 @@ describe('analysis cache store actions', () => {
     expect(changed.currentNode.analysis).toBeNull();
     expect(analysisQueue.getCacheSize()).toBe(0);
     expect(changed.analysisCacheSize).toBe(0);
-    expect(changed.isContinuousAnalysis).toBe(false);
     expect(changed.isGameAnalysisRunning).toBe(false);
     expect(changed.engineStatus).toBe('idle');
   });
@@ -215,7 +209,6 @@ describe('analysis cache store actions', () => {
     useGameStore.setState((state) => ({
       analysisData: root.analysis,
       analysisCacheSize: 1,
-      isContinuousAnalysis: true,
       isSelfplayToEnd: true,
       isGameAnalysisRunning: true,
       gameAnalysisType: 'fast',
@@ -247,7 +240,6 @@ describe('analysis cache store actions', () => {
     expect(changed.rootNode.analysis).toBeNull();
     expect(analysisQueue.getCacheSize()).toBe(0);
     expect(changed.analysisCacheSize).toBe(0);
-    expect(changed.isContinuousAnalysis).toBe(false);
     expect(changed.isSelfplayToEnd).toBe(false);
     expect(changed.isGameAnalysisRunning).toBe(false);
     expect(changed.engineStatus).toBe('idle');

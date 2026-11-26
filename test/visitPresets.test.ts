@@ -77,26 +77,6 @@ describe('visit preset utilities', () => {
 describe('the store clamps visits in one place', () => {
   const store = readFileSync('src/store/gameStore.ts', 'utf8');
 
-  /**
-   * `Math.max(16, Math.min(x, ENGINE_MAX_VISITS))` was written out by hand
-   * fourteen times in the store, and the copy driving live analysis had lost
-   * its `Math.min`.
-   *
-   * That one mattered: `runAnalysis` caps what it will request at
-   * ENGINE_MAX_VISITS, so the achieved visit count can never pass 50,000. With
-   * an unbounded target -- reachable by typing a larger number into Settings,
-   * whose `max` attribute only governs the spinner -- `normalizedVisits <
-   * target` stayed true forever, the "settled" branch was unreachable, and the
-   * loop re-ran a full search every 50ms for as long as the tab stayed open.
-   */
-  it('escalates live analysis toward a bounded target', () => {
-    const target = /const target = ([^;]+);/.exec(
-      store.slice(store.indexOf('const token = ++continuousToken;'))
-    )?.[1];
-    expect(target, 'the live-analysis target moved').toBeDefined();
-    expect(target).toContain('clampAnalysisVisits');
-  });
-
   it('leaves no hand-rolled copy of the clamp to drift again', () => {
     expect(store).not.toMatch(/Math\.max\(16, Math\.min\([^;]*ENGINE_MAX_VISITS\)\)/);
     // Any remaining lower bound must be against an already-bounded value, not

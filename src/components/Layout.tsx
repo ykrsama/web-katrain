@@ -337,8 +337,6 @@ export const Layout: React.FC = () => {
     analysisCacheSize,
     toggleAnalysisMode,
     isAnalysisMode,
-    isContinuousAnalysis,
-    toggleContinuousAnalysis,
     toggleTeachMode,
     isTeachMode,
     regionOfInterest,
@@ -426,8 +424,6 @@ export const Layout: React.FC = () => {
       analysisCacheSize: state.analysisCacheSize,
       toggleAnalysisMode: state.toggleAnalysisMode,
       isAnalysisMode: state.isAnalysisMode,
-      isContinuousAnalysis: state.isContinuousAnalysis,
-      toggleContinuousAnalysis: state.toggleContinuousAnalysis,
       toggleTeachMode: state.toggleTeachMode,
       isTeachMode: state.isTeachMode,
       regionOfInterest: state.regionOfInterest,
@@ -1611,14 +1607,6 @@ export const Layout: React.FC = () => {
     void runAnalysis({ ifIdle: true });
   }, [currentNode.id, isAnalysisMode, runAnalysis]);
 
-  // Fast reviews may have scores/candidates without ownership. Showing the
-  // overlay must fill that gap even when live analysis is switched off.
-  useEffect(() => {
-    if (isAnalysisMode || !settings.analysisShowOwnership || isEditMode || scoringMode || isSelectingRegionOfInterest) return;
-    void runAnalysis({ ownershipOnly: true });
-  }, [currentNode.id, currentNode.analysis?.ownershipMode, isAnalysisMode, settings.analysisShowOwnership,
-    isEditMode, scoringMode, isSelectingRegionOfInterest, runAnalysis]);
-
   // PV animation
   const activeHoverMove = activeReportHoverMove ?? resolveCandidatePreview(hoveredSelection?.context === previewContext ? hoveredSelection : null, candidates);
   // Candidate tiles follow the same ownership rule as the board canvases: a
@@ -1772,7 +1760,6 @@ export const Layout: React.FC = () => {
     error: engineError,
     isAiThinking,
     isGameAnalysisRunning,
-    isContinuousAnalysis,
     isAnalysisMode,
     modelUrl: settings.katagoModelUrl,
     modelName: engineModelName,
@@ -1795,9 +1782,7 @@ export const Layout: React.FC = () => {
               ? t('AI thinking…')
               : isGameAnalysisRunning
               ? t('Analyzing game ({type})… {done}/{total}', { type: gameAnalysisType ?? '…', done: gameAnalysisDone, total: gameAnalysisTotal })
-              : isContinuousAnalysis
-                ? t('Pondering… (Space)')
-                : isAnalysisMode
+              : isAnalysisMode
                   ? t('Analysis mode on (Tab toggles)')
                   // Nothing notable is happening: stay empty rather than echo the
                   // engine badge's own "Ready" next to it. Consumers skip the row
@@ -1808,7 +1793,7 @@ export const Layout: React.FC = () => {
   const winRate = analysisData?.rootWinRate ?? currentNode.analysis?.rootWinRate;
   const scoreLead = analysisData?.rootScoreLead ?? currentNode.analysis?.rootScoreLead;
   const canStopAnalysis =
-    isAnalysisMode || isContinuousAnalysis || isSelfplayToEnd || isGameAnalysisRunning || isAiThinking;
+    isAnalysisMode || isSelfplayToEnd || isGameAnalysisRunning || isAiThinking;
   const canResetAnalysis = analysisData !== null || currentNode.analysis !== null;
   const canClearAnalysisCache = analysisCacheSize > 0 && !isGameAnalysisRunning;
   const showAnalysisCommandBar =
@@ -4398,8 +4383,8 @@ export const Layout: React.FC = () => {
             analysisCacheSize={analysisCacheSize}
             mode={mode}
             setMode={setMode}
-            isContinuousAnalysis={isContinuousAnalysis}
-            toggleContinuousAnalysis={toggleContinuousAnalysis}
+            isAnalysisMode={isAnalysisMode}
+            toggleAnalysisMode={toggleAnalysisMode}
             settings={settings}
             updateControls={updateControls}
             updateSettings={updateSettings}
@@ -4602,8 +4587,6 @@ export const Layout: React.FC = () => {
               canClearAnalysisCache={canClearAnalysisCache}
               toggleInsertMode={toggleInsertMode}
               selfplayToEnd={selfplayToEnd}
-              isContinuousAnalysis={isContinuousAnalysis}
-              toggleContinuousAnalysis={toggleContinuousAnalysis}
               makeAiMove={requestAiMove}
               rotateBoard={rotateBoard}
               toggleTeachMode={toggleTeachMode}

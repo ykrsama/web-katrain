@@ -12,7 +12,6 @@ describe('getEngineActivityPresentation', () => {
     error: null,
     isAiThinking: false,
     isGameAnalysisRunning: false,
-    isContinuousAnalysis: false,
     isAnalysisMode: false,
   };
 
@@ -24,7 +23,7 @@ describe('getEngineActivityPresentation', () => {
   });
 
   it('prioritizes real engine activity and loading states', () => {
-    expect(getEngineActivityPresentation({ ...ready, isContinuousAnalysis: true })).toEqual({
+    expect(getEngineActivityPresentation({ ...ready, isGameAnalysisRunning: true })).toEqual({
       state: 'running',
       label: 'Analyzing…',
     });

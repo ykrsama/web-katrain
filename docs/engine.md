@@ -205,7 +205,6 @@ dict for the side to move.
 The store uses the engine in several ways:
 
 - Interactive analysis: current-position search for the board UI.
-- Continuous analysis: automatically refreshes as the current node changes.
 - Quick game analysis: value-only batch evaluation for a fast whole-line scan.
 - Fast game analysis: low-visit MCTS over the current line.
 - Full game analysis: requested-visit MCTS over selected nodes or mistakes.

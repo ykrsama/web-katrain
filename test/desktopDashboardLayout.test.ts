@@ -163,7 +163,7 @@ describe('desktop dashboard layout', () => {
   it('keeps the empty metric rail quiet until analysis has content', () => {
     const source = readFileSync('src/components/dashboard/DesktopDashboard.tsx', 'utf8');
 
-    expect(source).toContain('const commandbarHasContent = hasAnalysisMetrics || isContinuousAnalysis || isGameAnalysisRunning');
+    expect(source).toContain('const commandbarHasContent = hasAnalysisMetrics || isAnalysisMode || isGameAnalysisRunning');
     expect(source).toContain('const commandbarVisible = commandbarOpen && showAnalysis && commandbarHasContent');
     expect(source).toContain('{showAnalysis && commandbarHasContent && (');
   });

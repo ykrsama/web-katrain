@@ -156,7 +156,6 @@ interface GameStore extends GameState {
   isAiPlaying: boolean;
   aiColor: Player | null;
   isAnalysisMode: boolean;
-  isContinuousAnalysis: boolean;
   isTeachMode: boolean;
   /**
    * `undoable` is set by the edit actions that push onto the edit history, so
@@ -232,7 +231,6 @@ interface GameStore extends GameState {
   // Actions
   toggleAi: (color: Player) => void;
   toggleAnalysisMode: () => void;
-  toggleContinuousAnalysis: (quiet?: boolean) => void;
   stopAnalysis: () => void;
   /** Evaluate the position after the side to move passes; see `tenukiAnalysis`. */
   analyzeTenuki: () => void;
@@ -1253,7 +1251,6 @@ const restoreEditHistory = (entry: EditHistoryEntry, state: GameStore) => {
     // queue cancelled); the flags go with them, or a review sat at "0/3" and
     // play-to-end read as running with nothing behind either.
     isAiThinking: false,
-    isContinuousAnalysis: false,
     isSelfplayToEnd: false,
     setupPositionProgress: null,
     isGameAnalysisRunning: false,
@@ -1654,7 +1651,6 @@ const engineAnalysisWindow = (settings: GameSettings): number =>
 
 analysisQueue.setConcurrency(engineAnalysisWindow(initialSettings));
 
-let continuousToken = 0;
 const scheduledAnalysisTimers = new Set<ReturnType<typeof setTimeout>>();
 
 // Moves and setup edits defer analysis until after their state update. Stop
@@ -2028,7 +2024,6 @@ const ANALYSIS_QUEUE_PRIORITY = {
 } as const;
 // KaTrain-style report cadence (seconds -> ms).
 const REPORT_DURING_SEARCH_EVERY_MS = 1000;
-const CONTINUOUS_REPORT_DURING_SEARCH_MS = 250;
 // Throttle UI updates during progress reports to reduce main-thread churn.
 const PROGRESS_APPLY_MIN_MS = 500;
 
@@ -2548,7 +2543,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
   isAiPlaying: false,
   aiColor: null,
   isAnalysisMode: false,
-  isContinuousAnalysis: false,
   isTeachMode: false,
   notification: null,
   sgfLoadWarning: null,
@@ -2597,7 +2591,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       return {
         isAnalysisMode: newMode,
-        isContinuousAnalysis: newMode ? state.isContinuousAnalysis : false,
         analysisData: state.currentNode.analysis || null,
         engineStatus: newMode ? state.engineStatus : 'idle',
         engineError: newMode ? state.engineError : null,
@@ -2607,128 +2600,8 @@ export const useGameStore = create<GameStore>((commit, get) => {
       };
   }),
 
-  toggleContinuousAnalysis: (quiet = false) => {
-      const next = !get().isContinuousAnalysis;
-      set((state) => ({ isContinuousAnalysis: next, isAnalysisMode: next ? true : state.isAnalysisMode }));
-      if (next) {
-          // Live analysis should never run with a blank board, but an overlay
-          // setup the user already chose is theirs to keep — only fill in top
-          // move hints when nothing at all would be drawn.
-          const s = get().settings;
-          const anyOverlayVisible =
-            s.analysisShowChildren ||
-            s.analysisShowEval ||
-            s.analysisShowHints ||
-            s.analysisShowPolicy ||
-            s.analysisShowOwnership;
-          if (!anyOverlayVisible) get().updateSettings({ analysisShowHints: true });
-      }
-      if (!quiet) {
-          const notification = { message: next ? 'Continuous analysis on' : 'Continuous analysis off', type: 'info' as const };
-          set({ notification });
-      }
-      if (!next) {
-          continuousToken++;
-          // The loop only notices the token change after its current request
-          // settles. A remote search can run for a long time, so cancel the
-          // query it is waiting on; otherwise switching continuous off leaves
-          // the engine reading and progress arriving until that search ends.
-          analysisQueue.cancelGroup('interactive', 'Continuous analysis off');
-          return;
-      }
-
-      const token = ++continuousToken;
-      let errorBackoffMs = 1000;
-      // The local worker keeps its search tree between requests, so asking again
-      // deepens the same search and the ladder below can climb to the requested
-      // depth in steps of Max Time. A remote analysis engine throws its tree
-      // away for every query, so asking again starts from zero: once the time
-      // limit cut a search short, the ladder would restart it at the same depth
-      // forever. Ask such an engine once for the whole depth and let Max Time be
-      // the answer; `askedInFullKey` is what keeps the loop from re-asking.
-      const canExtendSearch = engineCanExtendSearch(get().settings);
-      let askedInFullKey: string | null = null;
-      void (async () => {
-          while (true) {
-              const state = get();
-              if (token !== continuousToken) return;
-              if (!state.isContinuousAnalysis) return;
-              if (!state.isAnalysisMode) return;
-
-              // Clamped, or the loop below never settles. `runAnalysis` caps
-              // what it will actually request at ENGINE_MAX_VISITS, so a target
-              // above that leaves `normalizedVisits < target` true forever and
-              // re-runs a full search every 50ms for as long as the tab is open.
-              const target = clampAnalysisVisits(state.settings.katagoVisits);
-              const rawFast = state.settings.katagoFastVisits;
-              const fast = Number.isFinite(rawFast) ? rawFast : 25;
-              const initialVisits = Math.max(16, Math.min(target, Math.floor(fast)));
-              const node = state.currentNode;
-
-              let nextVisits: number;
-              if (canExtendSearch) {
-                  const normalizedVisits = nodeAnalysisVisitCount(node);
-                  if (normalizedVisits < 1) {
-                      nextVisits = initialVisits;
-                  } else if (normalizedVisits < target) {
-                      const bumped = Math.max(normalizedVisits + 1, normalizedVisits * 2);
-                      nextVisits = Math.min(target, Math.max(initialVisits, bumped));
-                  } else {
-                      await sleep(500);
-                      continue;
-                  }
-              } else {
-                  // A position that has already been asked for in full is done,
-                  // whether the search reached the target or Max Time decided the
-                  // answer: a remote engine starts every query from zero, so
-                  // asking again would just run the same search again. Both the
-                  // achieved visits and the requested depth are remembered on
-                  // the node, so this holds when the user navigates back to it.
-                  const askedFor = Math.max(nodeAnalysisVisitCount(node), node.analysisVisitsRequested ?? 0);
-                  if (askedFor >= target) {
-                      await sleep(500);
-                      continue;
-                  }
-                  // The node id is in the key because a new game can start from
-                  // the same position, and the position key because a setup edit
-                  // changes the stones in place. The time budget is not in it: it
-                  // only decides how far a single request gets, and a request that
-                  // Max Time cut short was already asked for this depth, so asking
-                  // again would just repeat the search.
-                  const fullKey = `${node.id}|${nodeAnalysisPositionKey(node, state.settings.gameRules)}|${target}`;
-                  if (askedInFullKey === fullKey) {
-                      await sleep(500);
-                      continue;
-                  }
-                  askedInFullKey = fullKey;
-                  nextVisits = target;
-              }
-
-              await get().runAnalysis({
-                force: true,
-                ifIdle: true,
-                visits: nextVisits,
-                reuseTree: true,
-                ownershipRefreshIntervalMs: state.settings.katagoOwnershipMode === 'tree' ? 500 : undefined,
-              });
-              if (get().engineStatus === 'error') {
-                  // A dead engine rejects at once; retrying every 50ms raised
-                  // an identical error toast as fast as one could be dismissed.
-                  errorBackoffMs = Math.min(30_000, errorBackoffMs * 2);
-                  // Let the retry go out after the backoff rather than counting
-                  // the failed request as the full-depth attempt.
-                  askedInFullKey = null;
-                  await sleep(errorBackoffMs);
-                  continue;
-              }
-              errorBackoffMs = 1000;
-              await sleep(50);
-          }
-      })();
-  },
-
   stopAnalysis: () => {
-      // Stop is for analysis -- pondering, a review, play-to-end -- and it is
+      // Stop is for analysis -- live analysis, a review, play-to-end -- and it is
       // what Escape does, so it runs whenever a dialog is closed that way. It
       // still stops a one-off "AI move" the player asked for. It used to
       // cancel the AI opponent's reply as well, with nothing to start it
@@ -2738,7 +2611,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
         cancelAiMoveWork();
         set({ isAiThinking: false });
       }
-      continuousToken++;
       cancelScheduledAnalysis();
       analysisQueue.cancelGroup('interactive');
       analysisQueue.cancelGroup('tenuki');
@@ -2756,7 +2628,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       // ignored by its token.
       tenukiToken++;
       set({
-        isContinuousAnalysis: false,
         engineStatus: 'idle',
         engineError: null,
         tenukiAnalysis: null,
@@ -3197,7 +3068,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
         message: removed > 0 ? `Cleared ${removed} cached ${removed === 1 ? 'analysis' : 'analyses'}.` : 'No cached analysis to clear.',
         type: 'info' as const,
       };
-      continuousToken++;
       selfplayToken++;
       gameAnalysisToken++;
       analysisQueue.cancelWhere(() => true, 'Cleared analysis cache');
@@ -3208,7 +3078,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
           analysisData: null,
           analysisCacheSize: 0,
           isAiThinking: false,
-          isContinuousAnalysis: false,
           isSelfplayToEnd: false,
           setupPositionProgress: null,
           isGameAnalysisRunning: false,
@@ -4955,7 +4824,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
           const reportEveryMs =
             typeof reportEveryMsRaw === 'number' && Number.isFinite(reportEveryMsRaw)
               ? Math.max(0, reportEveryMsRaw)
-              : (state.isContinuousAnalysis ? CONTINUOUS_REPORT_DURING_SEARCH_MS : REPORT_DURING_SEARCH_EVERY_MS);
+              : REPORT_DURING_SEARCH_EVERY_MS;
           const reportDuringSearchEveryMs = reportEveryMs > 0 ? reportEveryMs : undefined;
           const progressApplyMinMs = reportEveryMs > 0 ? Math.max(reportEveryMs, PROGRESS_APPLY_MIN_MS) : 0;
           let lastProgressVisits = -1;
@@ -5344,7 +5213,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       analysisQueue.setConcurrency(engineAnalysisWindow(nextSettings));
       analysisRevision++;
 
-      continuousToken++;
       selfplayToken++;
       gameAnalysisToken++;
       analysisQueue.cancelWhere(() => true, 'Analysis settings changed');
@@ -5367,7 +5235,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
         engineBackend: null,
         engineModelName: null,
         analysisCacheSize: 0,
-        isContinuousAnalysis: false,
         isSelfplayToEnd: false,
         setupPositionProgress: null,
         isGameAnalysisRunning: false,
@@ -5398,7 +5265,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       return;
     }
 
-    continuousToken++;
     selfplayToken++;
     gameAnalysisToken++;
     analysisQueue.cancelWhere(() => true, 'Komi changed');
@@ -5420,7 +5286,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
         capturedWhite: state.currentNode.gameState.capturedWhite,
         analysisData: null,
         analysisCacheSize: 0,
-        isContinuousAnalysis: false,
         isSelfplayToEnd: false,
         setupPositionProgress: null,
         isGameAnalysisRunning: false,
@@ -5478,7 +5343,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       return;
     }
 
-    continuousToken++;
     selfplayToken++;
     gameAnalysisToken++;
     analysisQueue.cancelWhere(() => true, 'Handicap changed');
@@ -5525,7 +5389,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
         capturedWhite: currentNode.gameState.capturedWhite,
         analysisData: null,
         analysisCacheSize: 0,
-        isContinuousAnalysis: false,
         isSelfplayToEnd: false,
         setupPositionProgress: null,
         isGameAnalysisRunning: false,
@@ -7077,7 +6940,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       // The tree about to be restored is a clone with the same node ids, so
       // a running review would keep writing into the discarded one; stop it.
-      continuousToken++;
       selfplayToken++;
       gameAnalysisToken++;
       analysisQueue.cancelWhere(() => true, 'Undo edit');
@@ -7104,7 +6966,6 @@ export const useGameStore = create<GameStore>((commit, get) => {
       }
       // The tree about to be restored is a clone with the same node ids, so
       // a running review would keep writing into the discarded one; stop it.
-      continuousToken++;
       selfplayToken++;
       gameAnalysisToken++;
       analysisQueue.cancelWhere(() => true, 'Redo edit');

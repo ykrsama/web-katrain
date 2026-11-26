@@ -16,14 +16,6 @@ describe('resetting one shortcut', () => {
   });
 });
 
-describe('continuous analysis', () => {
-  it('answers Shift+Space as well, which toggles it without the notice', async () => {
-    const { eventMatchesShortcut } = await import('../src/utils/shortcuts');
-    const shiftSpace = { key: ' ', code: 'Space', shiftKey: true, ctrlKey: false, altKey: false, metaKey: false } as KeyboardEvent;
-    expect(eventMatchesShortcut(shiftSpace, 'continuous-analysis')).toBe(true);
-  });
-});
-
 describe('Alt shortcuts on macOS', () => {
   it('match the physical key when Option turned the letter into another character', async () => {
     const { eventMatchesShortcut, eventToShortcutBinding } = await import('../src/utils/shortcuts');

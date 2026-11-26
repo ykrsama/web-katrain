@@ -71,8 +71,8 @@ export function isRemoteEngine(settings: EngineSettings): boolean {
  * from zero. If a time limit cut the first one short, asking again searches the
  * same thing again and gets no further.
  *
- * Continuous analysis uses this to choose between climbing to the requested
- * depth in steps (local) and asking once for the whole depth (remote).
+ * A repeated read uses this to decide whether asking again can deepen the
+ * existing result or would just repeat the same search.
  */
 export function engineCanExtendSearch(settings: EngineSettings): boolean {
   return remoteEngineUrlFor(settings) === null;

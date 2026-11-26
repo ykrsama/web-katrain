@@ -61,4 +61,18 @@ describe('Stop cancels analysis that has not reached the queue yet', () => {
     expect(analyzeMock).not.toHaveBeenCalled();
     expect(useGameStore.getState().currentNode.analysis).toBeNull();
   });
+
+  it('leaves live analysis off after the Analyze toggle is switched off', async () => {
+    useGameStore.setState({ isAnalysisMode: true });
+
+    // The desktop Analyze button calls this action; its second click must turn
+    // analysis off, not just stop the search in flight.
+    useGameStore.getState().toggleAnalysisMode();
+    expect(useGameStore.getState().isAnalysisMode).toBe(false);
+
+    analyzeMock.mockClear();
+    useGameStore.getState().playMove(3, 3);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(analyzeMock, 'a move restarted analysis after the Analyze toggle went off').not.toHaveBeenCalled();
+  });
 });

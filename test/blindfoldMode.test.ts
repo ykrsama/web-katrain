@@ -93,7 +93,7 @@ describe('blindfold mode', () => {
     analysisQueue.clearCache();
     const { useGameStore } = await import('../src/store/gameStore');
     useGameStore.getState().resetGame();
-    useGameStore.setState({ isContinuousAnalysis: false, isAnalysisMode: false, notification: null });
+    useGameStore.setState({ isAnalysisMode: false, notification: null });
   });
 
   it('announces the engine move, plays what it hears, and shows the point it read', async () => {

@@ -23,7 +23,7 @@ beforeEach(() => {
   analysisQueue.clearCache();
   useGameStore.getState().resetGame();
   useGameStore.setState({
-    isAnalysisMode: false, isContinuousAnalysis: false, isAiPlaying: false,
+    isAnalysisMode: false, isAiPlaying: false,
     analysisData: null,
     settings: { ...settings, engineMode: 'local', analysisShowOwnership: true, katagoOwnershipMode: 'tree' },
   });

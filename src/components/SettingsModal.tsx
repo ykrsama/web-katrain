@@ -2903,7 +2903,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, focusMode
                                                 <span>{t('Enable (faster)')}</span>
                                             </div>
                                             <p className={subtextClass}>
-                                                {t('Speeds up continuous analysis by continuing from previous visits.')}
+                                                {t('Speeds up repeated analysis by continuing from previous visits.')}
                                             </p>
                                         </div>
                                     </div>

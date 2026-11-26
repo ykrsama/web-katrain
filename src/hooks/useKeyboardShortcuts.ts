@@ -88,7 +88,6 @@ export function useKeyboardShortcuts({
     analyzeExtra,
     resetCurrentAnalysis,
     toggleAnalysisMode,
-    toggleContinuousAnalysis,
     startSelectRegionOfInterest,
     cancelSelectRegionOfInterest,
     isSelectingRegionOfInterest,
@@ -123,7 +122,6 @@ export function useKeyboardShortcuts({
       analyzeExtra: state.analyzeExtra,
       resetCurrentAnalysis: state.resetCurrentAnalysis,
       toggleAnalysisMode: state.toggleAnalysisMode,
-      toggleContinuousAnalysis: state.toggleContinuousAnalysis,
       startSelectRegionOfInterest: state.startSelectRegionOfInterest,
       cancelSelectRegionOfInterest: state.cancelSelectRegionOfInterest,
       isSelectingRegionOfInterest: state.isSelectingRegionOfInterest,
@@ -145,7 +143,6 @@ export function useKeyboardShortcuts({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isComposingKeyEvent(e) || shouldIgnoreShortcutForKey(e.key, e.target, document.activeElement)) return;
 
-      const shift = e.shiftKey;
       const overrides = loadShortcutOverrides();
       const matches = (id: string) => eventMatchesShortcut(e, id, overrides);
 
@@ -298,13 +295,6 @@ export function useKeyboardShortcuts({
       if (matches('toggle-bottom-bar')) {
         e.preventDefault();
         toggleBottomBar();
-        return;
-      }
-
-      // Continuous analysis
-      if (matches('continuous-analysis')) {
-        e.preventDefault();
-        toggleContinuousAnalysis(shift);
         return;
       }
 
@@ -594,7 +584,6 @@ export function useKeyboardShortcuts({
     navigateForward,
     navigateStart,
     navigateEnd,
-    toggleContinuousAnalysis,
     passTurn,
     rotateBoard,
     mode,

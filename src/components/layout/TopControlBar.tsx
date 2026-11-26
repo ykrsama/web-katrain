@@ -74,7 +74,6 @@ const TOP_CONTROL_SHORTCUT_IDS = [
   'toggle-next-move-preview',
   'toggle-move-numbers',
   'fullscreen',
-  'continuous-analysis',
   'analysis-extra',
   'analysis-equalize',
   'analysis-sweep',
@@ -124,8 +123,6 @@ interface TopControlBarProps {
   canClearAnalysisCache?: boolean;
   toggleInsertMode: () => void;
   selfplayToEnd: () => void;
-  isContinuousAnalysis: boolean;
-  toggleContinuousAnalysis: () => void;
   makeAiMove: () => void;
   rotateBoard: () => void;
   toggleTeachMode: () => void;
@@ -191,8 +188,6 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   canClearAnalysisCache = false,
   toggleInsertMode,
   selfplayToEnd,
-  isContinuousAnalysis,
-  toggleContinuousAnalysis,
   makeAiMove,
   rotateBoard,
   toggleTeachMode,
@@ -655,11 +650,6 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
       <div className="border-t border-[var(--ui-border)]">
         <div className={mobileToolsSectionLabel}>{t('Game Control')}</div>
         <div className={mobileToolsActionGrid} data-mobile-tools-action-grid="true" data-mobile-tools-section="game">
-          <button type="button" className={mobileToolsGridBtn} onClick={() => { toggleContinuousAnalysis(); closeMobileToolsAfterAction(); }} aria-pressed={isContinuousAnalysis}>
-            <FaChartLine size={18} className={isContinuousAnalysis ? "text-[var(--ui-accent)]" : "text-[var(--ui-text-muted)]"} />
-            <span className="text-sm font-medium">{t('Cont. analysis')}</span>
-            <span className="text-[0.6875rem] ui-text-faint">{shortcutLabels['continuous-analysis']}</span>
-          </button>
           <button type="button" className={mobileToolsGridBtn} onClick={() => { makeAiMove(); closeMobileToolsAfterAction(); }}>
             <FaPlay size={18} className="text-[var(--ui-success)]" />
             <span className="text-sm font-medium">{t('AI move')}</span>

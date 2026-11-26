@@ -9,7 +9,6 @@ export interface EngineActivityPresentationArgs {
   error?: string | null;
   isAiThinking: boolean;
   isGameAnalysisRunning: boolean;
-  isContinuousAnalysis: boolean;
   isAnalysisMode: boolean;
   modelUrl?: string | null;
   modelName?: string | null;
@@ -27,7 +26,7 @@ export function getEngineActivityPresentation(
   if (args.error) return { state: 'error', label: t('Engine error') };
   if (args.status === 'loading') return { state: 'loading', label: t(ENGINE_LOADING_LABEL) };
   if (args.isAiThinking) return { state: 'running', label: t('AI thinking…') };
-  if (args.isGameAnalysisRunning || args.isContinuousAnalysis) {
+  if (args.isGameAnalysisRunning) {
     return { state: 'running', label: t('Analyzing…') };
   }
   if (args.engineMode === 'remote') return { state: 'ready', label: t('Remote engine ready') };

@@ -36,7 +36,6 @@ export default {
   'Insert mode (I to finish)': '插入模式（按 I 完成）',
   'AI thinking…': 'AI 思考中…',
   'Analyzing game ({type})… {done}/{total}': '正在分析对局（{type}）… {done}/{total}',
-  'Pondering… (Space)': '思考中…（空格）',
   'Analysis mode on (Tab toggles)': '分析模式已开启（按 Tab 切换）',
   'Restored uploaded KataGo model weights "{name}".': '已恢复上传的 KataGo 模型权重“{name}”。',
   'Could not load this model file.': '无法加载此模型文件。',
