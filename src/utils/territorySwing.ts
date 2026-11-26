@@ -32,8 +32,8 @@
  * whole-board estimates leaves a haze everywhere. Painting that haze says
  * "the whole board moved", which is exactly the wrong answer.
  */
-export const SWING_SAME_DIRECTION_THRESHOLD = 0.25;
-export const SWING_OPPOSITE_DIRECTION_THRESHOLD = 0.5;
+export const SWING_STRONG_OWNERSHIP_THRESHOLD = 0.25;
+export const SWING_WEAK_OWNERSHIP_THRESHOLD = 0.5;
 
 /**
  * How faint the weakest painted point may be. A point that only just clears the
@@ -51,8 +51,8 @@ export type TerritorySwing = {
   /** The largest single-point move, as an absolute value. */
   peak: number;
   /**
-   * `[y][x]` threshold for each point. A change that continues toward the
-   * previous owner needs less evidence than one that reverses it.
+   * `[y][x]` threshold for each point. A strongly owned point shows a change
+   * from 0.25; a contested point needs 0.5.
    */
   thresholds: number[][];
   /** Intersections that moved toward Black by at least their threshold. */
@@ -101,12 +101,12 @@ export function computeTerritorySwing(
       if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       const delta = a! - b!;
       row[x] = delta;
-      // With no previous owner (or a dead-even point), a change is a new claim
-      // rather than a reversal, so it gets the lighter threshold.
-      const sameDirection = b! === 0 || (b! > 0 ? delta > 0 : delta < 0);
-      const threshold = sameDirection
-        ? SWING_SAME_DIRECTION_THRESHOLD
-        : SWING_OPPOSITE_DIRECTION_THRESHOLD;
+      // Judge the point after the move: a settled point (|ownership| >= 0.5)
+      // shows a 0.25 change; a contested one needs 0.5 before it is worth
+      // painting.
+      const threshold = Math.abs(a!) >= 0.5
+        ? SWING_STRONG_OWNERSHIP_THRESHOLD
+        : SWING_WEAK_OWNERSHIP_THRESHOLD;
       thresholdRow[x] = threshold;
       const magnitude = Math.abs(delta);
       if (magnitude > peak) peak = magnitude;
@@ -237,7 +237,7 @@ export function swingOverlayEnabled(analysisShowSwing: boolean, analysisShowOwne
 export function swingAlpha(
   value: number,
   peak: number,
-  threshold: number = SWING_SAME_DIRECTION_THRESHOLD
+  threshold: number = SWING_STRONG_OWNERSHIP_THRESHOLD
 ): number {
   const magnitude = Math.abs(value);
   if (!Number.isFinite(magnitude) || !Number.isFinite(peak)) return 0;
