@@ -135,6 +135,7 @@ export interface GameNode {
   timeUsedSeconds?: number; // KaTrain-like: time used on this move (for timer/byo-yomi).
   analysis?: AnalysisResult | null;
   analysisVisitsRequested?: number; // KaTrain-like: requested visits for this node analysis.
+  ownershipFillAttempted?: boolean; // Session-only: an ownership-only refill came back without a map.
   autoUndo?: boolean | null; // Teach-mode auto-undo (KaTrain-like). null = not decided yet.
   undoThreshold?: number; // Random [0,1) used for fractional auto-undos.
   aiThoughts?: string;

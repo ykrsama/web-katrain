@@ -1613,11 +1613,11 @@ export const Layout: React.FC = () => {
   // becomes a hidden shallow search. Outside analysis mode nothing is fetched:
   // the overlays show only what the file already carries.
   useEffect(() => {
-    if (!isAnalysisMode || !currentNode.analysis
-      || (currentNode.analysis.ownershipMode ?? 'root') === 'none'
+    if (!isAnalysisMode || !currentNode.analysis || currentNode.ownershipFillAttempted
       || isEditMode || scoringMode || isSelectingRegionOfInterest) return;
     void runAnalysis({ ownershipOnly: true });
   }, [currentNode.id, currentNode.analysis, currentNode.analysis?.ownershipMode,
+    currentNode.ownershipFillAttempted,
     isAnalysisMode, isEditMode, scoringMode, isSelectingRegionOfInterest, runAnalysis]);
 
   // PV animation

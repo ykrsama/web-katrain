@@ -4926,6 +4926,7 @@ export const useGameStore = create<GameStore>((commit, get) => {
                   ownershipStdev: analysis.ownershipStdev,
                   ownershipMode: supplement.length > 0 ? 'root' : 'none',
                 };
+                if (supplement.length === 0) node.ownershipFillAttempted = true;
                 set((s) => ({
                   ...(s.currentNode.id === node.id ? { analysisData: node.analysis } : {}),
                   treeVersion: s.treeVersion + 1,
