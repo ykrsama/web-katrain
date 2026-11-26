@@ -32,7 +32,7 @@
  * whole-board estimates leaves a haze everywhere. Painting that haze says
  * "the whole board moved", which is exactly the wrong answer.
  */
-export const SWING_POINT_THRESHOLD = 0.5;
+export const SWING_POINT_THRESHOLD = 0.25;
 
 /**
  * How faint the weakest painted point may be. A point that only just clears the
